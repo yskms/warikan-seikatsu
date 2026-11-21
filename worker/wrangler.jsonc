@@ -27,7 +27,7 @@
   // ローカルは .dev.vars（gitignore。.dev.vars.example が見本）。ここに名前を書くと、
   // デプロイの前に、本番に無い秘密情報を検出でき、型（Env）にも出る。
   "secrets": {
-    "required": ["NONCE_HMAC_KEY"]
+    "required": ["NONCE_HMAC_KEY", "APPLE_PRIVATE_KEY"]
   },
 
   // IDトークンの `aud`（src/idToken.ts の audienceFor）。どれも公開してよい識別子で、秘密情報ではない
@@ -37,10 +37,17 @@
   // GOOGLE_WEB_CLIENT_ID は、まだ作っていない（Google Cloudで、サーバー用（Web）のクライアントIDを作る）。
   // 作るまでは、実在しない値にしてあり、どのGoogleのIDトークンも aud が合わず拒否される（Googleログインは通らない）。
   // 作ったら置き換える（docs/backend-design.md 12章）。
-  // AndroidのAppleログイン（Web経由）に要る APPLE_SERVICES_ID・APPLE_TEAM_ID・APPLE_KEY_ID と、秘密鍵
-  // APPLE_PRIVATE_KEY は、そのログインを足すときに加える（docs/backend-design.md 12章）。
+  //
+  // APPLE_TEAM_ID・APPLE_KEY_ID は、アカウントの削除（POST /auth/delete）で、iOSの認可コードを交換し、Appleのトークンを失効させるときの
+  // `client_secret`（ES256のJWT）に入れる識別子。Team ID はアプリの署名にも入り、Key ID は秘密鍵（.p8。APPLE_PRIVATE_KEY。秘密情報）が
+  // 無ければ使えない。どちらも秘密情報ではない。Team ID はSingfolioと同じ開発者アカウントのもの。
+  // APPLE_KEY_ID は、Sign in with Apple の鍵をまだ作っていない（Apple Developerで作る）。作るまでは仮の値で、
+  // 失効は行われない（削除は止まらない。`appleRevoked: false`）。作ったら置き換える（docs/backend-design.md 12章）。
+  // AndroidのAppleログイン（Web経由）に要る APPLE_SERVICES_ID は、そのログインを足すときに加える（同12章）。
   "vars": {
     "APPLE_BUNDLE_ID": "com.yskms.warikanseikatsu",
+    "APPLE_TEAM_ID": "3L2FPFG722",
+    "APPLE_KEY_ID": "0-not-created-yet",
     "GOOGLE_WEB_CLIENT_ID": "0-not-created-yet.apps.googleusercontent.com"
   },
 

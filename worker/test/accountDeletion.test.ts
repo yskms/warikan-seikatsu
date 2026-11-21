@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // アカウント削除のデータ処理（src/accountDeletion.ts）の検査。規則は docs/backend-design.md 5章「アカウント削除」、
-// 競合制御は8章。`POST /auth/delete`（再認証）は未実装なので、データ処理の関数を直接呼ぶ。
+// 競合制御は8章。再認証は `POST /auth/delete` の側（deleteAccount.test.ts）で見るので、ここでは、データ処理の関数を直接呼ぶ。
 // ローカルD1（miniflare）での検査なので、確かめるのはロジック。
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';

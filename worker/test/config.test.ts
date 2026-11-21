@@ -14,6 +14,8 @@ const vars = (config.vars ?? {}) as Record<string, unknown>;
 
 // Google Cloudで、サーバー用（Web）のクライアントIDを作るまでの、実在しない値（wrangler.jsonc）。
 const GOOGLE_PLACEHOLDER = '0-not-created-yet.apps.googleusercontent.com';
+// Apple Developerで、Sign in with Apple の鍵を作るまでの、実在しない値（wrangler.jsonc）。
+const APPLE_KEY_PLACEHOLDER = '0-not-created-yet';
 
 describe('wrangler.jsonc', () => {
   it('Workers Logs は無効（認証の値が、ログに残らないようにするため）', () => {
@@ -31,6 +33,8 @@ describe('wrangler.jsonc', () => {
 
   it('秘密情報は wrangler.jsonc に値を書かない（vars に置かない）', () => {
     assert.equal(config.secrets?.required?.includes('NONCE_HMAC_KEY'), true);
+    // Appleのトークンの失効（POST /auth/delete）に署名する鍵。無いまま本番に出すと、失効が行われない（削除は止まらない）。
+    assert.equal(config.secrets?.required?.includes('APPLE_PRIVATE_KEY'), true);
     for (const name of config.secrets?.required ?? []) {
       assert.equal(name in vars, false, `${name} を vars に置かない`);
     }
@@ -51,6 +55,16 @@ describe('wrangler.jsonc', () => {
     );
   });
 
+  it('Appleのトークンの失効に使う識別子（vars）の形', () => {
+    // Team ID は10文字の英大文字・数字。Key ID は、Sign in with Apple の鍵を作るまでは、置き場所の値のまま
+    // （仮の値でも、失効が行われないだけで、アカウントの削除は止まらない）。
+    assert.match(String(vars.APPLE_TEAM_ID), /^[A-Z0-9]{10}$/);
+    assert.ok(
+      vars.APPLE_KEY_ID === APPLE_KEY_PLACEHOLDER || /^[A-Z0-9]{10}$/.test(String(vars.APPLE_KEY_ID)),
+      'APPLE_KEY_ID が、Key ID の形でも、置き場所の値でもない',
+    );
+  });
+
   it('仮の値が vars に残ったままでは、デプロイできない（npm run deploy の前の確認）', () => {
     const pkg = JSON.parse(readFileSync(path.join(workerDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
@@ -58,10 +72,13 @@ describe('wrangler.jsonc', () => {
     assert.match(pkg.scripts.predeploy ?? '', /scripts\/checkPlaceholders\.ts/);
     // 仮の値は、確認が見つけられる印を含む。
     assert.equal(GOOGLE_PLACEHOLDER.includes(PLACEHOLDER_MARKER), true);
+    assert.equal(APPLE_KEY_PLACEHOLDER.includes(PLACEHOLDER_MARKER), true);
     assert.deepEqual(placeholderVars({ GOOGLE_WEB_CLIENT_ID: GOOGLE_PLACEHOLDER, APPLE_BUNDLE_ID: 'com.example.app' }), [
       'GOOGLE_WEB_CLIENT_ID',
     ]);
     assert.deepEqual(placeholderVars({ GOOGLE_WEB_CLIENT_ID: '123-abc.apps.googleusercontent.com' }), []);
+    assert.deepEqual(placeholderVars({ APPLE_KEY_ID: APPLE_KEY_PLACEHOLDER, APPLE_TEAM_ID: 'ABCDE12345' }), ['APPLE_KEY_ID']);
+    assert.deepEqual(placeholderVars({ APPLE_KEY_ID: 'ABCDE12345' }), []);
     assert.deepEqual(placeholderVars({ N: 1, M: null }), []);
   });
 

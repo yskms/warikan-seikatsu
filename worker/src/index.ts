@@ -10,6 +10,7 @@ import {
 } from './categories.ts';
 import { handleCloseMonth, handleGetClosing, handleMonthSummary } from './closings.ts';
 import { runScheduled } from './cron.ts';
+import { handleDeleteAccount } from './deleteAccount.ts';
 import { isId } from './expenseInput.ts';
 import { handleCreateExpense, handleDeleteExpense, handleListExpenses, handleUpdateExpense } from './expenses.ts';
 import {
@@ -68,6 +69,7 @@ export default {
     if (pathname === '/auth/nonce') return handleNonce(request, env, now);
     if (pathname === '/auth/login') return handleLogin(request, env, now);
     if (pathname === '/auth/logout') return handleLogout(request, env, now);
+    if (pathname === '/auth/delete') return handleDeleteAccount(request, env, now);
 
     if (GROUPS_PATH.test(pathname)) {
       if (request.method === 'GET') return handleListGroups(request, env, now);
