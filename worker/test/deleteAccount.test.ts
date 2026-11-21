@@ -20,7 +20,7 @@ import { consumeNonce, issueNonce, nonceHash } from '../src/nonce.ts';
 import { authenticateSession, createSession } from '../src/session.ts';
 import { createFixtureFactory, equalShares, insertCategoryRule } from './apiFixture.ts';
 import { openLocalDatabase, type LocalDatabase } from './localDatabase.ts';
-import { interferingEnv } from './monthApi.ts';
+import { countingEnv, interferingEnv } from './monthApi.ts';
 
 const NOW = 1_800_000_000_000;
 const NOW_S = NOW / 1000;
@@ -108,9 +108,9 @@ describe('POST /auth/delete', () => {
   };
 
   /** ログイン済みのユーザーを作る（セッションの値を返す）。 */
-  async function signedIn(provider: IdTokenProvider = 'apple', sub = SUB) {
+  async function signedIn(provider: IdTokenProvider = 'apple', sub = SUB, idleMs = 1000) {
     const { identityId, userId } = await resolveIdentity(db, provider, sub, NOW - 1000);
-    const session = (await createSession(db, identityId, NOW - 1000))!;
+    const session = (await createSession(db, identityId, NOW - idleMs))!;
     return { identityId, userId, session };
   }
 
@@ -315,6 +315,8 @@ describe('POST /auth/delete', () => {
       assert.equal(await groupExists(b.groupId), true);
     });
 
+    // ローカルD1は、クエリ数の上限を課さない。Freeの本番では、1グループでも2回の競合で上限（50）を超えるので、この503の手前で、
+    // 未処理の例外（500）になる（下の「D1のクエリ数」）。ここで見るのは、Paid（上限1000）で起きる経路。
     it('他の書き込みと競合し続けたら 503。何も消さず、セッションも有効なまま。T は使い切りなので、再認証からやり直せば消える', async () => {
       const { me, a, b, myMemberInA } = await setup();
       const bump = () => db.prepare('UPDATE expense_groups SET data_version = data_version + 1 WHERE id = ?').bind(a.groupId).run();
@@ -349,6 +351,120 @@ describe('POST /auth/delete', () => {
       assert.deepEqual(await retry.json(), { appleRevoked: true });
       assert.equal((await member(myMemberInA))!.status, 'deleted');
       assert.equal(await groupExists(b.groupId), false);
+    });
+  });
+
+  // POST /auth/delete 全体のD1のクエリ数。Freeは1回の呼び出しにつき50まで（docs/backend-design.md 12章）。`accountDeletion.test.ts` は
+  // データ処理だけを数える。ここは、その前の認証（セッションの検索と、24時間以上前なら更新の2文）と、T を使用済みにする2文も含め、
+  // やり直しの試行も含めて数える。ローカルD1は上限を課さないので、上限を超える数も、そのまま測れる。
+  // D1のFreeの上限に当たると、`batch` が例外を投げ、`POST /auth/delete` は未処理の例外（500）になる。何も消えない。
+  describe('D1のクエリ数（Freeは1回の呼び出しにつき50まで）', () => {
+    const FREE_LIMIT = 50;
+    const HOURS = 60 * 60 * 1000;
+    let sequence = 0;
+
+    interface Shape {
+      /** 残る2人がいる、参加中のグループの数。 */
+      shared?: number;
+      /** 自分だけの（削除するとグループごと消える）グループの数。 */
+      solo?: number;
+      /** 脱退済み（`left`）のグループの数（匿名化だけ）。 */
+      left?: number;
+      /** 参加中のグループそれぞれに、翌月より先で割合の行がある月を、いくつ作るか。 */
+      farMonths?: number;
+      /** セッションを最後に使ってからの時間（24時間以上だと、認証が最後に使った時刻を更新する）。 */
+      idleHours?: number;
+      /** 最初のグループに割り込む書き込みの回数（データ処理がやり直す）。 */
+      conflicts?: number;
+    }
+
+    /** そういう人が、Googleの再認証でアカウントを削除したときの、応答の状態と、D1のクエリ数。 */
+    async function measure(shape: Shape) {
+      const sub = `google-count-${++sequence}`;
+      const me = await signedIn('google', sub, (shape.idleHours ?? 0) * HOURS || 1000);
+      const groupIds: string[] = [];
+      const addGroup = async (kind: 'shared' | 'solo' | 'left') => {
+        const g = await factory.createGroup(kind === 'solo' ? [] : ['zed', 'yan']);
+        const others = Object.values(g.people).map((person) => person.memberId);
+        const mine = await factory.addMember(
+          g.groupId,
+          'alice',
+          me.userId,
+          kind === 'left' ? { status: 'left', expenseEndMonth: '2026-11' } : {},
+        );
+        const members = kind === 'left' ? others : [...others, mine];
+        await insertCategoryRule(db, g.groupId, g.categoryId, '2026-10', equalShares(members));
+        if (kind !== 'left') {
+          // 今は2027-01。翌月（2027-02）は、削除で必ず直す月。それより先（2027-03〜）に行がある月が、追加の費用になる。
+          const months = ['2027-02', '2027-03', '2027-04'].slice(0, shape.farMonths ? 1 + shape.farMonths : 0);
+          for (const month of months) await insertCategoryRule(db, g.groupId, g.categoryId, month, equalShares(members));
+        }
+        groupIds.push(g.groupId);
+      };
+      for (const [kind, n] of [['shared', shape.shared], ['solo', shape.solo], ['left', shape.left]] as const) {
+        for (let i = 0; i < (n ?? 0); i++) await addGroup(kind);
+      }
+
+      const { body } = await google({ sub });
+      const bump = () =>
+        db.prepare('UPDATE expense_groups SET data_version = data_version + 1 WHERE id = ?').bind(groupIds[0]).run();
+      // 先頭の1回の batch は、T を使用済みにする書き込み。割り込みは、そのあとの、データ処理の書き込みに入れる。
+      const counting = countingEnv(
+        shape.conflicts ? interferingEnv(env, bump, { times: shape.conflicts, skipBatches: 1 }) : env,
+      );
+      const original = env;
+      env = counting.env;
+      try {
+        const response = await call(me.session, body);
+        return { status: response.status, queries: counting.counts.queries };
+      } finally {
+        env = original;
+      }
+    }
+    const queriesOf = async (shape: Shape) => (await measure(shape)).queries;
+
+    it('残る人がいるグループ: 基本の11 + グループごとに9。Freeに収まるのは4グループまで（セッションが古いと49）', async () => {
+      // 11 = セッションの検索1 + T の使用済み2 + データ処理の読み込み6 + バージョンの更新1 + users の削除1。
+      const counts: number[] = [];
+      for (const shared of [1, 2, 3, 4, 5]) counts.push(await queriesOf({ shared }));
+      assert.deepEqual(counts, [20, 29, 38, 47, 56]);
+      // セッションを24時間以上使っていないと、認証が最後に使った時刻を更新する（2文）。
+      assert.equal(await queriesOf({ shared: 4, idleHours: 25 }), 49);
+      assert.equal(await queriesOf({ shared: 5, idleHours: 25 }), 58);
+      assert.ok(47 <= FREE_LIMIT && 49 <= FREE_LIMIT && 56 > FREE_LIMIT);
+    });
+
+    it('自分だけのグループ（グループごと消す）は、1つにつき15。3つでFreeを超える', async () => {
+      const counts: number[] = [];
+      for (const solo of [1, 2, 3]) counts.push(await queriesOf({ solo }));
+      assert.deepEqual(counts, [26, 41, 56]);
+      assert.ok(counts[1]! <= FREE_LIMIT && counts[2]! > FREE_LIMIT);
+    });
+
+    it('翌月より先に割合の行がある月は、グループごと・月ごとに4つ増える。3グループでも、セッションが古いと50を超える', async () => {
+      assert.equal(await queriesOf({ shared: 3, farMonths: 1 }), 50);
+      assert.equal(await queriesOf({ shared: 3, farMonths: 1, idleHours: 25 }), 52);
+      assert.equal(await queriesOf({ shared: 3, farMonths: 2 }), 62);
+      assert.ok(52 > FREE_LIMIT);
+    });
+
+    it('脱退済みのグループは、匿名化だけで、1つにつき2。増え続ける', async () => {
+      const counts: number[] = [];
+      for (const left of [1, 2, 3]) counts.push(await queriesOf({ shared: 3, left }));
+      assert.deepEqual(counts, [40, 42, 44]);
+    });
+
+    it('競合してやり直すたびに、読み込み6 + 書き込みの全体が加わる。1グループでも、2回の競合でFreeを超える', async () => {
+      const results = [];
+      for (const conflicts of [0, 1, 2, 3]) results.push(await measure({ shared: 1, conflicts }));
+      // 3回目の競合までに、すべての試行を使い切ると 503（Paidの上限では、起きる経路）。
+      assert.deepEqual(results, [
+        { status: 200, queries: 20 },
+        { status: 200, queries: 37 },
+        { status: 200, queries: 54 },
+        { status: 503, queries: 54 },
+      ]);
+      assert.ok(results[1]!.queries <= FREE_LIMIT && results[2]!.queries > FREE_LIMIT);
     });
   });
 
