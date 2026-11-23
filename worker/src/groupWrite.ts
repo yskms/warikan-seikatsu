@@ -58,9 +58,10 @@ export function statementsForRows(columnCount: number, rowCount: number): number
 }
 
 /**
- * 同じ表への複数行のINSERT。GROUP_WRITE_GUARD の条件つき。D1はbatchの1文を1クエリと数える（Freeは1回の
- * 呼び出しにつき50）ので、月締めのように行数が多い書き込みは、束縛の上限（100）に収まる範囲で、複数行を
- * 1文にまとめる。`rows` の各行は `columns` と同じ順の値。行が無ければ、文も作らない。
+ * 同じ表への複数行のINSERT。GROUP_WRITE_GUARD の条件つき。月締めのように行数が多い書き込みは、文の数を抑えるため、
+ * 束縛の上限（100）に収まる範囲で、複数行を1文にまとめる。D1のクエリ数の上限（Freeは1回の呼び出しにつき50）は、公式は batch を
+ * 1回と数えると書くが、本番のFreeで確かめるまでは、batch の1文も1クエリとして見積もる（docs/backend-design.md 8章の
+ * 「D1のクエリ数の数え方」）。どちらの数え方でも、この関数は消さない。`rows` の各行は `columns` と同じ順の値。行が無ければ、文も作らない。
  */
 export function insertRowsGuarded(
   db: D1Database,

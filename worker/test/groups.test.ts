@@ -98,7 +98,7 @@ describe('グループのAPI', () => {
       assert.ok(shares.every((row) => row.member_id === group.memberId && row.share_basis_points === 10000));
     });
 
-    it('D1のクエリ数: 認証1 + 作成の文5 + 作成後の読み込み3(Freeは1回の呼び出しにつき50まで)', async () => {
+    it('D1のクエリ数: 認証1 + 作成の文5 + 作成後の読み込み3(batchの文を1つずつ数える。Freeは1回の呼び出しにつき50まで)', async () => {
       const user = await factory.addUser('counting');
       const counting = countingEnv(env);
       const result = await api.createGroup(user, VALID, { env: counting.env });

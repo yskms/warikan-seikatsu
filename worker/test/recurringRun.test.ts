@@ -473,7 +473,7 @@ describe('固定費の自動登録: D1のクエリ数の予算', () => {
   const expenseCount = async (groupId: string) =>
     (await db.prepare('SELECT count(*) AS n FROM expenses WHERE group_id = ?').bind(groupId).first<{ n: number }>())!.n;
 
-  it('上限（50件）の固定費を持つグループでも、1回の実行は、Freeの上限（50）に収まる。数えた数と、報告する数が一致する', async () => {
+  it('上限（50件）の固定費を持つグループでも、1回の実行は、1文ずつ数えて、Freeの上限（50）に収まる。数えた数と、報告する数が一致する', async () => {
     const g = await groupWithTemplates(50, 'equal');
     const counting = countingEnv(env);
     const summary = await registerDueRecurring(counting.env.DB, NOW, 0, 50);
@@ -535,7 +535,7 @@ describe('固定費の自動登録: D1のクエリ数の予算', () => {
   });
 
   it('固定費もメンバーも多いグループは、書く文の数を数えて、予算に収まる件数だけ作る。残りは次の回で作る（50を超えない）', async () => {
-    // 50件 × 12人の金額指定 = 負担額600行。全部を1回で書くと、読み込みと合わせて51クエリになり、Freeの上限（50）を超える。
+    // 50件 × 12人の金額指定 = 負担額600行。全部を1回で書くと、読み込みと合わせて51クエリ（1文ずつ数えた数）になり、Freeの上限（50）を超える。
     const names = Array.from({ length: 12 }, (_, index) => `m${String(index + 1).padStart(2, '0')}`);
     const g = await factory.createGroup(names);
     const ids = names.map((name) => g.people[name]!.memberId);

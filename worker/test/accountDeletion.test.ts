@@ -371,7 +371,7 @@ describe('アカウント削除のデータ処理', () => {
   });
 });
 
-describe('アカウント削除のD1のクエリ数（Freeは1回の呼び出しにつき50まで）', () => {
+describe('アカウント削除のD1のクエリ数（batch の文を1つずつ数える。Freeは1回の呼び出しにつき50まで）', () => {
   let local: LocalDatabase;
   let db: D1Database;
   let env: Env;
@@ -415,7 +415,7 @@ describe('アカウント削除のD1のクエリ数（Freeは1回の呼び出し
       perGroup.map((n, index) => (n - 2) / [1, 2, 3, 5][index]!),
       [9, 9, 9, 9],
     );
-    // データ処理だけなら、Freeの上限（50）に収まるのは、グループ数が4つまで（6 + 2 + 9×4 = 44。5つで53）。Paid（1000）では、100グループ以上。
+    // データ処理だけなら、1文ずつ数えて、Freeの上限（50）に収まるのは、グループ数が4つまで（6 + 2 + 9×4 = 44。5つで53）。Paid（1000）では、100グループ以上。
     // POST /auth/delete 全体（認証・T の使用済み・やり直し・自分だけのグループ）は、もっと多い。test/deleteAccount.test.ts の「D1のクエリ数」。
     assert.ok(6 + perGroup[2]! <= 50);
     assert.ok(6 + perGroup[3]! > 50);

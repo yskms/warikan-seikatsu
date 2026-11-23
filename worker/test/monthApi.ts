@@ -130,8 +130,9 @@ export function interferingEnv(
 }
 
 /**
- * DBに作られた文の数（`prepare` の呼び出し。どの文も1回だけ実行するので、D1のクエリ数と同じ）と、`batch` ごとの
- * 文の数を、呼ばれた順に記録するDB。D1は batch の1文を1クエリと数え、Freeは1回の呼び出しにつき50まで。
+ * DBに作られた文の数（`prepare` の呼び出し。どの文も1回だけ実行するので、batch の1文も1クエリとして数えたD1のクエリ数と同じ）と、
+ * `batch` ごとの文の数を、呼ばれた順に記録するDB。公式は batch を1回と数えると書くが、本番のFreeで確かめるまでは、安全側に1文ずつ
+ * 数える（docs/backend-design.md 8章）。Freeは1回の呼び出しにつき50まで。
  * 月締めは、状態の読み込み・書き込み・締め結果の読み込みの順に batch が3回。
  */
 export function countingEnv(env: Env): { env: Env; counts: { queries: number; batchSizes: number[] } } {

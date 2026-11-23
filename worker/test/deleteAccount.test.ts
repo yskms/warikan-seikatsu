@@ -315,8 +315,9 @@ describe('POST /auth/delete', () => {
       assert.equal(await groupExists(b.groupId), true);
     });
 
-    // ローカルD1は、クエリ数の上限を課さない。Freeの本番では、1グループでも2回の競合で上限（50）を超えるので、この503の手前で、
-    // 未処理の例外（500）になる（下の「D1のクエリ数」）。ここで見るのは、Paid（上限1000）で起きる経路。
+    // ローカルD1は、クエリ数の上限を課さない。batch の文を1つずつ数える見積もりでは、Freeの本番で、1グループでも2回の競合で上限（50）を
+    // 超え、この503の手前で、未処理の例外（500）になる（下の「D1のクエリ数」）。公式のとおり batch を1回と数えるなら、3回の競合でも
+    // 約25で、この503に届く。ここで見るのは、その経路（応答の形と、何も消えないこと）。
     it('他の書き込みと競合し続けたら 503。何も消さず、セッションも有効なまま。T は使い切りなので、再認証からやり直せば消える', async () => {
       const { me, a, b, myMemberInA } = await setup();
       const bump = () => db.prepare('UPDATE expense_groups SET data_version = data_version + 1 WHERE id = ?').bind(a.groupId).run();
@@ -354,11 +355,12 @@ describe('POST /auth/delete', () => {
     });
   });
 
-  // POST /auth/delete 全体のD1のクエリ数。Freeは1回の呼び出しにつき50まで（docs/backend-design.md 12章）。`accountDeletion.test.ts` は
+  // POST /auth/delete 全体のD1のクエリ数。batch の文を1つずつ数えた、安全側の数（公式は batch を1回と数えると書く。docs/backend-design.md 8章の
+  // 「D1のクエリ数の数え方」）。Freeは1回の呼び出しにつき50まで（12章）。`accountDeletion.test.ts` は
   // データ処理だけを数える。ここは、その前の認証（セッションの検索と、24時間以上前なら更新の2文）と、T を使用済みにする2文も含め、
   // やり直しの試行も含めて数える。ローカルD1は上限を課さないので、上限を超える数も、そのまま測れる。
-  // D1のFreeの上限に当たると、`batch` が例外を投げ、`POST /auth/delete` は未処理の例外（500）になる。何も消えない。
-  describe('D1のクエリ数（Freeは1回の呼び出しにつき50まで）', () => {
+  // この数え方で上限に当たると、`batch` が例外を投げ、`POST /auth/delete` は未処理の例外（500）になる。何も消えない。
+  describe('D1のクエリ数（batch の文を1つずつ数える。Freeは1回の呼び出しにつき50まで）', () => {
     const FREE_LIMIT = 50;
     const HOURS = 60 * 60 * 1000;
     let sequence = 0;
@@ -423,7 +425,7 @@ describe('POST /auth/delete', () => {
     }
     const queriesOf = async (shape: Shape) => (await measure(shape)).queries;
 
-    it('残る人がいるグループ: 基本の11 + グループごとに9。Freeに収まるのは4グループまで（セッションが古いと49）', async () => {
+    it('残る人がいるグループ: 基本の11 + グループごとに9。1文ずつ数えて、Freeに収まるのは4グループまで（セッションが古いと49）', async () => {
       // 11 = セッションの検索1 + T の使用済み2 + データ処理の読み込み6 + バージョンの更新1 + users の削除1。
       const counts: number[] = [];
       for (const shared of [1, 2, 3, 4, 5]) counts.push(await queriesOf({ shared }));
@@ -434,14 +436,14 @@ describe('POST /auth/delete', () => {
       assert.ok(47 <= FREE_LIMIT && 49 <= FREE_LIMIT && 56 > FREE_LIMIT);
     });
 
-    it('自分だけのグループ（グループごと消す）は、1つにつき15。3つでFreeを超える', async () => {
+    it('自分だけのグループ（グループごと消す）は、1つにつき15。3つで、1文ずつ数えるとFreeを超える', async () => {
       const counts: number[] = [];
       for (const solo of [1, 2, 3]) counts.push(await queriesOf({ solo }));
       assert.deepEqual(counts, [26, 41, 56]);
       assert.ok(counts[1]! <= FREE_LIMIT && counts[2]! > FREE_LIMIT);
     });
 
-    it('翌月より先に割合の行がある月は、グループごと・月ごとに4つ増える。3グループでも、セッションが古いと50を超える', async () => {
+    it('翌月より先に割合の行がある月は、グループごと・月ごとに4つ増える。3グループでも、セッションが古いと、1文ずつ数えて50を超える', async () => {
       assert.equal(await queriesOf({ shared: 3, farMonths: 1 }), 50);
       assert.equal(await queriesOf({ shared: 3, farMonths: 1, idleHours: 25 }), 52);
       assert.equal(await queriesOf({ shared: 3, farMonths: 2 }), 62);
@@ -454,7 +456,7 @@ describe('POST /auth/delete', () => {
       assert.deepEqual(counts, [40, 42, 44]);
     });
 
-    it('競合してやり直すたびに、読み込み6 + 書き込みの全体が加わる。1グループでも、2回の競合でFreeを超える', async () => {
+    it('競合してやり直すたびに、読み込み6 + 書き込みの全体が加わる。1グループでも、2回の競合で、1文ずつ数えるとFreeを超える', async () => {
       const results = [];
       for (const conflicts of [0, 1, 2, 3]) results.push(await measure({ shared: 1, conflicts }));
       // 3回目の競合までに、すべての試行を使い切ると 503（Paidの上限では、起きる経路）。

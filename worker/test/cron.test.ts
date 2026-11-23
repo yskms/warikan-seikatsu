@@ -216,7 +216,7 @@ describe('定期処理: 1回の実行のD1のクエリ数の予算', () => {
     return g.groupId;
   };
 
-  it(`1回の実行は、D1のクエリ数の予算（${QUERY_BUDGET_PER_RUN}。Freeの上限）に収まる。数えた数と、報告する数が一致する。残りは次の回が引き受ける`, async () => {
+  it(`1回の実行は、D1のクエリ数の予算（${QUERY_BUDGET_PER_RUN}。Freeの上限。batch の文を1つずつ数える）に収まる。数えた数と、報告する数が一致する。残りは次の回が引き受ける`, async () => {
     const groupIds: string[] = [];
     for (let i = 0; i < 8; i++) groupIds.push(await dueGroup());
 

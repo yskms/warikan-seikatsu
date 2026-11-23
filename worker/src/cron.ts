@@ -10,11 +10,12 @@ import { monthIn } from './months.ts';
 import { registerDueRecurring, type RecurringRunSummary } from './recurringRun.ts';
 
 /**
- * 1回の実行で使うD1のクエリ数の予算。D1は batch の1文も1クエリと数え、Freeは1回の呼び出しにつき50まで
- * （Paidは1000）。グループを1つ確定させるごとに約15クエリ使う（読み込み5〜6、書き込み約10。`worker/test/cron.test.ts`
- * で数えている）ので、Freeでは、1回に2グループほど。残りは次の回が引き受ける（APIは、脱退月が終わったメンバーを
+ * 1回の実行で使うD1のクエリ数の予算。Freeは1回の呼び出しにつき50まで（Paidは1000）。公式（D1 Limits）は batch を1回と
+ * 数えると書くが、本番のFreeで確かめるまでは、batch の1文も1クエリとして数える（安全側。実際の消費は、これより少ない。
+ * docs/backend-design.md 8章の「D1のクエリ数の数え方」）。グループを1つ確定させるごとに、この数え方で約15クエリ使う
+ * （読み込み5〜6、書き込み約10。`worker/test/cron.test.ts` で数えている）ので、Freeでは、1回に2グループほど。残りは次の回が引き受ける（APIは、脱退月が終わったメンバーを
  * 確定したものとして扱う。access.ts の `isLeaveEffective`）ので、遅れても、利用者の見える挙動は変わらない。
- * **公開時にPaidへ移すときに、1000に近い値へ上げる。**
+ * **Paidへ移すときは、1000に近い値へ上げる。確かめたあとに batch を1回と数える形へ直すときは、`queries`（読み込みと、書き込みの文の数）の数え方を直す。予算の仕組みは残す（batch の外の読み込みは、1回ずつ数える）。**
  */
 export const QUERY_BUDGET_PER_RUN = 50;
 

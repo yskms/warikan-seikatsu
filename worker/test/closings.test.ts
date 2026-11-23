@@ -751,7 +751,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
       });
     });
 
-    describe('D1のクエリ数（Freeは1回の呼び出しにつき50まで）', () => {
+    describe('D1のクエリ数（batch の文を1つずつ数える。Freeは1回の呼び出しにつき50まで）', () => {
       // 行ごとのINSERTに戻すと、費目13・メンバー3の月締めで、書き込みだけで100文近くになる。
       it('行数が多い月締めでも、複数行を1文にまとめているので、文の数が少ない', async () => {
         const g = await setup(['alice', 'bob', 'carol']);
@@ -778,7 +778,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
         const [stateReads, writes, viewReads] = counting.counts.batchSizes;
         assert.deepEqual([stateReads, viewReads], [10, 5]);
         assert.equal(writes, 12);
-        // 認証・バージョン・権限の読み込みを含めて、Freeの上限（50）に十分収まる。
+        // 認証・バージョン・権限の読み込みを含めて、1文ずつ数えても、Freeの上限（50）に十分収まる。
         assert.ok(counting.counts.queries <= 35, `クエリ数 ${counting.counts.queries}`);
       });
     });
@@ -853,14 +853,14 @@ describe('月次集計・月締め・締め結果のAPI', () => {
         return counting.counts;
       };
 
-      it('引き継ぐ月の月締め（よくある月）: 実測47。Freeの上限(50)にぎりぎり収まる', async () => {
+      it('引き継ぐ月の月締め（よくある月）: 実測47。1文ずつ数えて、Freeの上限(50)にぎりぎり収まる', async () => {
         const counts = await closeFullGroup({ inherit: true, leaver: false });
         // 状態の読み込み10 + 書き込み29（バージョン1・設定2・割合10・締め1・集計1・負担12・送金1・脱退1）+ 結果の読み込み5。
         assert.deepEqual(counts.batchSizes, [10, 29, 5]);
         assert.ok(counts.queries <= 50, `クエリ数 ${counts.queries}`);
       });
 
-      it('引き継ぐ月で、脱退の確定を含む月締め: 実測65。Freeの上限(50)を超える(公開前にPaidへ移す前提。docs 9章)', async () => {
+      it('引き継ぐ月で、脱退の確定を含む月締め: 実測65。1文ずつ数えると、Freeの上限(50)を超える(その数え方ではPaid前提。公式の数え方なら収まる。docs 8章・9章)', async () => {
         const counts = await closeFullGroup({ inherit: true, leaver: true });
         assert.deepEqual(counts.batchSizes, [10, 45, 5]);
         assert.ok(counts.queries > 50 && counts.queries <= 70, `クエリ数 ${counts.queries}`);
