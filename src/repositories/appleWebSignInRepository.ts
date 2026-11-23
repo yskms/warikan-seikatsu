@@ -109,6 +109,8 @@ export function parseReturnUrl(url: string): ReturnParams | null {
  * 「画面が見つかりません」へ遷移するので、**起動中は `null`（遷移しない）**、**起動時のURLなら `'/'`**（ルートから始める）を返す。
  * 起動時に `null` を返してはいけない: expo-router は、ディープリンクが無い起動を、ルートのURLに直して先頭の画面から
  * 始めるが、`null` はその処理を飛ばし、Stack の既定の先頭が開く（Singfolioで、Android で確認）。ほかのURLは、そのまま渡す。
+ * 起動時の戻りのURL（Custom Tab を開いているあいだに、アプリのプロセスが終わったとき）は、`Linking` の `url` イベントでは
+ * 届かないので、認可コードは受け取られない。`T`・`V` もメモリにしか無いので、拾わず、ログインをやり直してもらう。
  */
 export function redirectSystemPath(path: string, initial: boolean): string | null {
   if (parseReturnUrl(path) === null) return path;
@@ -132,7 +134,10 @@ export interface AuthCodeProviderLike {
 // 前面に戻ってから、戻りのURLを待つ時間。戻りのURLでアプリが開くときは、前面への復帰とURLの到着の順番が
 // 決まっていない（どちらが先でもよい）。この間にURLが来なければ、利用者がブラウザを閉じたと見る。
 const FOREGROUND_GRACE_MS = 1500;
-// 全体の上限。Workerの `T` の期限（5分）と同じ。過ぎたら、受け取りをやめる（`T` は、もう期限切れ）。
+// 全体の上限。Workerの `T` の期限（5分）に合わせた値。`T` は待ち始める前に発行するので、`T` のほうが少し先に切れる
+// （そのあとに戻りのURLが来ても、ログインは401になる）。過ぎたら、受け取りをやめる。
+// Singfolioは、これと別に、サインインの層（`account`）も同じ5分の上限を持つ（層は、結果を待たずに捨てる）。
+// 層を作るときに、同じ上限を持たせる（docs/backend-design.md 12章の「認証の残り」）。
 const WAIT_LIMIT_MS = 5 * 60_000;
 
 export function createAppleWebSignInRepository(

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import { AuthError } from './authError.ts';
 import {
   APP_RETURN_URL,
   APPLE_CALLBACK_URL,
@@ -19,11 +20,10 @@ import {
   type AppleWebConfig,
   type AuthBrowser,
 } from './appleWebSignInRepository.ts';
-import { AuthError } from './authError.ts';
 
 const HASHED = 'H'.repeat(43);
 
-// 実際の値に置き換えたあとの形（置き換え前は、モジュールの定数が仮の値なので、設定を渡して試す）。
+// 実際の値に置き換えたあとの形。モジュールの定数が仮の値のあいだも、置き換えたあとも、同じ結果になるよう、設定を渡して試す。
 const CONFIG: AppleWebConfig = {
   servicesId: 'com.yskms.warikanseikatsu.web',
   callbackUrl: 'https://example.com/auth/apple/callback',
@@ -97,12 +97,10 @@ describe('設定の値', () => {
     assert.equal(new URL(APP_RETURN_URL).protocol, `${appJson.expo.scheme}:`);
   });
 
-  it('Services ID・Return URL は、実際の値に置き換えるまで、仮の値（置き換え忘れを見つける印を含む）', () => {
-    // 置き換えたら、このテストは通らなくなる。そのときは、仮の値の前提（このテストと、下の「仮の値のまま」）を
-    // 実際の値の確認（Workerの vars との一致。worker/test/config.test.ts）に直す。
-    assert.equal(APPLE_SERVICES_ID.includes(PLACEHOLDER_MARKER), true);
-    assert.equal(APPLE_CALLBACK_URL.includes(PLACEHOLDER_MARKER), true);
-    assert.equal(isAppleWebConfigured(), false);
+  it('Services ID・Return URL: 仮の値のあいだは未設定、実際の値に置き換えたら設定済みとして扱う', () => {
+    // 置き換えの手順は docs/backend-design.md 12章の③。値の形と、Workerの vars との一致は worker/test/config.test.ts が見る。
+    const placeholder = APPLE_SERVICES_ID.includes(PLACEHOLDER_MARKER) || APPLE_CALLBACK_URL.includes(PLACEHOLDER_MARKER);
+    assert.equal(isAppleWebConfigured(), !placeholder);
   });
 
   it('isAppleWebConfigured: どちらか一方でも仮の値なら偽', () => {
@@ -176,7 +174,13 @@ describe('getAuthorizationCode', () => {
 
   it('仮の値のまま（Services ID・Return URL を作る前）: ブラウザを開かず、受け取りも始めず、provider-unavailable', async () => {
     const fake = fakeBrowser();
-    const failure = await failureCode(createAppleWebSignInRepository(fake.browser).getAuthorizationCode(HASHED));
+    const placeholderConfig: AppleWebConfig = {
+      servicesId: `0-${PLACEHOLDER_MARKER}`,
+      callbackUrl: `https://${PLACEHOLDER_MARKER}.invalid/auth/apple/callback`,
+    };
+    const failure = await failureCode(
+      createAppleWebSignInRepository(fake.browser, { config: placeholderConfig }).getAuthorizationCode(HASHED),
+    );
     assert.equal(failure.code, 'provider-unavailable');
     assert.deepEqual(fake.opened, []);
     assert.equal(fake.listenerCount(), 0);
@@ -261,7 +265,7 @@ describe('getAuthorizationCode', () => {
   it('認可コード・state を、エラーの message に載せない', async () => {
     const fake = fakeBrowser();
     const promise = createAppleWebSignInRepository(fake.browser, { config: CONFIG }).getAuthorizationCode(HASHED);
-    fake.emitUrl(`${APP_RETURN_URL}?error=access_denied&state=${HASHED}`);
+    fake.emitUrl(`${APP_RETURN_URL}?error=access_denied_${'x'}&state=${HASHED}`);
     const failure = await failureCode(promise);
     assert.equal(failure.message.includes(HASHED), false);
   });
