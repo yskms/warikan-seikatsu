@@ -20,7 +20,7 @@
 - **アプリとWorkerでコードを共有しない。** リクエスト・レスポンスの形は docs を正として、両側に書く。負担・精算の計算はWorkerだけが持ち、アプリには `summary` API の結果を表示させる（ホームの精算見込みも同じ）。
 - 認証はSingfolio（`~/Developer/singfolio/worker`）からのコピー。コピー元のコミットをコードコメントに書き、Singfolio側の修正は手で取り込む（docs/backend-design.md 1章）。コピーしたファイル（`worker/src/` の `nonce.ts`・`idToken.ts`・`identity.ts`・`login.ts`・`auth.ts`・`session.ts`・`deleteAccount.ts`・`appleToken.ts`・`appleClientSecret.ts`・`appleWeb.ts`・`appleNotification.ts` など）は、構造・名前を保つ（整理・分割をしない。差分を取り込めなくなる）。このアプリで変えたところは、各ファイルの先頭のコメントに書いてある。
 - **AndroidのAppleログインのアプリ側。** `app/+native-intent.tsx` は外さない（戻りのURL `warikan-seikatsu://auth/apple?...` を expo-router に渡すと「画面が見つかりません」へ遷移する。起動時のURLには `null` ではなく `'/'` を返す: `null` だと、ルートから始める処理が飛ぶ）。`platform/authBrowser.ts` の `openBrowserAsync` のオプション（`createTask`・`useProxyActivity`・`showInRecents`）は、既定と同じ値を明示して固定している。外さない（旧来の経路は、アプリの外へ移ると Custom Tab を破棄し、SMSの確認コードを別のアプリで開く経路が壊れる）。`openAuthSessionAsync` は使わない。
-- **`expo-font` は、コードで使っていないが、直接の依存として `~57.0.x` に固定している。外さない。** 外すと、`@expo/vector-icons` 経由でSDK 58用の版がhoistされ、Androidのネイティブビルドが Gradle の設定段階（autolinking の `publication` に `version` が無い）で失敗する。
+- **`expo-font` は、コードで使っていないが、SDKに合った版で直接の依存に固定している。外さない。** 外すと、`@expo/vector-icons` のpeer（`expo-font >=14.0.4`）の指定から、SDK 58用の版がhoistされ、Androidのネイティブビルドが Gradle の設定段階（autolinking の `publication` に `version` が無い）で失敗する。SDKを上げるときは、`npx expo install --fix` で一緒に上げる。
 
 ## 設計上の注意（docs に詳細）
 
