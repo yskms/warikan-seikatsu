@@ -4,8 +4,10 @@
 //
 // **この状態は、端末のセッションとは別に持っている。** セッションが無くなったとき（401・ログアウト・アカウントの削除）に
 // ずれないよう、`platform/accountService.ts` が `accountService`・`sessionAccess` を包み、`onSessionLost` で通知する
-// （`src/services/sessionLost.ts`）。ここで受けて、ログイン画面へ戻す。**画面・APIを呼ぶ層は、状態を直接変えない**
-// （個別に呼ぶと漏れる）。認証が要るAPIは、必ず `sessionAccess.withSession` を通すこと。
+// （`src/services/sessionLost.ts`）。ここで受けて、ログイン画面へ戻す。**ログアウト側（セッションが無くなったこと）は、
+// 画面・APIを呼ぶ層から状態を直接変えない**（個別に呼ぶと漏れる）。認証が要るAPIは、必ず `sessionAccess.withSession` を
+// 通すこと。**ログイン済みにする側は別**: ログイン画面が、`signIn` の成功（と `already-signed-in`）で `markSignedIn` を呼ぶ。
+// ログインの成否は、その場で分かるので、通知に寄せない（`markSignedIn` を外さない）。
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
