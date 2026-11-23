@@ -11,7 +11,7 @@
 - アプリ名は「わりかん生活」（旧名「同棲折半」）。識別子（`slug`・`scheme`・Workerの名前・D1のデータベース名・npmのパッケージ名・GitHubのリポジトリ名・フォルダ名）は、そのローマ字の `warikan-seikatsu`。bundle ID・`package` は `com.yskms.warikanseikatsu` で、公開後は変えられない（`src/appConfig.test.ts`）。
 - リポジトリのルートがExpoアプリ（Expo Router）。`app/` は画面（ルート）のディレクトリで、アプリ全体のフォルダではない。
 - `worker/` は、Cloudflare Workers + D1 のバックエンド。自前の `package.json`・ロックファイル・tsconfigを持つ独立したパッケージ。
-- `src/` はNodeのテスト（`npm test`）から直接実行するため、画面（RN・Expoのimport）を置かない。
+- `src/` はNodeのテスト（`npm test`）から直接実行するため、画面（RN・Expoのimport）を置かない。RN・Expoに触れる接続（ブラウザ・Linking・AppStateなど）は `platform/` に置き、`src/` のRepositoryにはインターフェースを渡して注入する。
 
 ## 変えてはいけないもの（Singfolioと同じ理由）
 
@@ -19,6 +19,7 @@
 - **ルートの `tsconfig.json` は `worker/` を除外したまま。** Workerは独自のtsconfig（workerdの型）で型チェックする。
 - **アプリとWorkerでコードを共有しない。** リクエスト・レスポンスの形は docs を正として、両側に書く。負担・精算の計算はWorkerだけが持ち、アプリには `summary` API の結果を表示させる（ホームの精算見込みも同じ）。
 - 認証はSingfolio（`~/Developer/singfolio/worker`）からのコピー。コピー元のコミットをコードコメントに書き、Singfolio側の修正は手で取り込む（docs/backend-design.md 1章）。コピーしたファイル（`worker/src/` の `nonce.ts`・`idToken.ts`・`identity.ts`・`login.ts`・`auth.ts`・`session.ts`・`deleteAccount.ts`・`appleToken.ts`・`appleClientSecret.ts`・`appleWeb.ts`・`appleNotification.ts` など）は、構造・名前を保つ（整理・分割をしない。差分を取り込めなくなる）。このアプリで変えたところは、各ファイルの先頭のコメントに書いてある。
+- **AndroidのAppleログインのアプリ側（Singfolioと同じ理由）。** `app/+native-intent.tsx` は外さない（戻りのURL `warikan-seikatsu://auth/apple?...` を expo-router に渡すと「画面が見つかりません」へ遷移する。起動時のURLには `null` ではなく `'/'` を返す: `null` だと、ルートから始める処理が飛ぶ）。`platform/authBrowser.ts` の `openBrowserAsync` のオプション（`createTask`・`useProxyActivity`・`showInRecents`）は、既定と同じ値を明示して固定している。外さない（旧来の経路は、アプリの外へ移ると Custom Tab を破棄し、SMSの確認コードを別のアプリで開く経路が壊れる）。`openAuthSessionAsync` は使わない。Services ID・Return URL は、アプリ（`src/repositories/appleWebSignInRepository.ts`）とWorker（`wrangler.jsonc`）に同じ値を持つ。片方だけ置き換えない（`worker/test/config.test.ts` が落ちる）。
 
 ## 設計上の注意（docs に詳細）
 
