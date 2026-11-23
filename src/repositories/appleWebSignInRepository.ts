@@ -6,9 +6,10 @@
 //
 // このアプリで変えたところ:
 // - Services ID・Return URL・戻り先のURLスキームの値（Workerの `wrangler.jsonc` の `vars` と、`worker/src/appleWeb.ts` と同じ。
-//   `worker/test/config.test.ts` が、一致を固定している）。Services ID と Return URL は、Apple Developerで作る・本番のドメインが
-//   決まるまで、仮の値（`not-created-yet` を含む）にしてある。仮の値のあいだは、ブラウザを開かず `provider-unavailable` で
-//   断る（Appleの「無効なクライアント」の画面を出して、利用者が閉じた（`cancelled`）ように見せないため）。
+//   `worker/test/config.test.ts` が、一致を固定している）。Services ID と Return URL は、まだ作っていない（Apple Developerでの
+//   作成と、本番のドメインの決定が先）ので、仮の値（`not-created-yet` を含む）にしてある。仮の値のあいだは、ブラウザを開かず
+//   `provider-unavailable` で断る（Appleの「無効なクライアント」の画面を出して、利用者が閉じた（`cancelled`）ように
+//   見せないため）。
 // - 認可のURLの組み立てと、断る判定が、設定（`AppleWebConfig`）を受け取れる（Nodeのテストが、設定済みの状態を作れるように）。
 //
 // ブラウザ（expo-web-browser）・URLの受け取り（Linking）・前面への復帰（AppState）は注入する（`platform/authBrowser.ts`）。
