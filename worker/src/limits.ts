@@ -27,7 +27,7 @@ export const MAX_MEMBERS_PER_GROUP = 5;
  * 1つのグループが持てる費目の数（アーカイブ済みを含む）。仮の値。月締めの書き込みは費目の数に応じて増える
  * （docs/backend-design.md 9章。費目30・メンバー6で、前の月の行を引き継ぐ月（よくある月）の月締めは実測47でFreeの上限（50）に
  * ぎりぎり収まるが、脱退の確定を含む月締めは65（締める月に行がある月でも53）で超える。この数は、batch の文を1つずつ数えた、安全側のもの
- * （公式のとおり batch を1回と数えるなら、収まる。docs/backend-design.md 8章の「D1のクエリ数の数え方」）。1文ずつ数える見積もりでは、公開前にPaidへ移す前提。
+ * （公式のとおり batch を1回と数えるなら、収まる。docs/backend-design.md 8章の「D1のクエリ数の数え方」）。1文ずつ数える見積もりでは、Freeに収まらない（Paidへ移すかは未決。docs/backend-design.md 12章）。
  * 上限やメンバー数を増やすときは、worker/test/closings.test.ts の「費目の上限(30)・メンバー6人」を測り直す）。
  */
 export const MAX_CATEGORIES_PER_GROUP = 30;

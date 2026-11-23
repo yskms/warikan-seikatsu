@@ -860,7 +860,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
         assert.ok(counts.queries <= 50, `クエリ数 ${counts.queries}`);
       });
 
-      it('引き継ぐ月で、脱退の確定を含む月締め: 実測65。1文ずつ数えると、Freeの上限(50)を超える(その数え方ではPaid前提。公式の数え方なら収まる。docs 8章・9章)', async () => {
+      it('引き継ぐ月で、脱退の確定を含む月締め: 実測65。1文ずつ数えると、Freeの上限(50)を超える(公式の数え方なら収まる。Paidへ移すかは未決。docs 8章・9章・12章)', async () => {
         const counts = await closeFullGroup({ inherit: true, leaver: true });
         assert.deepEqual(counts.batchSizes, [10, 45, 5]);
         assert.ok(counts.queries > 50 && counts.queries <= 70, `クエリ数 ${counts.queries}`);
