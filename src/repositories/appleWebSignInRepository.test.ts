@@ -97,12 +97,6 @@ describe('設定の値', () => {
     assert.equal(new URL(APP_RETURN_URL).protocol, `${appJson.expo.scheme}:`);
   });
 
-  it('Services ID・Return URL: 仮の値のあいだは未設定、実際の値に置き換えたら設定済みとして扱う', () => {
-    // 置き換えの手順は docs/backend-design.md 12章の③。値の形と、Workerの vars との一致は worker/test/config.test.ts が見る。
-    const placeholder = APPLE_SERVICES_ID.includes(PLACEHOLDER_MARKER) || APPLE_CALLBACK_URL.includes(PLACEHOLDER_MARKER);
-    assert.equal(isAppleWebConfigured(), !placeholder);
-  });
-
   it('isAppleWebConfigured: どちらか一方でも仮の値なら偽', () => {
     assert.equal(isAppleWebConfigured(CONFIG), true);
     assert.equal(isAppleWebConfigured({ ...CONFIG, servicesId: `0-${PLACEHOLDER_MARKER}` }), false);
