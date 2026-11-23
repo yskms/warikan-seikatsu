@@ -4,14 +4,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { Group, GroupListItem } from '../domain/group.ts';
+import type { GroupListItem } from '../domain/group.ts';
 import { AuthError } from '../repositories/authError.ts';
 import type { CreateGroupRequest, GroupRepository } from '../repositories/groupRepository.ts';
 import type { SessionAccess } from './accountService.ts';
 import { createGroupService } from './groupService.ts';
 
 const item = { id: 'g1' } as GroupListItem;
-const group = { id: 'g1' } as Group;
+const created = { id: 'g1' };
 const request: CreateGroupRequest = {
   id: '3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b',
   name: 'ふたりの生活費',
@@ -29,7 +29,7 @@ function setup(options: { session?: string; failWith?: Error } = {}) {
     },
     async create(session: string, req: CreateGroupRequest) {
       log.push(`create:${session}:${req.id}`);
-      return group;
+      return created;
     },
   } as unknown as GroupRepository;
   const access: SessionAccess = {
@@ -51,7 +51,7 @@ describe('groupService', () => {
 
   it('createGroup は withSession を通して、id ごと Repository に渡す', async () => {
     const { service, log } = setup({ session: 'SESSION' });
-    assert.equal(await service.createGroup(request), group);
+    assert.deepEqual(await service.createGroup(request), created);
     assert.deepEqual(log, ['withSession', `create:SESSION:${request.id}`]);
   });
 

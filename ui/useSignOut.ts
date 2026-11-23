@@ -32,7 +32,7 @@ export function useSignOut() {
   /** 確認のダイアログを出して、了承されたらログアウトする。 */
   const confirmSignOut = useCallback(() => {
     if (running.current) return;
-    Alert.alert('ログアウトしますか？', 'もう一度ログインすれば、同じグループを開けます。', [
+    Alert.alert('ログアウトしますか？', 'もう一度ログインすれば、続きから使えます。', [
       { text: 'キャンセル', style: 'cancel' },
       { text: 'ログアウト', style: 'destructive', onPress: () => void run() },
     ]);

@@ -41,6 +41,7 @@ const member = {
   isMe: true,
 };
 
+// `POST /groups` の応答の `group`（実際の形。アプリが読むのは `id` だけ）
 const group = {
   id: 'g1',
   name: 'ふたりの生活費',
@@ -122,10 +123,10 @@ describe('create', () => {
     timezone: 'Asia/Tokyo',
   };
 
-  it('POST /groups に、id・name・displayName・currencyCode・timezone を送り、group を返す', async () => {
+  it('POST /groups に、id・name・displayName・currencyCode・timezone を送り、作ったグループの id を返す', async () => {
     const { fetchImpl, calls } = fakeFetch(() => reply(201, { group }));
     const created = await createGroupRepository(fetchImpl).create(SESSION, request);
-    assert.deepEqual(created, group);
+    assert.deepEqual(created, { id: 'g1' });
     assert.equal(calls[0].url, `${API_ORIGIN}/groups`);
     assert.equal(calls[0].init.method, 'POST');
     assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
@@ -135,27 +136,20 @@ describe('create', () => {
 
   it('同じ id の再送の200（保存済みのグループ）も、成功', async () => {
     const { fetchImpl } = fakeFetch(() => reply(200, { group }));
-    assert.deepEqual(await createGroupRepository(fetchImpl).create(SESSION, request), group);
+    assert.deepEqual(await createGroupRepository(fetchImpl).create(SESSION, request), { id: 'g1' });
   });
 
-  it('メンバーは、脱退済み・削除済みの状態も読める', async () => {
-    const { fetchImpl } = fakeFetch(() =>
-      reply(201, {
-        group: {
-          ...group,
-          members: [
-            member,
-            { ...member, id: 'm2', status: 'leaving', leaveRequestedMonth: '2026-11', isMe: false },
-            { ...member, id: 'm3', status: 'deleted', isMe: false },
-          ],
-        },
-      }),
-    );
-    const created = await createGroupRepository(fetchImpl).create(SESSION, request);
-    assert.deepEqual(
-      created.members.map((m) => m.status),
-      ['active', 'leaving', 'deleted'],
-    );
+  it('id 以外の項目が足りない・増えた・型が変わっても、成功（作成は済んでいる。形のずれで失敗に見せない）', async () => {
+    const groups = [
+      { id: 'g1' },
+      { ...group, members: undefined },
+      { ...group, members: [{ status: 'unknown-status', isMe: 'yes' }], newField: { nested: true } },
+      { ...group, canInvite: undefined, maxMembers: '5', createdAt: 1.5 },
+    ];
+    for (const g of groups) {
+      const { fetchImpl } = fakeFetch(() => reply(201, { group: g }));
+      assert.deepEqual(await createGroupRepository(fetchImpl).create(SESSION, request), { id: 'g1' });
+    }
   });
 
   it('400・409 は invalid-request（本文は読まない）', async () => {
@@ -165,15 +159,8 @@ describe('create', () => {
     }
   });
 
-  it('形の違う応答は invalid-response', async () => {
-    const bodies = [
-      {},
-      { group: null },
-      { group: { ...group, members: undefined } },
-      { group: { ...group, members: [{ ...member, isMe: 'yes' }] } },
-      { group: { ...group, canInvite: undefined } },
-      { group: { ...group, maxMembers: '5' } },
-    ];
+  it('group の id が読めない応答は invalid-response', async () => {
+    const bodies = [{}, null, { group: null }, { group: {} }, { group: { id: '' } }, { group: { id: 1 } }, { group: { id: 'has space' } }];
     for (const body of bodies) {
       const { fetchImpl } = fakeFetch(() => reply(201, body));
       await rejectsWith(createGroupRepository(fetchImpl).create(SESSION, request), 'invalid-response');

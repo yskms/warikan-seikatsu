@@ -46,39 +46,6 @@ export const MAX_DISPLAY_NAME_LENGTH = 20;
 /** グループ作成の、グループ名の初期値（docs/screens.md 2章） */
 export const DEFAULT_GROUP_NAME = 'ふたりの生活費';
 
-export interface GroupMember {
-  id: string;
-  displayName: string;
-  /** `MEMBER_COLORS` のキー。知らない値でも、画面は壊れないよう、文字列のまま持つ。 */
-  color: string;
-  status: MemberStatus;
-  historyFromMonth: string;
-  leaveRequestedMonth: string | null;
-  expenseEndMonth: string | null;
-  /** 操作している本人か */
-  isMe: boolean;
-}
-
-/** `GET /groups/:id` などが返すグループ。 */
-export interface Group {
-  id: string;
-  name: string;
-  currencyCode: string;
-  currencyMinorUnit: number;
-  timezone: string;
-  createdAt: number;
-  /** 操作している本人のメンバーのID */
-  memberId: string;
-  /** 通貨を変えられないか */
-  currencyLocked: boolean;
-  /** 人数の上限で数える人数 */
-  seatedMembers: number;
-  maxMembers: number;
-  /** いま招待を発行できるか */
-  canInvite: boolean;
-  members: GroupMember[];
-}
-
 /** `GET /groups` の1件。所属グループの一覧に出る（`active`・`leaving` のグループだけ）。 */
 export interface GroupListItem {
   id: string;

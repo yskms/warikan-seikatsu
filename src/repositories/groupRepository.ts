@@ -7,17 +7,20 @@
 // `sessionAccess.withSession` から受け取って渡す（画面・この層から、通知を直接呼ばない。CLAUDE.md）。
 //
 // 応答は、使う項目の型だけを確かめる。形の違う応答は `invalid-response`（画面が、壊れた値で動かないように）。
-import {
-  MEMBER_STATUSES,
-  type Group,
-  type GroupListItem,
-  type GroupMember,
-  type MemberStatus,
-} from '../domain/group.ts';
+import { MEMBER_STATUSES, type GroupListItem, type MemberStatus } from '../domain/group.ts';
 import { createApiClient, isOpaqueValue, isRecord, type ApiFetchLike } from './apiClient.ts';
 import { AuthError } from './authError.ts';
 
 export type GroupFetchLike = ApiFetchLike;
+
+/**
+ * 作成の結果。**`id` だけを検べる**: 書き込みの応答は、形が少しずれただけで失敗にすると、サーバーでは作成が済んでいるのに
+ * 画面が失敗と受け取る（同じ `id` で再送しても、同じ応答が返って、同じ失敗になる）。読み込み（`list`）は、形が合わなければ
+ * 失敗にする（何も変わらない）。グループの詳細（`GET /groups/:id`。メンバーなど）の応答は、ホームがそれを使うときに読む。
+ */
+export interface CreatedGroup {
+  id: string;
+}
 
 export interface CreateGroupRequest {
   /**
@@ -48,10 +51,6 @@ function int(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : invalid();
 }
 
-function bool(value: unknown): boolean {
-  return typeof value === 'boolean' ? value : invalid();
-}
-
 function nullableStr(value: unknown): string | null {
   return value === null ? null : str(value);
 }
@@ -62,39 +61,6 @@ function memberStatus(value: unknown): MemberStatus {
 
 function record(value: unknown): Record<string, unknown> {
   return isRecord(value) && !Array.isArray(value) ? value : invalid();
-}
-
-function parseMember(value: unknown): GroupMember {
-  const data = record(value);
-  return {
-    id: id(data.id),
-    displayName: str(data.displayName),
-    color: str(data.color),
-    status: memberStatus(data.status),
-    historyFromMonth: str(data.historyFromMonth),
-    leaveRequestedMonth: nullableStr(data.leaveRequestedMonth),
-    expenseEndMonth: nullableStr(data.expenseEndMonth),
-    isMe: bool(data.isMe),
-  };
-}
-
-export function parseGroup(value: unknown): Group {
-  const data = record(value);
-  if (!Array.isArray(data.members)) invalid();
-  return {
-    id: id(data.id),
-    name: str(data.name),
-    currencyCode: str(data.currencyCode),
-    currencyMinorUnit: int(data.currencyMinorUnit),
-    timezone: str(data.timezone),
-    createdAt: int(data.createdAt),
-    memberId: id(data.memberId),
-    currencyLocked: bool(data.currencyLocked),
-    seatedMembers: int(data.seatedMembers),
-    maxMembers: int(data.maxMembers),
-    canInvite: bool(data.canInvite),
-    members: data.members.map(parseMember),
-  };
 }
 
 function parseListItem(value: unknown): GroupListItem {
@@ -132,12 +98,12 @@ export function createGroupRepository(
 
     /**
      * `POST /groups`。グループと、自分のメンバー行、初期の費目を作る。201（新規）も、同じ `id` の再送の200
-     * （保存済みのグループ）も、成功として `group` を返す。
+     * （保存済みのグループ）も、成功。応答の `group` は、`id` だけを読む（`CreatedGroup`）。
      */
-    create(session: string, request: CreateGroupRequest): Promise<Group> {
+    create(session: string, request: CreateGroupRequest): Promise<CreatedGroup> {
       return client.request('POST', '/groups', { session, json: request }, async (response) => {
         const data = record(await response.json());
-        return parseGroup(data.group);
+        return { id: id(record(data.group).id) };
       });
     },
   };
