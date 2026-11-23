@@ -108,6 +108,18 @@ describe('wrangler.jsonc', () => {
     assert.equal(appConstant('PLACEHOLDER_MARKER'), PLACEHOLDER_MARKER);
   });
 
+  // このアプリで足したテスト。アプリがAPIを呼ぶ先（`API_ORIGIN`）と、Appleが戻す先（`APPLE_CALLBACK_URL`）は、同じWorkerの
+  // 同じドメイン（本番の入口は独自ドメイン1つ。上の `workers_dev`・`preview_urls`）。片方だけ置き換えると、ログインのAPIは
+  // 通るのに、Appleの戻りが届かない（または逆）。ドメインを分ける設計にするときは、このテストを直す。
+  it('アプリがAPIを呼ぶ先（src/repositories/apiClient.ts の API_ORIGIN）が、Appleの Return URL と同じドメイン', () => {
+    const source = readFileSync(path.join(workerDir, '..', 'src', 'repositories', 'apiClient.ts'), 'utf8');
+    const apiOrigin = /^export const API_ORIGIN = '([^']*)';$/m.exec(source)?.[1];
+    assert.ok(apiOrigin, 'API_ORIGIN が見つからない');
+    assert.equal(apiOrigin, new URL(String(vars.APPLE_CALLBACK_URL)).origin);
+    // 仮の値のあいだは、どちらも、デプロイの確認とアプリが見分ける印を含む。
+    assert.equal(apiOrigin.includes(PLACEHOLDER_MARKER), String(vars.APPLE_CALLBACK_URL).includes(PLACEHOLDER_MARKER));
+  });
+
   it('仮の値が vars に残ったままでは、デプロイできない（npm run deploy の前の確認）', () => {
     const pkg = JSON.parse(readFileSync(path.join(workerDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
