@@ -508,51 +508,61 @@ URLやHTTPメソッドは実装時に調整してよい。以下は責務の整�
 | `POST /auth/nonce` | nonceの発行 | 実装済み |
 | `POST /auth/login` | Apple（iOS）・Googleのログイン | 実装済み |
 | `POST /auth/logout` | ログアウト | 実装済み |
-| `GET /auth/apple/callback`、`POST /auth/apple/login` | AndroidでのAppleログイン（Web経由） | 未実装（12章） |
+| `GET /auth/apple/callback`、`POST /auth/apple/login` | AndroidでのAppleログイン（Web経由） | 実装済み（本物のAppleでの確認は未了。13章の9） |
 | `POST /auth/apple/notifications` | Appleのサーバー間通知 | 未実装（12章） |
-| `POST /auth/delete` | アカウント削除（再認証つき） | 実装済み（iOSのApple・Googleの再認証。AndroidのAppleは12章） |
+| `POST /auth/delete` | アカウント削除（再認証つき） | 実装済み（iOSのApple・AndroidのApple・Googleの再認証） |
 
 Webからのアカウント削除依頼（Google Play向け）の本人確認は未決（企画メモ16章）。Singfolioの、Web経由のAppleログインと同じ手順を使う案。
 
 #### 認証API（実装済み）
 
-実装は `worker/src/auth.ts`（入口）と `worker/src/login.ts`（ログインの処理）、`worker/src/deleteAccount.ts`（アカウントの削除の入口と、再認証の手順）。`nonce.ts`・`idToken.ts`・`identity.ts`・`session.ts`・`appleToken.ts`・`appleClientSecret.ts` とあわせて、Singfolioの同名のファイルのコピー（コピー元: singfolio 61e0a82）。このアプリで変えたところは、各ファイルの先頭のコメントに書いてある（`login.ts` と `deleteAccount.ts` はネイティブのサインイン・再認証だけ、`deleteAccount.ts` のデータを消す処理は `accountDeletion.ts` を呼ぶ、`audienceFor` の Services ID は省略可能、`/auth/logout-others` は持たない）。コピーしたファイルの構造は、Singfolioの差分を手で取り込めるよう保つ（整形・分割をしない）。
+実装は `worker/src/auth.ts`（入口）と `worker/src/login.ts`（ログインの処理）、`worker/src/appleWeb.ts`（AndroidのAppleログイン。コールバックとログイン）、`worker/src/deleteAccount.ts`（アカウントの削除の入口と、再認証の手順）。`nonce.ts`・`idToken.ts`・`identity.ts`・`session.ts`・`appleToken.ts`・`appleClientSecret.ts` とあわせて、Singfolioの同名のファイルのコピー（コピー元: singfolio 61e0a82）。このアプリで変えたところは、各ファイルの先頭のコメントに書いてある（`deleteAccount.ts` のデータを消す処理は `accountDeletion.ts` を呼ぶ、`appleWeb.ts` の戻り先のURLスキームと文言、AppleのReturn URL（`APPLE_CALLBACK_URL`）をコードの定数ではなく `wrangler.jsonc` の `vars` に置く、`/auth/logout-others` は持たない）。コピーしたファイルの構造は、Singfolioの差分を手で取り込めるよう保つ（整形・分割をしない）。
 
 | API | 本文 | 成功 |
 |---|---|---|
-| `POST /auth/nonce` | `{ "kind": "native" }`。`{ "kind": "web", "challenge": "<43字のbase64url>" }` も受け付ける（AndroidのAppleログイン用。それを足すまでは、その T を `/auth/login` に送っても必ず401） | 200 `{ nonce, expiresAt }`。有効は5分。D1に書かない（認証の要らない入口が書くと、Freeの書き込みの上限を使い切られる） |
+| `POST /auth/nonce` | `{ "kind": "native" }`。`{ "kind": "web", "challenge": "<43字のbase64url>" }` も受け付ける（AndroidのAppleログイン用。その T は `/auth/apple/login` だけが受け付け、`/auth/login` に送ると必ず401） | 200 `{ nonce, expiresAt }`。有効は5分。D1に書かない（認証の要らない入口が書くと、Freeの書き込みの上限を使い切られる） |
 | `POST /auth/login` | `{ "provider": "apple" \| "google", "idToken", "nonce" }`（`nonce` は直前に受け取った値） | 200 `{ session }` |
 | `POST /auth/logout` | なし。`Authorization: Bearer <session>` | 204（本文なし） |
+| `GET /auth/apple/callback` | クエリ `code`（または取りやめの `error`）と `state`。Appleが、Services IDのReturn URLへ戻すときのもの | 302。アプリのURLスキーム（`warikan-seikatsu://auth/apple`）へ、`code`・`state`・`error` を付けて戻す |
+| `POST /auth/apple/login` | `{ "code", "nonce", "verifier" }`（`nonce` は `web` の T、`verifier` は V。4KBまで） | 200 `{ session }` |
 | `POST /auth/delete` | 再認証の本文（下記）。`Authorization: Bearer <session>` | 200 `{ appleRevoked: true \| false \| null }` |
 
 - アプリの手順：`/auth/nonce` で `nonce`（以下 T）を得る → T の SHA-256 の base64url（43字）を、Apple / Googleのサインインの `nonce` に渡す → 得たIDトークンと T を `/auth/login` に送る → 返った `session` を端末のSecureStoreに置き、以降は `Authorization: Bearer <session>` で送る（URLに載せない。ログにも出さない）。
+- AndroidのAppleログイン（Web経由）の手順。AndroidにはAppleのネイティブのサインインが無いので、Appleの認可のWebのフロー（`appleid.apple.com/auth/authorize`）をブラウザ（Custom Tab）で開く。方式と理由の全体は、Singfolioの docs/singfolio-publishing-backend.md §8「AndroidのAppleログイン（Web経由）」。
+  - アプリは、乱数の検証用の値 V を作り、`C = SHA-256(V)` の base64url（43字）を `/auth/nonce` に `{ "kind": "web", "challenge": C }` で送って T（web）を得る。V と T は、アプリのメモリにだけ置く。
+  - 認可のURL：`client_id` に Services ID、`redirect_uri` に `APPLE_CALLBACK_URL`（Appleの設定のReturn URLと同じ）、`response_type=code`、`response_mode=query`、`state` と `nonce` に `SHA-256(T)`（同じ値）。名前・メールは要求しない（スコープなし）。
+  - Appleは、コールバック（`GET /auth/apple/callback`）へ `code` と `state` を付けて戻し、コールバックが、アプリのURLスキームへ302で戻す。**戻り先は Worker のコードに固定で持ち、リクエストのパラメータからは決めない**（オープンリダイレクトにしない）。`code`・`state`・`error` は形を確かめ、URLエンコードして渡す。何も保存せず、Appleを呼ばず、D1にも触れない。
+  - アプリは、戻ってきた `state` が `SHA-256(T)` と同じかを確かめてから、`code`・T・V を `/auth/apple/login` に送る（他のアプリが押し込んだ `code` を送らないため）。同じカスタムURLスキームを持つ別のアプリが `code` と `state` を横取りしても、T も V も無いので使えない（V は PKCE の代わり）。
+  - Workerの順序：T の署名・種別（`web`）・期限 → **`SHA-256(V)` が T の中の C と一致するか（Appleを呼ぶ前。通らなければ呼ばない）** → Appleの `/auth/token` で認可コードを交換（`client_id` は Services ID、`redirect_uri` は `APPLE_CALLBACK_URL`）→ IDトークンの検証（`aud` は Services ID、`nonce` は `SHA-256(T)`）→ T を使用済みに → `resolveIdentity` → セッションの発行。D1に書くのは、IDトークンの検証が通ったあとだけ。失敗の応答は `/auth/login` と同じ（400・401・503・405・413。理由は教えない）。
+  - 交換で得る `refresh_token`・`access_token` は、ログインでは、読まず、保存せず、ログにも出さない（アカウントの削除だけが、失効のためにメモリの中で使う）。Appleの `invalid_grant`（無効・期限切れ・使用済みのコード）は401、それ以外（通信の失敗・5xx・`invalid_client`・`invalid_request` など）は503。**設定の不備（`invalid_client`）は、本物のコードで試すまで分からない**（でたらめなコードには、設定が間違っていても常に `invalid_grant` が返る。Singfolioでの測定）。切り分けのため、失敗の分類だけを1行 `console.error` に出す（コード・トークン・Appleの応答の本文は出さない。Workers Logsは無効のままなので、`wrangler tail` で見る）。
+  - `/auth/apple/login` は、認証なしで、Appleの `/auth/token` を呼ばせられる（T は `/auth/nonce` から誰でも得られる）。**WAFのRate limiting rules（リポジトリの外。Cloudflareのダッシュボード）で、このパスに1ルールを置く**（Pathが `/auth/apple/login`、IPで数える、目安は5件/10秒、Block。Freeは1ルール）。デプロイのときに作る（利用者の作業。12章）。
+  - iOSの `sub` とAndroid（Services ID）の `sub` が、同じになるかは、本物のトークンで確かめる（Services IDを、このアプリのバンドルIDを primary App ID にして作れば、iOSのアプリと同じグループになり、資格情報は共有されるとAppleの資料にある。Singfolioのアプリとは、グループにしない）。違うと、AppleでのOSをまたぐ引き継ぎはできない（13章の9）。
 - アカウントは、初めてのログインで作られる（登録の操作は無い）。作られた直後はグループに入っていない（グループを作るか、招待で参加する）。同じ `sub` でも、AppleとGoogleは別のアカウントで、自動ではつなげない。保存するのは `sub` と手段（`apple` / `google`）だけで、メール・名前は受け取っても捨てる。
-- 受け付けるIDトークンの `aud` は、Appleが `APPLE_BUNDLE_ID`（`com.yskms.warikanseikatsu`）、Googleがサーバー用（Web）のクライアントID（`GOOGLE_WEB_CLIENT_ID`。iOSでもAndroidでも同じ）。どちらも `wrangler.jsonc` の `vars`。
+- 受け付けるIDトークンの `aud` は、T の種別に合う1つだけ。Apple（iOS。`native`）は `APPLE_BUNDLE_ID`（`com.yskms.warikanseikatsu`）、Apple（Android。`web`）は `APPLE_SERVICES_ID`（Services ID。予定の名前は `com.yskms.warikanseikatsu.web`）、Googleはサーバー用（Web）のクライアントID（`GOOGLE_WEB_CLIENT_ID`。iOSでもAndroidでも同じ）。もう一方の `aud` のトークンは拒否する。すべて `wrangler.jsonc` の `vars`。
 - T は使い切り。IDトークンの検証まで通ったあとに使用済みにする（失敗した T は、同じ T で正しいトークンなら通る）。リプレイは401。
 - セッションの期限は、最後に使ってから90日（目安）。24時間に1回だけ「最後に使った時刻」を書く（毎回書くと、認証済みのリクエストの数だけ書き込みを使う）。ログインごとに別の値を発行するので、端末ごとに持てる。
 - ログアウトは、そのセッションだけを消す。何度呼んでも、知らない値でも204（`Authorization` が無い・形が違うときだけ401）。他の端末のセッションは残る。
 - アカウントの削除（`POST /auth/delete`。データの規則は5章の「アカウント削除」）：
-  - 本文は、再認証。iOSのApple：`{ "provider": "apple", "nonce", "idToken", "authorizationCode"? }`。Google：`{ "provider": "google", "nonce", "idToken" }`。`nonce`（T）とIDトークンは、ログインと同じ手順で新しく得る（使い切り。ログイン時のものは使えない）。ユーザーIDは受け取らず、セッションから決める。本文は10KBまで。
+  - 本文は、再認証。iOSのApple：`{ "provider": "apple", "nonce", "idToken", "authorizationCode"? }`。AndroidのApple：`{ "provider": "apple", "nonce": "<T（web）>", "code", "verifier": "<V>" }`（ログインと同じフローで `code` を得る。T と V の結びつけも同じ）。Google：`{ "provider": "google", "nonce", "idToken" }`。`nonce`（T）とIDトークンは、ログインと同じ手順で新しく得る（使い切り。ログイン時のものは使えない）。ユーザーIDは受け取らず、セッションから決める。本文は10KBまで。
   - `provider` は、セッションを作ったログイン手段と同じでなければならない（違うと400。アプリの取り違え）。再認証のIDトークンの `sub` が、ログイン中のアカウントの `sub` と同じでなければ、消さない（別のAppleアカウント・Googleアカウントで再認証しても通さない）。
-  - 順序：セッションの認証 → T の検査 → IDトークンの検証 → `sub` の一致 → T を使用済みに → （iOSのApple：認可コードの交換）→ **データを消す**（`accountDeletion.ts`）→ Appleのトークンの失効。外部への待ちは、消す前に済ませる（消したあとに待つのは、失効の1回だけ）。アプリが先に打ち切っても、消す前なら何も消えず、やり直せる。
+  - 順序：セッションの認証 → T の検査 → （AndroidのApple：V の照合と、認可コードの交換でIDトークンを得る）→ IDトークンの検証 → `sub` の一致 → T を使用済みに → （iOSのApple：認可コードの交換）→ **データを消す**（`accountDeletion.ts`）→ Appleのトークンの失効。AndroidのAppleは、本人確認の交換で、失効に使うトークンも同じ応答から得る（コードは1回限りなので、交換は1回）。失効は、そのトークンを得たときの `client_id`（Services ID）で行う。外部への待ちは、消す前に済ませる（消したあとに待つのは、失効の1回だけ）。アプリが先に打ち切っても、消す前なら何も消えず、やり直せる。
   - Appleのトークンの失効は、**あとから、削除を止めずに**行う。`authorizationCode` が無い、交換・失効に失敗した、鍵の設定が不備、のいずれでも、アカウントは消え、`appleRevoked: false` を返す（アプリは、Appleの設定から連携を解除できると案内する）。Googleは失効するものが無く `null`。`refresh_token`・`access_token` はメモリの中で交換から失効へ渡して終わり、D1・ログ・応答には出さない。失効の失敗は、分類だけを1行ログに出す（コード・トークン・Appleの応答の本文は出さない）。
   - 鍵（`APPLE_PRIVATE_KEY`）が読めなくても、削除は止まらない。公開前に本物の鍵を置くことを、デプロイ前の確認で担保する（12章の「公開前に埋める認証の値」）。
   - D1のクエリ数は、batch の文を1つずつ数える安全側の見積もりでは、グループの数と構成によって、Freeの上限（50）に当たることがある（残る人がいるグループだけなら5グループ以上、自分だけのグループなら3つ以上。12章の最初の項目）。公式のとおり batch を1回と数えるなら、グループの数によらず約10回で、当たらない（8章の「D1のクエリ数の数え方」。本番のFreeでの確認は13章の9）。当たったときは、未処理の例外（500）になり、何も消えない。
   - アプリが守ること（delete）：**503 は、理由によらず、再認証（新しい T）からやり直す。** 公開鍵を取れなかったときの503は T を使い切っていないが、応答では区別しない（区別すると、コピー元との差分が増える）。**500 は、何も消えていないものとして扱い、セッションは捨てず、再認証からやり直す。** やり直しの結果が401なら、すでに消えている（または、セッションが失効した）ので、端末のセッションを捨てる。403 では捨てない。
-  - AndroidのAppleログイン（Web経由）の再認証（`code`・`verifier` を送る本文）は、まだ受け付けない（400）。そのログインを足すときに、同じ元から取り込む（12章）。
 - アプリ側が守ること（サーバーが前提にしている。守らないと、すべて401になる。本物のトークンで確かめるときに、最初に見る）：
   - Googleは、iOSでもAndroidでも、IDトークンの `aud` を**サーバー用（Web）のクライアントID**にする。iOSは、Google Sign-Inにサーバー用のクライアントIDを設定する（設定しないと `aud` がiOSのクライアントIDになる）。Singfolioの `plugins/withGoogleSignIn.js`（`GIDServerClientID`）が手本。
   - IDトークンの `nonce` は必須で、T の SHA-256 の base64url と一致しなければならない。GoogleもAppleも、`nonce` を渡せるサインインのAPIを使い、渡した値がそのままトークンに入ることを確かめる。変換しない。Singfolioの `src/repositories/googleSignInRepository.ts`・`appleSignInRepository.ts` が手本。
 
 | 状態 | `error` | 意味 |
 |---|---|---|
-| 400 | `invalid_request` | 本文の形が不正（`provider`・`idToken`・`nonce` の欠落や型、JSONでない。nonce：`kind` が `native`・`web` 以外、`native` に `challenge` が付いている、`web` で `challenge` が無い・形が違う。delete：`authorizationCode` の形が違う、Googleに `authorizationCode` が付いている、`code`・`verifier` が付いている、再認証の `provider` がセッションと違う） |
+| 400 | `invalid_request` | 本文の形が不正（`provider`・`idToken`・`nonce` の欠落や型、JSONでない。nonce：`kind` が `native`・`web` 以外、`native` に `challenge` が付いている、`web` で `challenge` が無い・形が違う。`/auth/apple/login`：`code`・`nonce`・`verifier` の欠落や形の違い（`code` は印字できるASCII 1〜1024字、`verifier` は43字のbase64url）。callback：`code` と `error` が両方ある・どちらも無い、`code`・`state`・`error` の形が違う。delete：`authorizationCode` の形が違う、Googleに `authorizationCode` が付いている、`idToken` と `code`・`verifier` が混在している、`code`・`verifier` の形が違う、再認証の `provider` がセッションと違う） |
 | 401 | `unauthorized` | ログイン：T・IDトークンの検証に通らない。どの検査で落ちたかは教えない。ログアウト：`Authorization` が無い・形が違う。delete：セッションが無い・期限切れ・失効済み（アプリは、このときだけ端末のセッションを捨てる） |
 | 403 | `reauth_failed` / `account_mismatch` | delete のみ。`reauth_failed`：再認証が通らない（T・IDトークンの不備、使用済みの T）。`account_mismatch`：再認証は通ったが、ログイン中のアカウントと別のアカウント。どちらも何も消さず、セッションも残る（アプリは、サインアウトさせない） |
-| 405 | `method_not_allowed` | POST 以外 |
-| 413 | `payload_too_large` | 本文が大きすぎる（nonce 1KB、login・delete 10KB） |
+| 405 | `method_not_allowed` | POST 以外（`/auth/apple/callback` は GET・HEAD 以外） |
+| 413 | `payload_too_large` | 本文が大きすぎる（nonce 1KB、`/auth/apple/login` 4KB、login・delete 10KB） |
 | 500 | なし（Workerの未処理の例外。本文は決めていない） | delete のみ。D1のクエリ数の上限（Free）など。何も消えていない。アプリの扱いは上の「アプリが守ること（delete）」 |
-| 503 | `service_unavailable` | Apple / Googleの公開鍵を取得できない（トークンの問題ではない。アプリがやり直せる）。delete：データの削除が、他の書き込みと競合し続けた（何も消えていない。T は使用済みなので、再認証からやり直す） |
+| 503 | `service_unavailable` | Apple / Googleの公開鍵を取得できない、またはAppleの認可コードの交換が使えない（5xx・通信の失敗・`invalid_client` など。`/auth/apple/login`・AndroidのAppleのdelete。どれもトークンの問題ではない。アプリがやり直せる）。delete：データの削除が、他の書き込みと競合し続けた（何も消えていない。T は使用済みなので、再認証からやり直す） |
 
 ### グループ・メンバー・招待
 
@@ -1086,14 +1096,14 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 - **固定費の自動登録の毎時の検索は、固定費の表を全部読む。** 止まっている・終了したものも含む（生成記録は主キーで引く）。固定費が1万件で、毎時1万行（月720万行）。D1の読み取り行数の課金（付録Aの冒頭）の上では小さいが、公開後の件数で確かめる。減らす案：終了した固定費を除く部分索引（`end_month` が過ぎたものは、更新の手間と引き換え）。
 - **1人が作れるグループの数の上限。** 決めていない。`POST /groups` は、1回で約20行を書き、上限が無いと、1人がグループを作り続けられる。案：Freeは3グループまでにして、Premium（docs/plan.md 10章。まだ反映していない）で解放する（製品の判断）。**アカウント削除のD1のクエリ数のためには、上限は要らない**（公式の数え方なら、グループ数によらず約10回。上の項目。1文ずつ数える場合は、自分だけのグループ3つで56になり、上限だけでは収まる保証にならず、解放した人の削除はPaidでないと失敗する）。上限を決めるときは、数えるのが「参加中のグループ」か「脱退済みを含む全部」か、解放の判定をサーバーがどう知るか（購読の確認はまだ無い）を決める。メンバー数の上限（5人。5章の「参加」）は決めた。
 
-- **認証の残り。** `/auth/nonce`・`/auth/login`・`/auth/logout` は実装した（9章の「認証API」）。まだ無いもの：
-  - AndroidのAppleログイン（Web経由。`/auth/apple/callback`・`/auth/apple/login`）。Singfolioの `appleWeb.ts` と、`login.ts` の `web` の経路を取り込む（`appleToken.ts`・`appleClientSecret.ts` は、アカウントの削除で取り込み済み）。`deleteAccount.ts` の `web` の再認証（`code`・`verifier` を送る本文。`V` の照合と、認可コードの交換でIDトークンを得る経路。`appleConfig` の `web`）も、同じときに取り込む。それまで、削除の本文に `code`・`verifier` が付いていれば400。Apple DeveloperでServices ID・Return URL・鍵を作る必要があり、`wrangler.jsonc` に `APPLE_SERVICES_ID`・`APPLE_TEAM_ID`・`APPLE_KEY_ID`、秘密情報に `APPLE_PRIVATE_KEY` を足す。足すまで、`/auth/nonce` の `web` の T は発行されても使い道がない（`audienceFor` が `web` を拒否する）。
+- **認証の残り。** `/auth/nonce`・`/auth/login`・`/auth/logout`・`/auth/delete`・AndroidのAppleログイン（`/auth/apple/callback`・`/auth/apple/login`）は実装した（9章の「認証API」）。まだ無いもの：
   - Appleのサーバー間通知（`/auth/apple/notifications`）。`createSession` の `consent_revoked_at` の条件と、`identities` の列は、先に入れてある。
   - 「ほかの端末をすべてログアウト」（Singfolioの `/auth/logout-others`、`revokeOtherSessions`）。画面が決まったら取り込む。
 - **ログインしただけのアカウントが残る（未使用のアカウントの扱い）。** 初めてのログインで `users` の行ができ、グループを作らず参加もしない人の行は、消えずに残る。`users.last_active_at` は、ログイン・ログアウト・セッションの更新で書いているが、読む処理が無い（Singfolioの `inactiveAccounts.ts`、最後に使ってから1年で消すCronに当たるものを、取り込んでいない）。`sub` しか持たないので、個人情報の面の実害は小さいが、行は増え続ける。決めること：（1）自動で消すか（消すなら、保持期間を、プライバシーポリシーとストアの申告に書く）。（2）Singfolioの `deleteInactiveUserStatement`（`users` の行を `DELETE` するだけ）を**そのまま取り込まない**。グループに入っている人の `users` を、匿名化せずに消すと、`group_members.user_id` が `NULL` になるだけで、名前が残る（5章の「匿名化は外部キーの `ON DELETE SET NULL` に任せない」に反する）。対象を「どのグループのメンバー行も持たない」アカウントに限るか、`deleteAccount` と同じ匿名化を通す。限る場合、グループに入った人は消えない。（3）消す文に条件を入れ直す（候補を選んだあとに使われたアカウントを消さない）、`last_active_at` が `NULL` の行を対象にしない、などのSingfolio側の注意は、取り込むときに引き継ぐ。
 - **公開前に埋める認証の値。** `wrangler.jsonc` の `APPLE_KEY_ID` も、仮の値のままにしてある（下記）。`GOOGLE_WEB_CLIENT_ID` は、Google Cloudでクライアントを作るまでの、実在しない値にしてある（Googleログインは、どのトークンも拒否される。`worker/test/config.test.ts` が、形を確かめる）。サーバー用（Web）のクライアントIDを作って置き換える（iOS・Androidのクライアントは、同じプロジェクトに作る。アプリが渡す値と同じにする）。仮の値のまま置き忘れると、Googleログインは、503ではなく401（トークンの不正と区別がつかない）になるので、`npm run deploy` の前に自動で走る確認（`worker/scripts/checkPlaceholders.ts`。`vars` に `not-created-yet` を含む値が残っていれば止める）を置いた。`wrangler deploy` を直接呼ぶと走らないので、デプロイは `npm run deploy` で行う。本番のWorkerには `wrangler secret put NONCE_HMAC_KEY` で32バイト以上の乱数を入れる（ローカルは `worker/.dev.vars`。見本は `.dev.vars.example`）。
   - アカウントの削除でAppleのトークンを失効させるために、Apple Developerで Sign in with Apple の鍵（.p8）を作り、その Key ID を `APPLE_KEY_ID` に置き換え、中身を `wrangler secret put APPLE_PRIVATE_KEY` で入れる。`APPLE_TEAM_ID` はSingfolioと同じ開発者アカウントの値を置いてある（アプリの署名の Team ID と同じか、確かめる）。**Singfolioの鍵は使い回さない。** このアプリのバンドルIDを primary App ID にした専用の鍵を、App ID をグループ化せずに作る（Sign in with Apple の鍵は primary App ID に結びつき、ほかのバンドルIDで使うには、App ID をグループにする必要があると理解している。グループにすると、2つのアプリは利用者から見て1つの連携になり、このアプリのアカウント削除の失効が、Singfolioの連携にも及ぶおそれがある。使い回せるかは確かめていない。確かめるより、専用の鍵のほうが安全）。`APPLE_PRIVATE_KEY` は `secrets.required` に入れてあるので、本番に無ければ `wrangler deploy` が止まり、ローカルの `wrangler dev` も `.dev.vars` に要る（見本の値のままでよい。鍵が読めなくても、削除は止まらず、`appleRevoked: false` になるだけ）。失効が効くかは、本物のiPhoneで、削除のあとに、Appleの設定の「Appleでサインイン」の一覧からこのアプリが消えること（`appleRevoked: true`）で確かめる。
   - アプリは、iOSのAppleの再認証で、サインインで得た `authorizationCode` を送る（送らなければ、削除はできるが、失効しない）。
+  - AndroidのAppleログイン（Web経由）に要る値：`APPLE_SERVICES_ID`・`APPLE_CALLBACK_URL`（どちらも仮の値のままだと `npm run deploy` が止まる）。手順は、①Apple Developerで、Services ID（予定の名前: `com.yskms.warikanseikatsu.web`。バンドルIDとは別の識別子）を作り、Sign in with Apple を有効にして、primary App ID にこのアプリのバンドルIDを選ぶ。②Services ID の設定に、本番のドメインと、Return URL（`APPLE_CALLBACK_URL`。本番の独自ドメインの `/auth/apple/callback`。HTTPS）を登録する。③`wrangler.jsonc` の2つの値を置き換える。本番のドメインは、まだ決めていない（`APPLE_CALLBACK_URL` をコードの定数にせず `vars` に置いたのは、そのため。決まったら定数に戻してもよい。Singfolioはそうしている）。鍵（`APPLE_KEY_ID`・`APPLE_PRIVATE_KEY`）は、上のiOSの失効と同じものを使う（Sign in with Apple の鍵は、primary App ID に結びつく。Services IDも同じ primary App ID なので、1つで足りる）。④Cloudflareのダッシュボードで、WAFのRate limiting rulesに、`/auth/apple/login` 用の1ルールを作る（9章の「認証API」）。リポジトリの外にあるので、デプロイのたびには作り直さない。
 
 （以前の確認事項は、固定費の月末日を7章、匿名化の範囲を5章、対応通貨を2章、割合を直せる月の範囲を9章の「費目・負担割合API」で決めた）
 
@@ -1108,7 +1118,7 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 5. 支出CRUD APIを実装する。（実装済み。仕様は9章の「支出API」。費目・メンバー・グループを作るAPIはまだ無いので、テストはSQLで用意している）
 6. 月締め・精算・繰越APIを実装する。（実装済み。仕様は9章の「月締め・精算API」。テストは SQL で準備した月・支出・費目の割合に対して行っている）
 7. 招待・参加・脱退・匿名化APIと、Cronの処理を実装する。（実装済み。仕様は9章の「招待・参加・脱退API」と5章・7章・8章。脱退の確定は `worker/src/membership.ts` に集め、月締め・脱退を選ぶ操作・月初のCronが同じ関数を使う。脱退済みへの遷移は `markLeftStatement`（`worker/src/closedMonth.ts`）で、5章の4の規則（繰越先の月が未締めの繰越は、未処理と同じに扱う）をここに持たせている。アカウント削除は、データ処理の `deleteAccount` と、再認証をつなぐ `POST /auth/delete`。9章の「認証API」）
-   - 7のあとに、グループ・費目・負担割合のAPIを実装した（仕様は9章の「グループAPI」「費目・負担割合API」）。そのあとに、固定費のAPIと固定費の自動登録のCronを実装した（仕様は9章の「固定費API」と7章。自動登録は `worker/src/recurringRun.ts`）。そのあとに、ホームの月ピッカー用の月の一覧API（`GET /groups/:id/months`。仕様は9章の「月締め・精算API」の「月の一覧」）を実装した。そのあとに、ログイン・ログアウトのAPI（`/auth/nonce`・`/auth/login`・`/auth/logout`。仕様は9章の「認証API」）を、Singfolioからコピーして実装した。そのあとに、アカウント削除のAPI（`POST /auth/delete`。iOSのApple・Googleの再認証と、Appleのトークンの失効）を、Singfolioからコピーして実装した。AndroidのAppleログインとAppleの通知は残っている（12章）。
+   - 7のあとに、グループ・費目・負担割合のAPIを実装した（仕様は9章の「グループAPI」「費目・負担割合API」）。そのあとに、固定費のAPIと固定費の自動登録のCronを実装した（仕様は9章の「固定費API」と7章。自動登録は `worker/src/recurringRun.ts`）。そのあとに、ホームの月ピッカー用の月の一覧API（`GET /groups/:id/months`。仕様は9章の「月締め・精算API」の「月の一覧」）を実装した。そのあとに、ログイン・ログアウトのAPI（`/auth/nonce`・`/auth/login`・`/auth/logout`。仕様は9章の「認証API」）を、Singfolioからコピーして実装した。そのあとに、アカウント削除のAPI（`POST /auth/delete`。iOSのApple・Googleの再認証と、Appleのトークンの失効）を、Singfolioからコピーして実装した。そのあとに、AndroidのAppleログイン（`/auth/apple/callback`・`/auth/apple/login`と、`/auth/delete` のAndroidのAppleの再認証）を、Singfolioからコピーして実装した。Appleの通知は残っている（12章）。
 8. 競合・権限・二重登録の統合テストを実施する。（実施済み。11章の必須テストを、既存のテストと1つずつ照らした。足りなかった「支出の二重送信」は、アプリが作る `id` を冪等キーにする仕様に決め（9章の「二重送信」）、`worker/test/expenses.test.ts` に検査を足した。通貨の小数桁数（USD 2・KWD 3）の検査は `worker/test/closings.test.ts`。APIをまたぐ流れ（招待 → 参加 → 支出と再送 → 月締め → 繰越 → 脱退の確定 → 精算 → 脱退済み → Cron）は `worker/test/scenario.test.ts` で、実際のAPIの呼び出しだけでつなぐ。11章のうち未実施なのは、割合を直すAPI経由の検査。固定費は、固定費のAPIとCronを実装したときに実施した（`worker/test/recurring.test.ts`・`recurringRun.test.ts`）。並行して走るリクエストでの性質は、ローカルD1では確かめられないので、9のとおり本番D1で確認する）
 9. Workers FreeでCPU時間・D1クエリ数を確認し、公開前にPaidへ移行するか判断する。あわせて、本番D1で次を確認する（ローカルD1では確かめられないもの）。
    - **書き込み行数の一致：** 本番D1で、書き込み1操作（例：支出の登録は書4）の `meta.rows_written` が、ローカルの実測（12章。`worker/test/rowsWritten.test.ts`）と一致すること。ずれたら、日次の上限の見積もりを直す。
@@ -1123,6 +1133,7 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
    - 複数グループの書き込み（`writeToGroups`。全グループを上げる1文のUPDATEと、`json_each` の束縛）が、本番D1でも通ること。
    - 月初のCronの部分索引（`idx_group_members_leave_requested`）が、本番D1でも効くこと（`EXPLAIN QUERY PLAN`）。
    - 認証の値を置き換えたこと：`GOOGLE_WEB_CLIENT_ID`（仮の値のままでは `npm run deploy` が止まる）、本番の `NONCE_HMAC_KEY`（12章）。そのうえで、本物のApple / Googleのトークンで、`/auth/login` と `/auth/delete` が通ること（`aud`・`nonce` の前提は、9章の「認証API」）。iOSのAppleでは、`/auth/delete` が `appleRevoked: true` を返すこと（`APPLE_KEY_ID`・`APPLE_PRIVATE_KEY` の置き換え。12章）。
+   - AndroidのAppleログイン（Web経由）を、本物のServices IDとAndroid実機（またはエミュレータのChrome Custom Tab）で確かめること：コールバックがアプリへ戻れること、`/auth/apple/login` が通ること（`invalid_client` になれば、`APPLE_SERVICES_ID`・Return URL・鍵のどれかが違う。分類の1行を `wrangler tail` で見る）、`/auth/delete` が `appleRevoked: true` を返すこと、iOSで作ったアカウントと `sub` が同じか（9章）、WAFのルールが効いていること。
    - 固定費の自動登録の1回の実行が、Freeの上限（1回の呼び出しにつき50）に収まること（上限50件の固定費・2人の均等割りで、ローカルD1では24。メンバーが多いと、収まる件数だけ作る。7章）と、毎時の検索（固定費の表の全走査。12章）の読み取り行数。
 
 **この文書は設計方針のまとめであり、SQLはまだ本番投入用の確定版ではない。** 次工程では、実際のマイグレーションを作りながらSQLite/D1で制約とトランザクションを検証する。

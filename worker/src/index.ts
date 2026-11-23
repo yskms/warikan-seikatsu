@@ -1,4 +1,5 @@
 // 入口。エンドポイントは docs/backend-design.md 9章の順に足す。
+import { handleAppleCallback, handleAppleWebLogin } from './appleWeb.ts';
 import { handleLogin, handleLogout, handleNonce } from './auth.ts';
 import {
   handleCreateCategory,
@@ -70,6 +71,9 @@ export default {
     if (pathname === '/auth/login') return handleLogin(request, env, now);
     if (pathname === '/auth/logout') return handleLogout(request, env, now);
     if (pathname === '/auth/delete') return handleDeleteAccount(request, env, now);
+    // AndroidのAppleログイン（Web経由）。コールバックは、Appleのリダイレクトを、アプリのURLスキームへ戻すだけ。
+    if (pathname === '/auth/apple/callback') return handleAppleCallback(request);
+    if (pathname === '/auth/apple/login') return handleAppleWebLogin(request, env, now);
 
     if (GROUPS_PATH.test(pathname)) {
       if (request.method === 'GET') return handleListGroups(request, env, now);

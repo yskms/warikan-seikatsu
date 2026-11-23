@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Singfolio（worker/test/login.test.ts）からのコピー（コピー元: singfolio 61e0a82）から、このアプリにあるものだけを残した。
-// 除いたもの: /auth/logout-others、AndroidのAppleログイン（Web経由）。
+// 除いたもの: /auth/logout-others。AndroidのAppleログイン（Web経由）は、appleWeb.test.ts。
 // ログインとログアウトを、模擬の発行元（テスト用のRSA鍵で署名し、JWKSを返す fetch）とローカルD1で確かめる。
 // ネットワークには出ない。IDトークンの検証そのものの条件は、idToken.test.ts。ここでは、処理の順序
 // （D1に書くのは検証が通ってから）、リプレイ、失敗の応答、セッションの発行を見る。
@@ -18,7 +18,7 @@ const NOW = 1_800_000_000_000;
 const NOW_S = NOW / 1000;
 const SECRET = 'test-secret-value-0123456789abcdef';
 const CHALLENGE = 'B'.repeat(43);
-// このアプリの設定（wrangler.jsonc）には無い。ネイティブのトークンの aud に、Services ID を受け付けないことの検査に使う。
+// ネイティブのトークンの aud に、Services ID を受け付けないことの検査に使う。
 const SERVICES_ID = 'com.example.web';
 
 interface TestKey {

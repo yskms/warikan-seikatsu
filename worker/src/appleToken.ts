@@ -1,7 +1,5 @@
 // Singfolio（worker/src/appleToken.ts）からのコピー（コピー元: singfolio 61e0a82）。コメントの「§8」「7.3.x」は Singfolio の docs の章番号で、
 // ここでは読めない。Singfolio側を直したときは、差分を手で取り込む（docs/backend-design.md 1章）。
-// このアプリで使うのは `exchangeWithToken` と `revoke`（iOSのAppleの、アカウント削除。src/deleteAccount.ts）だけ。
-// `exchange`（ログイン用）は、AndroidのAppleログイン（Web経由）を足すときに使う（docs/backend-design.md 12章）。構造を保つため、消さない。
 // Apple の認可コードの交換（`POST https://appleid.apple.com/auth/token`）と、トークンの失効
 // （`POST https://appleid.apple.com/auth/revoke`）。方式は docs/singfolio-publishing-backend.md §8
 // 「AndroidのAppleログイン（Web経由）」「アカウントの削除とAppleのトークン失効」。

@@ -449,10 +449,4 @@ describe('audienceFor', () => {
   it('Google の Web 経由のフローは無い（null）', () => {
     assert.equal(audienceFor(env, 'google', 'web'), null);
   });
-
-  it('Services ID を設定していなければ、Apple の web は拒否する（このアプリは、Android の Apple ログインをまだ持たない）', () => {
-    const { APPLE_SERVICES_ID: _unused, ...withoutServices } = env;
-    assert.equal(audienceFor(withoutServices, 'apple', 'web'), null);
-    assert.equal(audienceFor(withoutServices, 'apple', 'native'), 'bundle');
-  });
 });

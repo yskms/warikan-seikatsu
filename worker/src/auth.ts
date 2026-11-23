@@ -1,7 +1,6 @@
 // 認証のエンドポイント（POST /auth/nonce・/auth/login・/auth/logout）。Singfolio（worker/src/auth.ts）からのコピー
-// （コピー元: singfolio 61e0a82）のうち、この3つだけ。
-// コピーしていないもの: `/auth/logout-others`（このアプリでは、まだ画面もAPIも無い）、`handleLoginResult` を共有する
-// AndroidのAppleログイン（`/auth/apple/login`。docs/backend-design.md 12章）。
+// （コピー元: singfolio 61e0a82）のうち、この3つと、`/auth/apple/login` と共有する `handleLoginResult`。
+// コピーしていないもの: `/auth/logout-others`（このアプリでは、まだ画面もAPIも無い）。
 // Singfolio側を直したときは、差分を手で取り込む（docs/backend-design.md 1章）。
 //
 // リクエスト・レスポンスの形は docs/backend-design.md 9章の「認証API」。
@@ -46,7 +45,7 @@ export async function handleNonce(request: Request, env: Env, now: number): Prom
 
 /**
  * POST /auth/login。`{"provider":"apple"|"google","idToken":"…","nonce":"<T>"}` を受け取り、
- * 200 `{"session":"<値>"}` を返す。`T` は `native` のものだけを受け付ける。
+ * 200 `{"session":"<値>"}` を返す。`T` は `native` のものだけを受け付ける（AndroidのAppleログインは `/auth/apple/login`。src/appleWeb.ts）。
  * 失敗は、形の不備が400、検証に通らない（どの検査かは教えない）が401、公開鍵を取得できないが503。
  */
 export async function handleLogin(
@@ -66,7 +65,7 @@ export async function handleLogin(
   return handleLoginResult(await signIn(env, verifier, { provider, kind: 'native', idToken, nonce }, now));
 }
 
-/** ログインの結果を応答にする。 */
+/** ログインの結果を応答にする（`/auth/login` と `/auth/apple/login` で同じ）。 */
 export function handleLoginResult(result: SignInResult): Response {
   if (result.ok) return json({ session: result.session });
   return result.reason === 'unavailable' ? serviceUnavailable() : unauthorized();

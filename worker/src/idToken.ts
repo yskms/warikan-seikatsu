@@ -322,16 +322,13 @@ export function getIdTokenVerifier(): IdTokenVerifier {
  * - Apple（AndroidのWeb経由）: Services ID。
  * - Google（iOS・Android）: サーバー用（Web）のクライアントID。両OSとも、`aud` はこれになる。
  * 種別ごとに1つへ絞る（両方を受け入れない）。取り違えた `T` とトークンの組み合わせを通さないため。
- *
- * このアプリでの変更: `APPLE_SERVICES_ID` を省略可能にした（Singfolioでは必須）。AndroidのAppleログイン（Web経由）を
- * 足すまでは設定しない（wrangler.jsonc に無い）ので、そのときは `web` を拒否する（null）。
  */
 export function audienceFor(
   // `Env` の vars はリテラル型になるので、string で受ける（テストで別の値を渡せるように）。
-  env: { APPLE_BUNDLE_ID: string; APPLE_SERVICES_ID?: string; GOOGLE_WEB_CLIENT_ID: string },
+  env: { APPLE_BUNDLE_ID: string; APPLE_SERVICES_ID: string; GOOGLE_WEB_CLIENT_ID: string },
   provider: IdTokenProvider,
   kind: NonceKind,
 ): string | null {
-  if (provider === 'apple') return kind === 'native' ? env.APPLE_BUNDLE_ID : (env.APPLE_SERVICES_ID ?? null);
+  if (provider === 'apple') return kind === 'native' ? env.APPLE_BUNDLE_ID : env.APPLE_SERVICES_ID;
   return kind === 'native' ? env.GOOGLE_WEB_CLIENT_ID : null;
 }

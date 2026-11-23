@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { unstable_readConfig } from 'wrangler';
 import { PLACEHOLDER_MARKER, placeholderVars } from '../scripts/checkPlaceholders.ts';
+import { APP_RETURN_URL } from '../src/appleWeb.ts';
 import { workerDir } from './localDatabase.ts';
 
 const config = unstable_readConfig({ config: path.join(workerDir, 'wrangler.jsonc') });
@@ -16,6 +17,10 @@ const vars = (config.vars ?? {}) as Record<string, unknown>;
 const GOOGLE_PLACEHOLDER = '0-not-created-yet.apps.googleusercontent.com';
 // Apple Developerで、Sign in with Apple の鍵を作るまでの、実在しない値（wrangler.jsonc）。
 const APPLE_KEY_PLACEHOLDER = '0-not-created-yet';
+// Apple Developerで、Services ID を作るまでの、実在しない値（wrangler.jsonc）。
+const APPLE_SERVICES_PLACEHOLDER = '0-not-created-yet';
+// 本番の独自ドメインが決まるまでの、実在しない値（wrangler.jsonc）。`.invalid` は、実在しないことが決まっているTLD。
+const APPLE_CALLBACK_PLACEHOLDER = 'https://not-created-yet.invalid/auth/apple/callback';
 
 describe('wrangler.jsonc', () => {
   it('Workers Logs は無効（認証の値が、ログに残らないようにするため）', () => {
@@ -65,6 +70,27 @@ describe('wrangler.jsonc', () => {
     );
   });
 
+  it('AndroidのAppleログイン（Web経由）の識別子（vars）の形と、アプリのURLスキームとの一致', () => {
+    const app = JSON.parse(readFileSync(path.join(workerDir, '..', 'app.json'), 'utf8')) as {
+      expo: { scheme: string; ios: { bundleIdentifier: string } };
+    };
+    // Services ID は、App ID（バンドルID）とは別の識別子。同じ値にすると、`aud` でネイティブと web を区別できない。
+    // 作るまでは、置き場所の値のまま（AndroidのAppleログインは通らない）。
+    assert.ok(
+      vars.APPLE_SERVICES_ID === APPLE_SERVICES_PLACEHOLDER || /^[A-Za-z0-9]+(\.[A-Za-z0-9-]+)+$/.test(String(vars.APPLE_SERVICES_ID)),
+      'APPLE_SERVICES_ID が、Services ID の形でも、置き場所の値でもない',
+    );
+    assert.notEqual(vars.APPLE_SERVICES_ID, app.expo.ios.bundleIdentifier);
+    // Return URL は、HTTPSで、このWorkerのコールバックのパス（src/index.ts）。Appleは、HTTPや、パスの違うURLを受け付けない。
+    assert.ok(
+      vars.APPLE_CALLBACK_URL === APPLE_CALLBACK_PLACEHOLDER ||
+        /^https:\/\/[a-z0-9.-]+\/auth\/apple\/callback$/.test(String(vars.APPLE_CALLBACK_URL)),
+      'APPLE_CALLBACK_URL が、コールバックのURLの形でも、置き場所の値でもない',
+    );
+    // コールバックが戻すURLスキームは、アプリの `scheme`（app.json）。ずれると、Androidのアプリに戻れない。
+    assert.equal(new URL(APP_RETURN_URL).protocol, `${app.expo.scheme}:`);
+  });
+
   it('仮の値が vars に残ったままでは、デプロイできない（npm run deploy の前の確認）', () => {
     const pkg = JSON.parse(readFileSync(path.join(workerDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
@@ -73,12 +99,18 @@ describe('wrangler.jsonc', () => {
     // 仮の値は、確認が見つけられる印を含む。
     assert.equal(GOOGLE_PLACEHOLDER.includes(PLACEHOLDER_MARKER), true);
     assert.equal(APPLE_KEY_PLACEHOLDER.includes(PLACEHOLDER_MARKER), true);
+    assert.equal(APPLE_SERVICES_PLACEHOLDER.includes(PLACEHOLDER_MARKER), true);
+    assert.equal(APPLE_CALLBACK_PLACEHOLDER.includes(PLACEHOLDER_MARKER), true);
     assert.deepEqual(placeholderVars({ GOOGLE_WEB_CLIENT_ID: GOOGLE_PLACEHOLDER, APPLE_BUNDLE_ID: 'com.example.app' }), [
       'GOOGLE_WEB_CLIENT_ID',
     ]);
     assert.deepEqual(placeholderVars({ GOOGLE_WEB_CLIENT_ID: '123-abc.apps.googleusercontent.com' }), []);
     assert.deepEqual(placeholderVars({ APPLE_KEY_ID: APPLE_KEY_PLACEHOLDER, APPLE_TEAM_ID: 'ABCDE12345' }), ['APPLE_KEY_ID']);
     assert.deepEqual(placeholderVars({ APPLE_KEY_ID: 'ABCDE12345' }), []);
+    assert.deepEqual(
+      placeholderVars({ APPLE_SERVICES_ID: APPLE_SERVICES_PLACEHOLDER, APPLE_CALLBACK_URL: APPLE_CALLBACK_PLACEHOLDER }),
+      ['APPLE_SERVICES_ID', 'APPLE_CALLBACK_URL'],
+    );
     assert.deepEqual(placeholderVars({ N: 1, M: null }), []);
   });
 

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Singfolio（worker/test/deleteAccount.test.ts）からのコピー（コピー元: singfolio 61e0a82）から、このアプリにあるものだけを残し、
 // このアプリのデータ処理（グループの匿名化・削除、競合）の検査を足した。
-// 除いたもの: AndroidのAppleログイン（Web経由）の再認証、公開プロフィール（R2）の削除。
+// 除いたもの: 公開プロフィール（R2）の削除。
 // アカウントの削除（POST /auth/delete）を、模擬の発行元（テスト用のRSA鍵で署名し、JWKSを返す fetch）・模擬のApple
 // （/auth/token・/auth/revoke を返す fetch）・ローカルD1で確かめる。ネットワークには出ない。
 // 順序（再認証が通ってから消す）、`sub` の一致、Appleのトークンの失効が削除を止めないこと、失敗の応答の分け方を見る。
@@ -16,7 +16,7 @@ import worker from '../src/index.ts';
 import { createIdTokenVerifier, type FetchFunction, type IdTokenProvider, type IdTokenVerifier } from '../src/idToken.ts';
 import { resolveIdentity } from '../src/identity.ts';
 import { DELETED_USER_NAME } from '../src/membership.ts';
-import { consumeNonce, issueNonce, nonceHash } from '../src/nonce.ts';
+import { consumeNonce, issueNonce, nonceHash, toBase64Url } from '../src/nonce.ts';
 import { authenticateSession, createSession } from '../src/session.ts';
 import { createFixtureFactory, equalShares, insertCategoryRule } from './apiFixture.ts';
 import { openLocalDatabase, type LocalDatabase } from './localDatabase.ts';
@@ -26,8 +26,9 @@ const NOW = 1_800_000_000_000;
 const NOW_S = NOW / 1000;
 const SECRET = 'test-secret-value-0123456789abcdef';
 const BUNDLE_ID = 'com.example.app';
-// このアプリの設定（wrangler.jsonc）には無い。ネイティブのトークンの aud に、Services ID を受け付けないことの検査に使う。
 const SERVICES_ID = 'com.example.web';
+// wrangler.jsonc の APPLE_CALLBACK_URL の代わり（Services ID の Return URL。AndroidのAppleの交換の `redirect_uri`）。
+const CALLBACK_URL = 'https://example.test/auth/apple/callback';
 const GOOGLE_CLIENT_ID = '1234-web.apps.googleusercontent.com';
 const TEAM_ID = 'TEAM123456';
 const KEY_ID = 'KEY1234567';
@@ -41,6 +42,8 @@ const issuerKey = await (async () => {
 })();
 const impostorKey = (await generateKeyPair('RS256', { modulusLength: 2048, extractable: true })).privateKey as CryptoKey;
 const APPLE_PRIVATE_KEY = await exportPKCS8((await generateKeyPair('ES256', { extractable: true })).privateKey);
+// アプリが作る検証用の値 `V`（32バイトの乱数の base64url。43字）。
+const newVerifier = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
 describe('POST /auth/delete', () => {
   let local: LocalDatabase;
@@ -64,6 +67,8 @@ describe('POST /auth/delete', () => {
     env = {
       NONCE_HMAC_KEY: SECRET,
       APPLE_BUNDLE_ID: BUNDLE_ID,
+      APPLE_SERVICES_ID: SERVICES_ID,
+      APPLE_CALLBACK_URL: CALLBACK_URL,
       APPLE_TEAM_ID: TEAM_ID,
       APPLE_KEY_ID: KEY_ID,
       APPLE_PRIVATE_KEY,
@@ -114,7 +119,14 @@ describe('POST /auth/delete', () => {
     return { identityId, userId, session };
   }
 
-  const issueT = async (now = NOW) => (await issueNonce(SECRET, { kind: 'native' }, now)).nonce;
+  const issueT = async (kind: 'native' | 'web' = 'native', v?: string, now = NOW) =>
+    (
+      await issueNonce(
+        SECRET,
+        kind === 'native' ? { kind } : { kind, challenge: await nonceHash(v ?? newVerifier()) },
+        now,
+      )
+    ).nonce;
 
   interface TokenOptions {
     provider?: IdTokenProvider;
@@ -156,13 +168,27 @@ describe('POST /auth/delete', () => {
 
   /** iOSのAppleの再認証の本文。 */
   async function appleNative(options: TokenOptions & { authorizationCode?: string | null } = {}) {
-    const t = await issueT();
+    const t = await issueT('native');
     const body: Record<string, unknown> = { provider: 'apple', nonce: t, idToken: await signToken(t, options) };
     if (options.authorizationCode !== null) body.authorizationCode = options.authorizationCode ?? 'native-code';
     return { t, body };
   }
+  /** Androidの Apple（Web経由）の再認証。Appleが、この T のIDトークンと、トークンを返す。 */
+  async function appleWeb(options: TokenOptions = {}) {
+    const v = newVerifier();
+    const t = await issueT('web', v);
+    tokenResponse = async () =>
+      Response.json({
+        id_token: await signToken(t, { aud: SERVICES_ID, ...options }),
+        refresh_token: REFRESH,
+        access_token: ACCESS,
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+    return { t, v, body: { provider: 'apple', nonce: t, code: 'web-code', verifier: v } };
+  }
   async function google(options: TokenOptions = {}) {
-    const t = await issueT();
+    const t = await issueT('native');
     return { t, body: { provider: 'google', nonce: t, idToken: await signToken(t, { provider: 'google', ...options }) } };
   }
   const deleted = async () => assert.deepEqual(await counts(), { users: 0, identities: 0, sessions: 0, used_nonces: 1 });
@@ -214,6 +240,35 @@ describe('POST /auth/delete', () => {
           ['revoke', false],
         ],
       );
+    });
+
+    it('Apple（Android）: 交換（本人確認に要る）はD1を消す前、失効は消したあと', async () => {
+      const { session } = await signedIn();
+      const { body } = await appleWeb();
+      assert.equal((await call(session, body)).status, 200);
+      assert.deepEqual(
+        appleCalls.map((c) => [c.url.endsWith('/auth/token') ? 'exchange' : 'revoke', c.present]),
+        [
+          ['exchange', true],
+          ['revoke', false],
+        ],
+      );
+    });
+
+    it('Apple（Android）: 認可コードの交換（Services ID・環境変数の Return URL）で本人確認し、同じ応答のトークンを失効させる（交換は1回）', async () => {
+      const { session } = await signedIn();
+      const { body } = await appleWeb();
+      const response = await call(session, body);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { appleRevoked: true });
+      await deleted();
+      assert.equal(appleCalls.length, 2);
+      assert.equal(appleCalls[0]!.url, 'https://appleid.apple.com/auth/token');
+      assert.equal(appleCalls[0]!.form.get('client_id'), SERVICES_ID);
+      assert.equal(appleCalls[0]!.form.get('redirect_uri'), CALLBACK_URL);
+      assert.equal(appleCalls[1]!.url, 'https://appleid.apple.com/auth/revoke');
+      assert.equal(appleCalls[1]!.form.get('client_id'), SERVICES_ID);
+      assert.equal(appleCalls[1]!.form.get('token'), REFRESH);
     });
 
     it('Apple: refresh_token が無ければ、access_token を失効させる', async () => {
@@ -635,7 +690,7 @@ describe('POST /auth/delete', () => {
 
     it('T の不備は reauth_failed（期限切れ・署名違い・種別違い）。使用済みの T も通らない', async () => {
       const { session } = await signedIn();
-      const t = await issueT();
+      const t = await issueT('native');
       const idToken = await signToken(t);
       await forbidden(await call(session, { provider: 'apple', nonce: t, idToken }, { now: NOW + 6 * 60 * 1000 }), 'reauth_failed');
       const forged = await issueNonce('another-secret-value-0123456789abcdef', { kind: 'native' }, NOW);
@@ -643,16 +698,42 @@ describe('POST /auth/delete', () => {
         await call(session, { provider: 'apple', nonce: forged.nonce, idToken: await signToken(forged.nonce) }),
         'reauth_failed',
       );
-      // `web` の T（AndroidのAppleログイン用）は、ネイティブの再認証に使えない。
-      const webT = (await issueNonce(SECRET, { kind: 'web', challenge: await nonceHash('verifier') }, NOW)).nonce;
+      const webT = await issueT('web');
       await forbidden(await call(session, { provider: 'apple', nonce: webT, idToken: await signToken(webT) }), 'reauth_failed');
 
       // 使用済み（リプレイ）。再認証が通っても、T が使い切りなら消さない。
-      const used = await issueT();
+      const used = await issueT('native');
       const usedToken = await signToken(used);
       assert.equal(await consumeNonce(db, await nonceHash(used), NOW + 300_000, NOW), true);
       await forbidden(await call(session, { provider: 'apple', nonce: used, idToken: usedToken }), 'reauth_failed');
       await notDeleted(session, { users: 1, identities: 1, sessions: 1, used_nonces: 1 });
+    });
+
+    it('Android: V が違う・コードが無効（invalid_grant）は reauth_failed。V の不一致では Apple を呼ばない', async () => {
+      const { session } = await signedIn();
+      const flow = await appleWeb();
+      await forbidden(await call(session, { ...flow.body, verifier: newVerifier() }), 'reauth_failed');
+      assert.deepEqual(appleCalls, []);
+      tokenResponse = () => Response.json({ error: 'invalid_grant' }, { status: 400 });
+      await forbidden(await call(session, flow.body), 'reauth_failed');
+      assert.equal(appleCalls.length, 1);
+      await notDeleted(session);
+    });
+
+    it('Android: native の T を、web の経路に使えない（V の照合が飛ばされない）', async () => {
+      const { session } = await signedIn();
+      const nativeT = await issueT('native');
+      await forbidden(await call(session, { provider: 'apple', nonce: nativeT, code: 'c', verifier: newVerifier() }), 'reauth_failed');
+      assert.deepEqual(appleCalls, []);
+      await notDeleted(session);
+    });
+
+    it('Android: 交換で得たIDトークンの sub が違えば account_mismatch。トークンは失効させない', async () => {
+      const { session } = await signedIn();
+      const { body } = await appleWeb({ sub: 'apple-sub-other' });
+      await forbidden(await call(session, body), 'account_mismatch');
+      assert.equal(appleCalls.length, 1);
+      await notDeleted(session);
     });
 
     it('同じ再認証の本文を、2回送れない（成功したあとは、セッションが無いので 401）', async () => {
@@ -671,6 +752,20 @@ describe('POST /auth/delete', () => {
       const response = await call(session, body);
       assert.equal(response.status, 503);
       assert.deepEqual(await response.json(), { error: 'service_unavailable' });
+      assert.deepEqual(await counts(), { users: 1, identities: 1, sessions: 1, used_nonces: 0 });
+    });
+  });
+
+  describe('Android（Web経由）で使えないとき（503。何も消さない）', () => {
+    it('Appleの交換が使えない（5xx・通信の失敗）', async () => {
+      const { session } = await signedIn();
+      const { body } = await appleWeb();
+      tokenResponse = () => new Response('oops', { status: 500 });
+      assert.equal((await call(session, body)).status, 503);
+      tokenResponse = () => {
+        throw new Error('down');
+      };
+      assert.equal((await call(session, body)).status, 503);
       assert.deepEqual(await counts(), { users: 1, identities: 1, sessions: 1, used_nonces: 0 });
     });
   });
@@ -697,11 +792,11 @@ describe('POST /auth/delete', () => {
       assert.equal((await call(session, body, { now: NOW + 91 * 24 * 60 * 60 * 1000 })).status, 401);
     });
 
-    it('本文の不備は 400（形の組み合わせが違う・nonce が無い・コードの形が違う・Web経由の本文）', async () => {
+    it('本文の不備は 400（形の組み合わせが違う・nonce が無い・コードや V の形が違う）', async () => {
       const { session } = await signedIn();
-      const t = await issueT();
+      const t = await issueT('native');
       const idToken = await signToken(t);
-      const v = 'B'.repeat(43);
+      const v = newVerifier();
       for (const body of [
         {},
         { provider: 'apple' },
@@ -712,9 +807,11 @@ describe('POST /auth/delete', () => {
         { provider: 'apple', nonce: t, idToken, authorizationCode: '' },
         { provider: 'apple', nonce: t, idToken, authorizationCode: 'has space' },
         { provider: 'apple', nonce: t, idToken, authorizationCode: 'x'.repeat(1025) },
-        // AndroidのAppleログイン（Web経由）の本文は、まだ受け付けない（それを足すまで、その経路でログインする人もいない）。
-        { provider: 'apple', nonce: t, code: 'c', verifier: v },
-        { provider: 'apple', nonce: t, idToken, code: 'c', verifier: v },
+        { provider: 'apple', nonce: t, idToken, code: 'c', verifier: v }, // 2つの経路の混在
+        { provider: 'apple', nonce: t, code: 'c' }, // verifier が無い
+        { provider: 'apple', nonce: t, code: 'c', verifier: 'short' },
+        { provider: 'apple', nonce: t, code: '', verifier: v },
+        { provider: 'apple', nonce: t, code: 'c', verifier: v, authorizationCode: 'x' },
         { provider: 'google', nonce: t },
         { provider: 'google', nonce: t, idToken, code: 'c' },
         { provider: 'google', nonce: t, idToken, authorizationCode: 'x' },

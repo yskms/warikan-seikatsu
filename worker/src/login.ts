@@ -1,26 +1,41 @@
-// ログインの処理（IDトークンの検証から、セッションの発行まで）。Singfolio（worker/src/login.ts）からのコピー
-// （コピー元: singfolio 61e0a82）のうち、ネイティブのサインイン（iOSのApple、iOS・AndroidのGoogle）だけ。
-// コメントの「§8」は Singfolio の docs の章番号で、ここでは読めない。
-// コピーしていないもの: AndroidのAppleログイン（Web経由。`kind: 'web'` の `V` の照合と、認可コードの交換）。
-// `/auth/apple/login` と一緒に、あとで同じ元から取り込む（docs/backend-design.md 12章）。
-// Singfolio側を直したときは、差分を手で取り込む（docs/backend-design.md 1章）。
+// Singfolio（worker/src/login.ts）からのコピー（コピー元: singfolio 61e0a82）。コメントの「§8」「7.3.x」は Singfolio の docs の章番号で、
+// ここでは読めない。Singfolio側を直したときは、差分を手で取り込む（docs/backend-design.md 1章）。
+// ログインの処理（IDトークンの検証から、セッションの発行まで）。順序と理由は
+// docs/singfolio-publishing-backend.md §8「認証の方式」の「ログインの処理の順序」。
 //
-// 順序と理由は、Singfolio の docs/singfolio-publishing-backend.md §8「認証の方式」の「ログインの処理の順序」。
 // D1に書くのは、IDトークンの検証まで通ったあと。それより前の検査は、D1にも外部にも触れない。
+import type { AppleCodeExchange } from './appleToken.ts';
 import { audienceFor, type IdTokenProvider, type IdTokenVerifier } from './idToken.ts';
 import { resolveIdentity } from './identity.ts';
-import { consumeNonce, verifyNonce } from './nonce.ts';
+import { consumeNonce, isChallenge, nonceHash, verifyNonce } from './nonce.ts';
 import { createSession } from './session.ts';
 
-/** ネイティブのサインイン。`native` の `T`（`POST /auth/nonce`。IDトークンの `nonce` は、SHA-256(T)）、アプリが得たIDトークン。 */
-export interface NativeSignInInput {
+interface SignInBase {
   provider: IdTokenProvider;
-  kind: 'native';
+  /** Workerが発行した `T`（`POST /auth/nonce`）。IDトークンの `nonce` は、SHA-256(T)。 */
   nonce: string;
+}
+
+/** ネイティブのサインイン（iOSのApple、iOS・AndroidのGoogle）。`native` の `T`、アプリが得たIDトークン。 */
+export interface NativeSignInInput extends SignInBase {
+  kind: 'native';
   idToken: string;
 }
 
-export type SignInInput = NativeSignInInput;
+/**
+ * AndroidのAppleログイン（Web経由）。`web` の `T`（`C = SHA-256(V)` を含む）、アプリが得た認可コードと `V`。
+ * IDトークンは、Workerが `exchange`（Appleの `/auth/token`）で得る。
+ */
+export interface AppleWebSignInInput extends SignInBase {
+  provider: 'apple';
+  kind: 'web';
+  code: string;
+  /** アプリが `C` の元にした値 `V`（`SHA-256(V)` が、`T` の中の `C` と一致しなければならない）。 */
+  verifier: string;
+  exchange: (code: string) => Promise<AppleCodeExchange>;
+}
+
+export type SignInInput = NativeSignInInput | AppleWebSignInInput;
 
 // `rejected` は、どの検査で落ちたかを教えない（呼ぶ側は同じ401にする）。`unavailable` は、
 // 公開鍵を取得できないこと（トークンの問題ではないので、アプリがやり直せる）。
@@ -34,14 +49,29 @@ export async function signIn(
   input: SignInInput,
   now: number,
 ): Promise<SignInResult> {
-  const { provider, kind, nonce, idToken } = input;
+  const { provider, kind, nonce } = input;
   // 1. `T` の署名・種別・期限。D1にも外部にも触れない。
   const verifiedNonce = await verifyNonce(env.NONCE_HMAC_KEY, nonce, kind, now);
   if (!verifiedNonce.ok) return rejected;
 
-  // 2. 受け付ける `aud`。無い組み合わせは拒否する。公開鍵を取りに行く前に弾く。
+  // 2. 受け付ける `aud`。無い組み合わせ（Googleの `web`）は拒否する。公開鍵を取りに行く前に弾く。
   const audience = audienceFor(env, provider, kind);
   if (audience === null) return rejected;
+
+  // 2'. IDトークンを得る。ネイティブは、アプリが渡したもの。`web` は、`V` を照合して（`T` に結びつけた
+  //     `V` を持つのは、フローを始めたアプリだけ。横取りされた `code` は、これで使えない）、認可コードを
+  //     Appleで交換して得る。`V` の照合が先で、通らなければ Apple を呼ばない（認証の要らない経路に、外部の
+  //     呼び出しを使わせない）。`challenge` は `web` の `T` なら必ず入っている（`verifyNonce` が保証する）。
+  let idToken: string;
+  if (input.kind === 'native') {
+    idToken = input.idToken;
+  } else {
+    if (verifiedNonce.challenge === null || !isChallenge(input.verifier)) return rejected;
+    if ((await nonceHash(input.verifier)) !== verifiedNonce.challenge) return rejected;
+    const exchanged = await input.exchange(input.code);
+    if (!exchanged.ok) return exchanged.reason === 'invalid_grant' ? rejected : { ok: false, reason: 'unavailable' };
+    idToken = exchanged.idToken;
+  }
 
   // 3. IDトークンの検証（`nonce` が SHA-256(T) と一致するところまで）。
   const verified = await verifier.verify({ provider, idToken, audience, nonce: verifiedNonce.nonceHash, now });
