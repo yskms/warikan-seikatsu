@@ -91,6 +91,23 @@ describe('wrangler.jsonc', () => {
     assert.equal(new URL(APP_RETURN_URL).protocol, `${app.expo.scheme}:`);
   });
 
+  // このアプリで足したテスト（Singfolioは、アプリ側の値をコードの定数で持ち、Workerの `vars` に置かないので、無い）。
+  // Services ID・Return URL は、Worker（vars）とアプリ（認可のURLを作る）に、同じ値を書く（コードは共有しない）。
+  // 片方だけ置き換えると、Appleが認可の画面を出さない・認可コードの交換が `invalid_client` になる。アプリのソースは、
+  // 読むだけ（import しない）。
+  it('AndroidのAppleログインの識別子・戻り先が、アプリ側（src/repositories/appleWebSignInRepository.ts）と同じ', () => {
+    const source = readFileSync(
+      path.join(workerDir, '..', 'src', 'repositories', 'appleWebSignInRepository.ts'),
+      'utf8',
+    );
+    const appConstant = (name: string) => new RegExp(`^export const ${name} = '([^']*)';$`, 'm').exec(source)?.[1];
+    assert.equal(appConstant('APPLE_SERVICES_ID'), vars.APPLE_SERVICES_ID);
+    assert.equal(appConstant('APPLE_CALLBACK_URL'), vars.APPLE_CALLBACK_URL);
+    assert.equal(appConstant('APP_RETURN_URL'), APP_RETURN_URL);
+    // アプリが「仮の値のまま」を見分ける印は、Workerのデプロイの確認と同じ。
+    assert.equal(appConstant('PLACEHOLDER_MARKER'), PLACEHOLDER_MARKER);
+  });
+
   it('仮の値が vars に残ったままでは、デプロイできない（npm run deploy の前の確認）', () => {
     const pkg = JSON.parse(readFileSync(path.join(workerDir, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
