@@ -33,7 +33,8 @@ export function signInErrorMessage(error: unknown, provider: AuthProvider): stri
     case 'provider-unavailable':
       return `この端末では、${name}でのログインをまだ使えません。`;
     case 'storage-failed':
-      return 'ログインの情報を、この端末に保存できませんでした。端末のロックを解除して、もう一度お試しください。';
+      // ログインは利用者の操作で始まる（端末のロックは解除されている）ので、ロックの案内は出さない。
+      return 'ログインの情報を、この端末に保存できませんでした。もう一度お試しください。続くときは、端末を再起動してみてください。';
     default:
       return 'ログインできませんでした。時間をおいて、もう一度お試しください。';
   }

@@ -2,7 +2,7 @@
 // 招待URLから来たときの案内と、ログイン後に参加確認へ進む処理は、招待・参加の画面を作るときに足す。
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -19,7 +19,7 @@ import { accountService } from '../platform/accountService.ts';
 import type { AuthProvider } from '../src/domain/types.ts';
 import { isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../src/legal/legalUrls.ts';
 import { isAlreadySignedIn, signInErrorMessage } from '../src/services/signInMessage.ts';
-import { useAuth } from '../ui/AuthProvider.tsx';
+import { useAuth } from '../ui/AuthStateProvider.tsx';
 import { useColors } from '../ui/useColors.ts';
 
 const PROVIDER_ORDER: readonly AuthProvider[] =
@@ -33,12 +33,15 @@ const LEGAL_LINKS = [
 export default function LoginScreen() {
   const { state, markSignedIn } = useAuth();
   const colors = useColors();
-  // 進行中のログイン手段。あるあいだは、どのボタンも押せない。
+  // 進行中のログイン手段。あるあいだは、どのボタンも押せない。表示用の `busy` とは別に、`ref` でも持つ: `busy` は、
+  // 再描画されるまで古いままなので、続けて2回押されると、どちらの押下も `null` を見て、各社の画面が2回開きうる。
   const [busy, setBusy] = useState<AuthProvider | null>(null);
+  const signingIn = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   async function signIn(provider: AuthProvider) {
-    if (busy) return;
+    if (signingIn.current) return;
+    signingIn.current = true;
     setBusy(provider);
     setError(null);
     try {
@@ -49,6 +52,7 @@ export default function LoginScreen() {
       if (isAlreadySignedIn(e)) markSignedIn();
       else setError(signInErrorMessage(e, provider));
     } finally {
+      signingIn.current = false;
       setBusy(null);
     }
   }

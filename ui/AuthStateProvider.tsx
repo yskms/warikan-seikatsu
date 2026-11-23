@@ -1,5 +1,13 @@
 // 「ログイン済みか」を、画面全体で共有する。`app/_layout.tsx` が、これを見て、ログイン画面とメインを切り替える
 // （`Stack.Protected`）。判定の仕様は docs/screens.md 1章の最後の項目、読み直しの規則は `src/services/sessionCheck.ts`。
+// 名前は `AuthStateProvider`: `AuthProvider` は、ログイン手段（apple・google）の型の名前（`src/domain/types.ts`。Singfolioのコピー）。
+//
+// **この状態は、端末のセッションとは別に持っている。ずれないよう、セッションを捨てる操作は、必ず `markSignedOut` を呼ぶこと**
+// （`accountService` は、端末のセッションが変わったことを画面へ知らせない。Singfolioのコピーを元にした構造を保つため、
+// 知らせる仕組みを足していない）。呼ぶべき場所は、ログアウト・アカウントの削除（成功したとき）と、APIの呼び出し
+// （`sessionAccess.withSession`）が `unauthorized`（サーバーがセッションを認めなかった。層が端末のセッションを捨てる）か
+// `not-signed-in` を返したとき。これを忘れると、ログインしていないのに、メインの画面が出続ける
+// （docs/backend-design.md 12章の「認証の残り」）。
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
@@ -20,6 +28,8 @@ interface AuthContextValue {
   state: AuthState;
   /** ログインが済んだ（`accountService.signIn` が成功した、または `already-signed-in` だった）。 */
   markSignedIn(): void;
+  /** 端末のセッションを捨てた（上の説明）。ログイン画面へ戻る。 */
+  markSignedOut(): void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -35,7 +45,7 @@ function fromCheck(check: SessionCheck): AuthState {
   }
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthStateProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'checking' });
 
   // 起動時。保存先を読めないときは、短い間隔で数回読み直す（`checkSession`）。
@@ -52,6 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 読めないままログイン画面を出しているあいだ、アプリが前面に戻ったときに、もう一度読む（端末のロックを解除して
   // 戻ってきたときなど）。結果は、まだ「読めないままのログイン画面」のときだけ反映する: 読んでいるあいだに
   // ログインが済んだ（`markSignedIn`）のに、古い「ログインしていない」で上書きしない。
+  //
+  // 取りこぼすことがある: 登録は `unreadable` に決まったあとなので、起動時の読み直し（最長約3.5秒）の途中で前面に戻り、
+  // 最後の読み直しがその直前に失敗したときは、次に前面に戻るまで読み直さない。直さないでよいと判断した（登録の時点で
+  // 1回読むと、起動の判定の直後に、同じ読み込みを毎回もう1回する）。ログイン画面で、組み込み済みの手段のボタンを押せば、`signIn` が先に保存済みの
+  // セッションを読み、見つかれば `already-signed-in` になって、そのままメインへ進む（各社の画面は開かない）。
   const unreadable = state.status === 'signed-out' && state.unreadable;
   useEffect(() => {
     if (!unreadable) return;
@@ -68,12 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [unreadable]);
 
   const markSignedIn = useCallback(() => setState({ status: 'signed-in' }), []);
-  const value = useMemo(() => ({ state, markSignedIn }), [state, markSignedIn]);
+  const markSignedOut = useCallback(() => setState({ status: 'signed-out', unreadable: false }), []);
+  const value = useMemo(() => ({ state, markSignedIn, markSignedOut }), [state, markSignedIn, markSignedOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
   const value = useContext(AuthContext);
-  if (!value) throw new Error('useAuth は AuthProvider の中で使う');
+  if (!value) throw new Error('useAuth は AuthStateProvider の中で使う');
   return value;
 }
