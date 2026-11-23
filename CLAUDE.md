@@ -18,7 +18,7 @@
 - **npm workspacesにしない。** ルートのExpo / RNの依存の固定が、hoistingで崩れうる。
 - **ルートの `tsconfig.json` は `worker/` を除外したまま。** Workerは独自のtsconfig（workerdの型）で型チェックする。
 - **アプリとWorkerでコードを共有しない。** リクエスト・レスポンスの形は docs を正として、両側に書く。負担・精算の計算はWorkerだけが持ち、アプリには `summary` API の結果を表示させる（ホームの精算見込みも同じ）。
-- 認証はSingfolio（`~/Developer/singfolio/worker`）からのコピー。コピー元のコミットをコードコメントに書き、Singfolio側の修正は手で取り込む（docs/backend-design.md 1章）。コピーしたファイル（`worker/src/` の `nonce.ts`・`idToken.ts`・`identity.ts`・`login.ts`・`auth.ts`・`session.ts`・`deleteAccount.ts`・`appleToken.ts`・`appleClientSecret.ts` など）は、構造・名前を保つ（整理・分割をしない。差分を取り込めなくなる）。このアプリで変えたところは、各ファイルの先頭のコメントに書いてある。
+- 認証はSingfolio（`~/Developer/singfolio/worker`）からのコピー。コピー元のコミットをコードコメントに書き、Singfolio側の修正は手で取り込む（docs/backend-design.md 1章）。コピーしたファイル（`worker/src/` の `nonce.ts`・`idToken.ts`・`identity.ts`・`login.ts`・`auth.ts`・`session.ts`・`deleteAccount.ts`・`appleToken.ts`・`appleClientSecret.ts`・`appleWeb.ts`・`appleNotification.ts` など）は、構造・名前を保つ（整理・分割をしない。差分を取り込めなくなる）。このアプリで変えたところは、各ファイルの先頭のコメントに書いてある。
 
 ## 設計上の注意（docs に詳細）
 
