@@ -1,6 +1,7 @@
 // D1の「読んだ行数」「書いた行数」を数えるDB（ローカルD1の `meta.rows_read`・`meta.rows_written`）。
 // Freeの日次の上限（読み取り500万行・書き込み10万行。docs/backend-design.md 12章）に対する、1回の操作の費用を測るために使う。
-// ローカルD1の `rows_written` は、本番の課金と同じく、索引の更新も1行と数える（`test/rowsWritten.test.ts` の冒頭の検査）。
+// ローカルD1の `rows_written` は、索引の更新も1行と数える（`test/rowsWritten.test.ts` の冒頭の検査）。本番の課金の数え方と同じはずだが、
+// 本番での一致は、確かめていない（docs/backend-design.md 13章の9）。
 // `first()` は、`all()` で読んで1行目を返す（`first()` は `meta` を返さないため。読む行数は同じ）。
 // `batch` に渡す文は、元の文に戻してから渡す。
 export interface RowTotals {

@@ -3,7 +3,8 @@
 // Freeの日次の上限（D1の読み取り500万行・書き込み10万行。docs/backend-design.md 12章「Freeのまま運用するときの上限」）に対する、
 // 操作ごとの費用の実測。1日に使える人数の見積もりは、12章。
 //
-// - ローカルD1の `rows_written` は、本番の課金と同じく、索引の更新も1行と数える（最初の検査）。数え方が違うと、ここの数は過小になる。
+// - ローカルD1の `rows_written` は、索引の更新も1行と数える（最初の検査）。本番の課金の数え方（公式の料金のページ）と同じはずだが、
+//   本番での一致は、確かめていない（13章の9）。違うと、ここの数は過小になる。
 // - 数字は、このテストが用意するデータでの値。行数は、操作ごとに決まる部分（書く行数）と、データの量で増える部分（読む行数。
 //   一覧・集計は、その月の支出の数に比例する）がある。後者は、今月30件・100件の2通りで見る。
 // - 索引・列・書き込みの文を足すと、この数が変わる。変わったら、意味を確かめて（書く行数が増える変更は、日次の上限に効く）、
@@ -106,7 +107,7 @@ describe('1回の操作の、読む行数・書く行数', () => {
       verifyAppleNotification: async () => ({ ok: false, reason: 'malformed' }),
     }) as unknown as IdTokenVerifier;
 
-  it('ローカルD1の rows_written は、索引の更新も1行と数える（本番の課金と同じ数え方）', async () => {
+  it('ローカルD1の rows_written は、索引の更新も1行と数える（本番の課金の数え方と同じはず。本番での一致は13章の9で確かめる）', async () => {
     const rowsWritten = async (sql: string) => (await db.prepare(sql).run()).meta.rows_written;
     // users: 索引なし → 1。identities（WITHOUT ROWID）: 表1 + UNIQUE(provider, sub) 1 + idx_identities_user_id 1 → 3。
     // sessions: 表1 + idx_sessions_identity_id 1 → 2。
