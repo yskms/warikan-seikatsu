@@ -3,7 +3,7 @@
 // このアプリのデータ処理（グループの匿名化・削除、競合）の検査を足した。除いたもの: 公開プロフィール（R2）の削除。
 // Apple のサーバー間通知（POST /auth/apple/notifications）を、模擬の発行元（テスト用のRSA鍵で署名し、JWKSを返す fetch）と
 // ローカルD1で確かめる。ネットワークには出ない。検証の条件（署名・iss・aud・events の形）、`consent-revoked` と
-// `account-deleted` の処理、再送・遅れて届く通知、通知とログインの競合（migrations/0002）を見る。
+// `account-deleted` の処理、再送・遅れて届く通知、通知とログインの競合（migrations/0001_auth.sql）を見る。
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from 'jose';
@@ -466,7 +466,7 @@ describe('POST /auth/apple/notifications', () => {
       assert.equal(await identityCount(me.userId), 1);
     });
 
-    it('他の書き込みと競合し続けたら 503。何も消さない。再送されれば、消える', async () => {
+    it('他の書き込みと競合し続けたら 503。グループのデータとアカウントは消さないが、セッションは消す。再送されれば、消える', async () => {
       const { me, a, b, myMemberInA } = await setup();
       const bump = () => db.prepare('UPDATE expense_groups SET data_version = data_version + 1 WHERE id = ?').bind(a.groupId).run();
       const original = env;
@@ -480,18 +480,47 @@ describe('POST /auth/apple/notifications', () => {
       }
       assert.equal(response.status, 503);
       assert.deepEqual(await response.json(), { error: 'service_unavailable' });
-      // 何も消えていない。
-      assert.notEqual(await authenticateSession(db, me.session, NOW), null);
+      // グループのデータとアカウントは、消えていない。セッションは、データを消す前に消してある（再送されなくても、ログイン中の端末が
+      // 使えるまま残らない）。
+      assert.equal(await authenticateSession(db, me.session, NOW), null);
       assert.equal((await member(myMemberInA))!.status, 'active');
       assert.equal(await groupExists(b.groupId), true);
       assert.equal(await userExists(me.userId), true);
+      assert.equal(await identityCount(me.userId), 1);
 
-      // 再送されれば、消える。
+      // 再送されれば、消える（行は残っているので、見つかる）。
       assert.equal((await notify({ type: 'account-deleted' })).status, 200);
       assert.deepEqual(await member(myMemberInA), { user_id: null, display_name: DELETED_USER_NAME, status: 'deleted' });
       assert.equal(await groupExists(b.groupId), false);
       assert.equal(await userExists(me.userId), false);
+    });
+
+    it('データの削除が例外で落ちても（D1のクエリ数の上限など）、セッションは消えている。再送されれば、消える', async () => {
+      const { me, a, myMemberInA } = await setup();
+      const versionA = await dataVersion(a.groupId);
+      const original = env;
+      env = {
+        ...original,
+        DB: new Proxy(original.DB, {
+          get(target, property) {
+            if (property === 'batch') return () => Promise.reject(new Error('Too many API requests by single Worker invocation.'));
+            const value = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        }),
+      } as Env;
+      try {
+        await assert.rejects(notify({ type: 'account-deleted' }), /Too many API requests/);
+      } finally {
+        env = original;
+      }
       assert.equal(await authenticateSession(db, me.session, NOW), null);
+      assert.equal((await member(myMemberInA))!.status, 'active');
+      assert.equal(await dataVersion(a.groupId), versionA);
+      assert.equal(await userExists(me.userId), true);
+
+      assert.equal((await notify({ type: 'account-deleted' })).status, 200);
+      assert.equal(await userExists(me.userId), false);
     });
   });
 

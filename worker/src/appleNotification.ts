@@ -9,6 +9,11 @@
 //   競合し続けると何も変えずに `conflict` を返すので、Singfolioの `storage-unavailable`（R2を消せなかった）と同じく、503にする
 //   （Appleが再送するかは分からない。再送されなければ、そのアカウントは、自動では消えないまま残る）。
 // - R2（`SNAPSHOTS`）は無いので、`env` は `DB` だけ。
+// - `account-deleted` でアカウントごと消すとき、**データを消す前に**、その行のセッションを先に消す（Singfolioには無い）。
+//   データの削除は、競合し続ける（503）、D1のクエリ数の上限に当たる（例外）などで、何も消せないことがあり、そのまま
+//   だと、Apple Accountを消した人のセッションが、ログイン中の端末から使える状態で残る。先に消しておけば、データの削除が
+//   どう失敗しても、セッションは残らない（消えるものは、セッションだけ。グループのデータは、再送されたときに消える）。
+//   消した後の、データの削除の結果は変わらない（アカウントごと消えれば、セッションは外部キーでも消える）。
 //
 // Apple が、アプリとの連携の解除（`consent-revoked`）と、Apple Account の削除（`account-deleted`）を、
 // 登録したエンドポイントへ送る（primary App ID に登録する。デプロイのあとに、利用者が行う）。本文は
@@ -36,7 +41,8 @@ export type AppleEventOutcome =
   | 'identity-deleted'
   | 'user-deleted'
   | 'nothing'
-  // アカウントごと消すとき、グループのデータの書き込みが、他の書き込みと競合し続けた（何も消していない。やり直せる）。
+  // アカウントごと消すとき、グループのデータの書き込みが、他の書き込みと競合し続けた（セッションは消したが、グループのデータと
+  // アカウントは消していない。やり直せる）。
   | 'conflict';
 
 /**
@@ -68,7 +74,8 @@ export async function handleAppleNotification(
     return verified.reason === 'unavailable' ? serviceUnavailable() : unauthorized();
   }
 
-  // 競合し続けたら 503（Appleが再送するかは分からない。再送されなければ、そのアカウントは、消えないまま残る）。
+  // 競合し続けたら 503（セッションは消してある。Appleが再送するかは分からない。再送されなければ、グループのデータとアカウントは、
+  // 消えないまま残る。docs/backend-design.md 12章）。
   if ((await applyAppleEvent(env, verified.event, now)) === 'conflict') return serviceUnavailable();
   return json({});
 }
@@ -98,7 +105,7 @@ export async function applyAppleEvent(
  *   `created_at` は、ログインの開始時刻（`createSession` に渡す `now`）。
  * - 記録: `last_sign_in_at <= eventTime`（通知のあとにサインインし直した行は、記録しない）で、`consent_revoked_at` が無い、または
  *   `eventTime` より前（同じ通知の再送は、何もしない）。`consent_revoked_at` は、`createSession` が、この通知より前に始まったログインの
- *   セッションを作らないために見る（通知の処理の最中に進んでいたログイン。migrations/0002）。
+ *   セッションを作らないために見る（通知の処理の最中に進んでいたログイン。このアプリでは migrations/0001_auth.sql。Singfolioの 0002）。
  */
 async function revokeConsent(db: D1Database, event: AppleNotificationEvent): Promise<AppleEventOutcome> {
   const identity = `provider = 'apple' AND sub = ?1`;
@@ -141,6 +148,8 @@ async function deleteAppleIdentity(
     .first<{ id: string; user_id: string; total: number }>();
   if (row === null) return 'nothing';
   if (row.total <= 1) {
+    // 先にセッションを消す（理由は、ファイルの先頭）。件数の確認と同じく、これ自体は競合制御（グループのバージョン）に当たらない。
+    await db.prepare('DELETE FROM sessions WHERE identity_id = ?1').bind(row.id).run();
     return (await deleteAccountData(env.DB, row.user_id, now)).status === 'deleted' ? 'user-deleted' : 'conflict';
   }
   await db.prepare('DELETE FROM identities WHERE id = ?1').bind(row.id).run();
