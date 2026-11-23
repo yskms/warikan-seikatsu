@@ -60,8 +60,7 @@ export function markUserActiveStatement(db: D1Database, userId: string, now: num
  * ログインは、検証を通ったあと、ここへ来るまでの間に、通知の処理が入りうる。通知を先に処理した場合のセッションを、
  * ここで作らない（通知を後に処理した場合は、通知が消す）。条件は INSERT の1文の中で見るので、通知の処理
  * （削除と記録の1バッチ）と、どちらが先でも、取り消し後のセッションは残らない（migrations/0001_auth.sql の
- * `consent_revoked_at`）。このアプリは、Appleのサーバー間通知をまだ受けない（docs/backend-design.md 12章）が、
- * 条件は先に入れてある。
+ * `consent_revoked_at`）。通知の処理は appleNotification.ts。
  */
 export async function createSession(db: D1Database, identityId: string, now: number): Promise<string | null> {
   const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));

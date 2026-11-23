@@ -1,4 +1,5 @@
 // 入口。エンドポイントは docs/backend-design.md 9章の順に足す。
+import { handleAppleNotification } from './appleNotification.ts';
 import { handleAppleCallback, handleAppleWebLogin } from './appleWeb.ts';
 import { handleLogin, handleLogout, handleNonce } from './auth.ts';
 import {
@@ -74,6 +75,8 @@ export default {
     // AndroidのAppleログイン（Web経由）。コールバックは、Appleのリダイレクトを、アプリのURLスキームへ戻すだけ。
     if (pathname === '/auth/apple/callback') return handleAppleCallback(request);
     if (pathname === '/auth/apple/login') return handleAppleWebLogin(request, env, now);
+    // Appleのサーバー間通知（連携の解除・Apple Accountの削除）。署名を確かめてから処理する（セッションは要らない）。
+    if (pathname === '/auth/apple/notifications') return handleAppleNotification(request, env, now);
 
     if (GROUPS_PATH.test(pathname)) {
       if (request.method === 'GET') return handleListGroups(request, env, now);
