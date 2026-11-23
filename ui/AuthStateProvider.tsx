@@ -2,16 +2,14 @@
 // （`Stack.Protected`）。判定の仕様は docs/screens.md 1章の最後の項目、読み直しの規則は `src/services/sessionCheck.ts`。
 // 名前は `AuthStateProvider`: `AuthProvider` は、ログイン手段（apple・google）の型の名前（`src/domain/types.ts`。Singfolioのコピー）。
 //
-// **この状態は、端末のセッションとは別に持っている。ずれないよう、セッションを捨てる操作は、必ず `markSignedOut` を呼ぶこと**
-// （`accountService` は、端末のセッションが変わったことを画面へ知らせない。Singfolioのコピーを元にした構造を保つため、
-// 知らせる仕組みを足していない）。呼ぶべき場所は、ログアウト・アカウントの削除（成功したとき）と、APIの呼び出し
-// （`sessionAccess.withSession`）が `unauthorized`（サーバーがセッションを認めなかった。層が端末のセッションを捨てる）か
-// `not-signed-in` を返したとき。これを忘れると、ログインしていないのに、メインの画面が出続ける
-// （docs/backend-design.md 12章の「認証の残り」）。
+// **この状態は、端末のセッションとは別に持っている。** セッションが無くなったとき（401・ログアウト・アカウントの削除）に
+// ずれないよう、`platform/accountService.ts` が `accountService`・`sessionAccess` を包み、`onSessionLost` で通知する
+// （`src/services/sessionLost.ts`）。ここで受けて、ログイン画面へ戻す。**画面・APIを呼ぶ層は、状態を直接変えない**
+// （個別に呼ぶと漏れる）。認証が要るAPIは、必ず `sessionAccess.withSession` を通すこと。
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
-import { accountService } from '../platform/accountService.ts';
+import { accountService, onSessionLost } from '../platform/accountService.ts';
 import { checkSession, checkSessionOnce, type SessionCheck } from '../src/services/sessionCheck.ts';
 
 export type AuthState =
@@ -28,8 +26,6 @@ interface AuthContextValue {
   state: AuthState;
   /** ログインが済んだ（`accountService.signIn` が成功した、または `already-signed-in` だった）。 */
   markSignedIn(): void;
-  /** 端末のセッションを捨てた（上の説明）。ログイン画面へ戻る。 */
-  markSignedOut(): void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -82,9 +78,14 @@ export function AuthStateProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, [unreadable]);
 
+  // 端末のセッションが無くなった（上の説明）。ログイン画面へ戻る。
+  useEffect(
+    () => onSessionLost(() => setState({ status: 'signed-out', unreadable: false })),
+    [],
+  );
+
   const markSignedIn = useCallback(() => setState({ status: 'signed-in' }), []);
-  const markSignedOut = useCallback(() => setState({ status: 'signed-out', unreadable: false }), []);
-  const value = useMemo(() => ({ state, markSignedIn, markSignedOut }), [state, markSignedIn, markSignedOut]);
+  const value = useMemo(() => ({ state, markSignedIn }), [state, markSignedIn]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

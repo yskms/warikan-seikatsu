@@ -21,6 +21,7 @@ import {
   type AccountService,
   type SessionAccess,
 } from '../src/services/accountService.ts';
+import { withSessionLostNotice } from '../src/services/sessionLost.ts';
 import { authBrowser } from './authBrowser.ts';
 import { authCrypto } from './authCrypto.ts';
 import { installMarker } from './installMarker.ts';
@@ -36,8 +37,18 @@ const { access, ...account } = createAccountService({
   randomVerifier: authCrypto.randomVerifier,
 });
 
-/** 画面が使う。セッションの値は渡さない。 */
-export const accountService: AccountService = account;
+// 端末のセッションが無くなったこと（401・ログアウト・アカウントの削除）を、画面のログイン状態へ知らせるため、包む
+// （`src/services/sessionLost.ts`）。画面・APIを呼ぶ層は、これを通して使う（個別に通知しない）。
+const notifier = withSessionLostNotice(account, access);
 
-/** APIを呼ぶ層だけが使う（セッションを `Authorization` に付ける）。画面には渡さない。 */
-export const sessionAccess: SessionAccess = access;
+/** 画面が使う。セッションの値は渡さない。 */
+export const accountService: AccountService = notifier.account;
+
+/**
+ * APIを呼ぶ層だけが使う（セッションを `Authorization` に付ける）。画面には渡さない。認証が要る呼び出しは、必ず、これの
+ * `withSession` を通す（通さないと、セッションが失効したことが、画面へ伝わらない）。
+ */
+export const sessionAccess: SessionAccess = notifier.access;
+
+/** 端末のセッションが無くなったときの通知を受ける（`ui/AuthStateProvider.tsx` が使う）。戻り値で解除する。 */
+export const onSessionLost: (listener: () => void) => () => void = notifier.subscribe;

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import type { AuthProvider } from '../domain/types.ts';
 import { AuthError } from '../repositories/authError.ts';
-import { checkSession, checkSessionOnce, RETRY_DELAYS_MS } from './sessionCheck.ts';
+import { checkSession, checkSessionOnce, CHECK_DEADLINE_MS, RETRY_DELAYS_MS } from './sessionCheck.ts';
 
 /** 呼ばれるたびに、順に結果（値か失敗）を返す偽のアカウント。使い切ったら最後の結果を返す。 */
 function account(results: (AuthProvider | null | AuthError)[]) {
@@ -63,6 +63,24 @@ describe('checkSession', () => {
     const a = account([new AuthError('storage-failed')]);
     assert.equal(await checkSession(a, { delaysMs: [] }), 'unreadable');
     assert.equal(a.calls, 1);
+  });
+});
+
+describe('判定全体の上限', () => {
+  it('読み込みが返ってこなくても、上限で unreadable を返す（スプラッシュが出たままにならない）', async () => {
+    const hung = { getSignedInProvider: () => new Promise<never>(() => {}) };
+    const started = Date.now();
+    assert.equal(await checkSession(hung, { deadlineMs: 30 }), 'unreadable');
+    assert.ok(Date.now() - started < 2000);
+  });
+
+  it('上限の前に判定が済めば、その結果を返す（上限の時計は止める）', async () => {
+    const a = account(['apple']);
+    assert.equal(await checkSession(a, { deadlineMs: 60_000 }), 'signed-in');
+  });
+
+  it('既定の上限は、読み直しの待ちの合計より長い', () => {
+    assert.ok(CHECK_DEADLINE_MS > RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0));
   });
 });
 
