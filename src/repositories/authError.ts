@@ -6,6 +6,8 @@
 // このアプリで変えたところ:
 // - `storage-failed` の説明に、保存先を**読めなかった**（`unreadable`）を足した（`accountService` が、読めない値を
 //   「サインインしていない」と同じに扱わないために使う。`accountService.ts` の先頭のコメント）。コードの値は同じ。
+// - `delete-unconfirmed` の説明に、応答が読めない（`invalid-response`）ことも足した（コードは、層が `network` と
+//   `invalid-response` の両方を読み替える。`accountService.ts` の `deleteAccount`）。コードの値は同じ。
 //
 // 失敗の種類は `message` ではなく `code` で区別する（`message` はログ用の英語。トークン・応答の本文は
 // 載せない）。
@@ -58,7 +60,8 @@ export type AuthErrorCode =
    */
   | 'storage-failed'
   /**
-   * アカウントの削除の要求（`/auth/delete`）を送ったが、結果が分からない（通信が途中で切れた・時間内に応答が無い）。
+   * アカウントの削除の要求（`/auth/delete`）を送ったが、結果が分からない（通信が途中で切れた・時間内に応答が無い、または
+   * 200 なのに応答が読めない `invalid-response`。Workerが 200 を返すのは、D1を消したあと）。
    * **サーバーで削除が済んでいるかもしれない**。やり直すと 401（`unauthorized`）になり、そこで端末のセッションが捨てられる。
    * 要求を送る前の失敗（`T` の取得の通信の失敗など。何も消えていない）は、ふつうの `network`。サインインは保たれる
    */

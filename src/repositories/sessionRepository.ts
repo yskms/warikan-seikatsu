@@ -36,8 +36,9 @@ export interface StoredSession {
 
 /**
  * 保存先の読み取りの結果。`none`（項目が無い）と `unreadable`（読み取りに失敗した、壊れている、知らない版）を
- * 区別する。どちらも「サインインしていない」扱いだが、`unreadable` は、値が残っていてサーバーのセッションも
- * 生きているかもしれない（ログアウトで、失効を確認できたと言ってはいけない）。
+ * **区別して返すだけ**で、どう扱うかは、サインインの層（`accountService`）が決める。`unreadable` は、値が残っていて、
+ * サーバーのセッションも生きているかもしれないので、「サインインしていない」（`none`）と同じには扱えない
+ * （層は、`storage-failed` にする。ログアウトでは、失効を確認できたと言わない。`accountService.ts` の先頭のコメント）。
  */
 export type SessionRead =
   | { kind: 'none' }
@@ -66,9 +67,11 @@ function parse(raw: string): StoredSession | null {
 export function createSessionRepository(storage: SecureStorage) {
   return {
     /**
-     * 保存したセッション。読み取りの失敗（端末がロック中、Androidで鍵が失われた、など）も、壊れた値・知らない版も、
-     * 投げずに `unreadable`（読めないことは、サインインしていない扱いにするだけで、アプリを止める理由にならない）。
+     * 保存したセッション。読み取りの失敗（端末がロック中、Androidの復号の失敗など）も、壊れた値・知らない版も、
+     * 投げずに `unreadable` で返す（アプリを止める理由にしない。扱いは、呼び出す層が決める）。
      * 読めない値は消さない（一時的な失敗かもしれない）。次の `set` で上書きされる。
+     * Androidで、Keystoreの鍵が無い・`BadPaddingException` のときは、`expo-secure-store` が値を自分で消して `null` を
+     * 返すので、`unreadable` ではなく `none` になる（`platform/secureStorage.ts`）。
      */
     async read(): Promise<SessionRead> {
       let raw: string | null;
