@@ -1,0 +1,237 @@
+// ログイン画面（docs/screens.md 2章）。AppleとGoogleの両方を、両OSで出す（iOSはAppleが上、AndroidはGoogleが上）。
+// 招待URLから来たときの案内と、ログイン後に参加確認へ進む処理は、招待・参加の画面を作るときに足す。
+import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { accountService } from '../platform/accountService.ts';
+import type { AuthProvider } from '../src/domain/types.ts';
+import { isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../src/legal/legalUrls.ts';
+import { isAlreadySignedIn, signInErrorMessage } from '../src/services/signInMessage.ts';
+import { useAuth } from '../ui/AuthProvider.tsx';
+import { useColors } from '../ui/useColors.ts';
+
+const PROVIDER_ORDER: readonly AuthProvider[] =
+  Platform.OS === 'ios' ? ['apple', 'google'] : ['google', 'apple'];
+
+const LEGAL_LINKS = [
+  { label: 'プライバシーポリシー', url: PRIVACY_POLICY_URL },
+  { label: '利用規約', url: TERMS_OF_SERVICE_URL },
+].filter((link) => !isPlaceholderUrl(link.url));
+
+export default function LoginScreen() {
+  const { state, markSignedIn } = useAuth();
+  const colors = useColors();
+  // 進行中のログイン手段。あるあいだは、どのボタンも押せない。
+  const [busy, setBusy] = useState<AuthProvider | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function signIn(provider: AuthProvider) {
+    if (busy) return;
+    setBusy(provider);
+    setError(null);
+    try {
+      await accountService.signIn(provider);
+      markSignedIn();
+    } catch (e) {
+      // すでにサインイン済みなら、ログイン済みとして進める。取りやめは、何も出さない。
+      if (isAlreadySignedIn(e)) markSignedIn();
+      else setError(signInErrorMessage(e, provider));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
+      <View style={styles.hero}>
+        <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
+          わりかん生活
+        </Text>
+        <View style={[styles.rule, { backgroundColor: colors.accent }]} />
+        <Text style={[styles.tagline, { color: colors.textSecondary }]}>
+          ふたりの生活費を、決めた割合で月ごとに精算
+        </Text>
+      </View>
+
+      <View style={styles.actions}>
+        {state.status === 'signed-out' && state.unreadable ? (
+          <Text style={[styles.notice, { color: colors.textSecondary }]}>
+            この端末に保存したログイン情報を読み取れませんでした。ログインし直してください。
+          </Text>
+        ) : null}
+
+        {/* 失敗の文言は、ボタンの上に出す。下に出すと、ボタンが押し上げられて、直後のタップが外れる。 */}
+        {error ? (
+          <Text
+            style={[styles.error, { color: colors.error }]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {error}
+          </Text>
+        ) : null}
+
+        {PROVIDER_ORDER.map((provider) => (
+          <ProviderButton
+            key={provider}
+            provider={provider}
+            busy={busy === provider}
+            disabled={busy !== null}
+            onPress={() => void signIn(provider)}
+          />
+        ))}
+
+        {LEGAL_LINKS.length > 0 ? (
+          <View style={styles.legal}>
+            {LEGAL_LINKS.map((link) => (
+              <Pressable
+                key={link.url}
+                accessibilityRole="link"
+                hitSlop={8}
+                onPress={() => void Linking.openURL(link.url).catch(() => {})}
+              >
+                <Text style={[styles.legalLink, { color: colors.textSecondary }]}>{link.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+interface ProviderButtonProps {
+  provider: AuthProvider;
+  busy: boolean;
+  disabled: boolean;
+  onPress(): void;
+}
+
+function ProviderButton({ provider, busy, disabled, onPress }: ProviderButtonProps) {
+  if (provider === 'apple' && Platform.OS === 'ios') {
+    return <NativeAppleButton busy={busy} disabled={disabled} onPress={onPress} />;
+  }
+  return <CustomButton provider={provider} busy={busy} disabled={disabled} onPress={onPress} />;
+}
+
+// iOSのAppleは、システムのボタン（Appleのガイドラインに合う見た目・文言。端末の言語に合わせて出る）。使えない端末
+// （古いiOSなど）では、ふつうのボタンにする。システムのボタンには無効の状態が無いので、進行中の押下は無視する。
+function NativeAppleButton({ busy, disabled, onPress }: Omit<ProviderButtonProps, 'provider'>) {
+  const scheme = useColorScheme();
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    AppleAuthentication.isAvailableAsync().then(
+      (value) => !cancelled && setAvailable(value),
+      () => !cancelled && setAvailable(false),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (available === false) return <CustomButton provider="apple" busy={busy} disabled={disabled} onPress={onPress} />;
+  return (
+    <View style={[styles.buttonSlot, disabled && !busy && styles.dimmed]}>
+      {available ? (
+        <AppleAuthentication.AppleAuthenticationButton
+          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+          buttonStyle={
+            scheme === 'dark'
+              ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+              : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+          }
+          cornerRadius={BUTTON_RADIUS}
+          style={styles.nativeButton}
+          onPress={() => {
+            if (!disabled) onPress();
+          }}
+        />
+      ) : null}
+      {busy ? (
+        <View style={styles.busyOverlay} pointerEvents="none">
+          <ActivityIndicator color={scheme === 'dark' ? '#000000' : '#FFFFFF'} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function CustomButton({ provider, busy, disabled, onPress }: ProviderButtonProps) {
+  const colors = useColors();
+  const scheme = useColorScheme();
+  // Appleは白黒の2色（ダークでは白地に黒）。Googleは、面の色に縁をつける。
+  const look =
+    provider === 'apple'
+      ? scheme === 'dark'
+        ? { background: '#FFFFFF', text: '#000000', border: '#FFFFFF' }
+        : { background: '#000000', text: '#FFFFFF', border: '#000000' }
+      : { background: colors.surface, text: colors.textPrimary, border: colors.border };
+  const label = provider === 'apple' ? 'Appleでサインイン' : 'Googleでログイン';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.button,
+        { backgroundColor: look.background, borderColor: look.border },
+        disabled && !busy && styles.dimmed,
+        pressed && styles.pressed,
+      ]}
+    >
+      {busy ? (
+        <ActivityIndicator color={look.text} />
+      ) : (
+        <>
+          <Ionicons name={provider === 'apple' ? 'logo-apple' : 'logo-google'} size={20} color={look.text} />
+          <Text style={[styles.buttonLabel, { color: look.text }]}>{label}</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+const BUTTON_RADIUS = 12;
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, paddingHorizontal: 24 },
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  title: { fontSize: 34, fontWeight: '700' },
+  rule: { width: 40, height: 4, borderRadius: 2 },
+  tagline: { fontSize: 16, lineHeight: 24, textAlign: 'center' },
+  actions: { gap: 12, paddingBottom: 16 },
+  notice: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  button: {
+    height: 50,
+    borderRadius: BUTTON_RADIUS,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  buttonLabel: { fontSize: 17, fontWeight: '600' },
+  buttonSlot: { height: 50 },
+  nativeButton: { width: '100%', height: 50 },
+  busyOverlay: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  dimmed: { opacity: 0.5 },
+  pressed: { opacity: 0.8 },
+  error: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  legal: { flexDirection: 'row', justifyContent: 'center', gap: 20, paddingTop: 8 },
+  legalLink: { fontSize: 13, textDecorationLine: 'underline' },
+});
