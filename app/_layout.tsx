@@ -35,6 +35,7 @@ function RootNavigator() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Protected guard={state.status === 'signed-in'}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="create-group" />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'signed-out'}>
         <Stack.Screen name="login" />
