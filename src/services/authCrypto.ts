@@ -1,6 +1,6 @@
 // ログインに使う `V`・`C`・`SHA-256(T)` の生成。乱数とSHA-256の実体は、実行環境が持つ（アプリは expo-crypto。
 // `platform/authCrypto.ts`）ので注入し、ここは、Workerが期待する形（43字のbase64url）に整えて、確かめるだけ。
-// 方式は docs/backend-design.md 9章の「認証API」。サインインの層（まだ無い）が使う。
+// 方式は docs/backend-design.md 9章の「認証API」。サインインの層（`accountService`。`platform/accountService.ts` が組み立てる）が使う。
 //
 // - `T`：`POST /auth/nonce` が返す不透明な値（サーバーが作る。アプリは作らない）。
 // - `V`：AndroidのAppleログイン（Web経由）の検証用の値。32バイトの乱数の base64url（43字）。アプリのメモリにだけ置く。

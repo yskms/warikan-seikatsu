@@ -1,5 +1,5 @@
 // AndroidのAppleログイン（Web経由）。Appleの認可の画面（Custom Tab）を開き、アプリのURLスキームへの戻りから、
-// 認可コードを取り出す。サインインの層に `AuthCodeProvider` として渡す（Androidだけ。層はまだ無い）。
+// 認可コードを取り出す。サインインの層（`accountService`）に `AuthCodeProvider` として渡す（Androidだけ。`platform/accountService.ts`）。
 // 画面・サインインの層は、URL・ブラウザの扱いを知らない。方式は docs/backend-design.md 9章の「認証API」
 // （AndroidのAppleログイン）。Singfolio（src/repositories/appleWebSignInRepository.ts）からのコピーを元にした
 // （コピー元: singfolio 89ad088）。Singfolio側を直したときは、差分を手で取り込む。
@@ -136,8 +136,7 @@ export interface AuthCodeProviderLike {
 const FOREGROUND_GRACE_MS = 1500;
 // 全体の上限。Workerの `T` の期限（5分）に合わせた値。`T` は待ち始める前に発行するので、`T` のほうが少し先に切れる
 // （そのあとに戻りのURLが来ても、ログインは401になる）。過ぎたら、受け取りをやめる。
-// Singfolioは、これと別に、サインインの層（`account`）も同じ5分の上限を持つ（層は、結果を待たずに捨てる）。
-// 層を作るときに、同じ上限を持たせる（docs/backend-design.md 12章の「認証の残り」）。
+// サインインの層（`accountService`）も、これと別に、同じ5分の上限を持つ（`PROVIDER_TIMEOUT_MS`。層は、結果を待たずに捨てる）。
 const WAIT_LIMIT_MS = 5 * 60_000;
 
 export function createAppleWebSignInRepository(
