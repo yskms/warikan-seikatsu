@@ -54,4 +54,12 @@ describe('グループの失敗の文言', () => {
     // 作成の入力が通らなかったときは、タイムゾーン（端末の日付と時刻の設定）を案内する
     assert.match(createGroupErrorMessage(new AuthError('invalid-request')), /日付と時刻/);
   });
+
+  it('応答が読めないとき（invalid-response）は、通信環境が原因のこともあると伝える', () => {
+    assert.match(loadGroupsErrorMessage(new AuthError('invalid-response')), /通信環境/);
+    assert.match(createGroupErrorMessage(new AuthError('invalid-response')), /通信環境/);
+    // 入力・食い違いの失敗（invalid-request）は、通信環境のせいにしない
+    assert.doesNotMatch(loadGroupsErrorMessage(new AuthError('invalid-request')), /通信環境/);
+    assert.doesNotMatch(createGroupErrorMessage(new AuthError('invalid-request')), /通信環境/);
+  });
 });

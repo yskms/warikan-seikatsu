@@ -1,7 +1,8 @@
 // グループ作成（docs/screens.md 2章）。ログイン後、グループが1つも無いときに出す（`app/index.tsx` が回す）。
 // 入力は最小限（グループ名・自分の表示名・通貨）。作ると、初期の費目（家賃など）をサーバーが作る。
-// 作らずに出る道は、ログアウトだけ（間違ったアカウントでログインした人、脱退して所属が空になった人のため。グループは、
-// 作ると、あとから消せない）。招待を保持する仕組みを足すときの注意は、`app/index.tsx` の先頭。
+// 作らずに出る道は、ログアウトだけ（間違ったアカウントでログインした人、脱退して所属が空になった人のため。作ったグループは、
+// すぐには消せない: 消えるのは、最後の1人が脱退するときで、その確定は、脱退月を締めたときか翌月1日。脱退の画面（設定）も、
+// まだ無い）。招待を保持する仕組みを足すときの注意は、`app/index.tsx` の先頭。
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -42,9 +43,11 @@ export default function CreateGroupScreen() {
   // 副作用として、結果が分からない失敗のあとに入力を直して送り直すと、すでに作られていた場合は、**送った内容の全部**
   // （グループ名・表示名・通貨・タイムゾーン）が、直す前のままになる。グループ名・表示名・通貨（金額に関わるものが無い
   // うち）はあとから変えられるが、タイムゾーンを変える手段は無い。端末のタイムゾーンは、やり直しのあいだに変わらない
-  // ので、実際に古くなりうるのは、利用者が直した入力だけ。二重にグループができるより、よいとした（グループは消せない）。
+  // ので、実際に古くなりうるのは、利用者が直した入力だけ。二重にグループができるより、よいとした（余分なグループは、すぐには消せず、脱退の確定まで残る）。
   const requestId = useRef<string | null>(null);
   const { confirmSignOut, busy: signingOut, error: signOutError } = useSignOut();
+  // 作成とログアウトは、どちらか一方だけ（作成の途中でセッションを捨てない。ログアウトの途中で作成を始めない）。
+  const locked = busy || signingOut;
   const displayNameInput = useRef<TextInput>(null);
 
   function clearFieldError(field: keyof CreateGroupFormErrors) {
@@ -52,7 +55,7 @@ export default function CreateGroupScreen() {
   }
 
   async function submit() {
-    if (submitting.current) return;
+    if (submitting.current || signingOut) return;
     const result = validateCreateGroupForm({ name, displayName, currencyCode });
     if (!result.ok) {
       setFieldErrors(result.errors);
@@ -101,7 +104,7 @@ export default function CreateGroupScreen() {
                 clearFieldError('name');
               }}
               error={fieldErrors.name}
-              editable={!busy}
+              editable={!locked}
               returnKeyType="next"
               // 次の欄へ進む。既定（送信してフォーカスを外す）のままだと、キーボードが閉じるだけになる。
               submitBehavior="submit"
@@ -117,7 +120,7 @@ export default function CreateGroupScreen() {
               inputRef={displayNameInput}
               placeholder="このグループの中での名前"
               error={fieldErrors.displayName}
-              editable={!busy}
+              editable={!locked}
               returnKeyType="done"
               onSubmitEditing={() => void submit()}
             />
@@ -132,8 +135,8 @@ export default function CreateGroupScreen() {
                       key={currency.code}
                       accessibilityRole="radio"
                       accessibilityLabel={currency.name}
-                      accessibilityState={{ selected, disabled: busy }}
-                      disabled={busy}
+                      accessibilityState={{ selected, disabled: locked }}
+                      disabled={locked}
                       onPress={() => setCurrencyCode(currency.code)}
                       style={[
                         styles.chip,
@@ -161,7 +164,7 @@ export default function CreateGroupScreen() {
             </View>
           </View>
 
-          {/* 作らずに出る道。作成中は押せない（作成の途中でセッションを捨てない）。 */}
+          {/* 作らずに出る道。作成中は押せない。 */}
           <View style={styles.signOut}>
             {signOutError ? (
               <Text style={[styles.hint, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
@@ -171,12 +174,12 @@ export default function CreateGroupScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityHint="確認のあとで、ログアウトします"
-              accessibilityState={{ disabled: busy || signingOut }}
-              disabled={busy || signingOut}
+              accessibilityState={{ disabled: locked }}
+              disabled={locked}
               hitSlop={8}
               onPress={confirmSignOut}
             >
-              <Text style={[styles.signOutLabel, { color: colors.textSecondary }, (busy || signingOut) && styles.dimmed]}>
+              <Text style={[styles.signOutLabel, { color: colors.textSecondary }, locked && styles.dimmed]}>
                 別のアカウントでログインし直す
               </Text>
             </Pressable>
@@ -191,7 +194,7 @@ export default function CreateGroupScreen() {
               {error}
             </Text>
           ) : null}
-          <PrimaryButton label="作成" busy={busy} onPress={() => void submit()} />
+          <PrimaryButton label="作成" busy={busy} disabled={signingOut} onPress={() => void submit()} />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
