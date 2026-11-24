@@ -1,5 +1,5 @@
-// 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「メンバーと招待」と、「アカウント」の
-// ログアウト・アカウントを削除。固定費・グループの設定・アプリの設定（キーパッドの並び）・このアプリについて（規約など）は、
+// 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「固定費」・「メンバーと招待」と、
+// 「アカウント」のログアウト・アカウントを削除。グループの設定・アプリの設定（キーパッドの並び）・このアプリについて（規約など）は、
 // まだ作っていない。作るときに、ここへ足す。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -34,6 +34,15 @@ export function SettingsScreen() {
             style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
           >
             <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>カテゴリと負担割合</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="固定費"
+            onPress={() => router.push({ pathname: '/recurring', params: { groupId: group.id } })}
+            style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
+          >
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>固定費</Text>
             <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
           </Pressable>
           <Pressable

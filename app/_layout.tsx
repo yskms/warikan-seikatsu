@@ -62,6 +62,8 @@ function RootNavigator() {
         {/* カテゴリと負担割合も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。下の `members` と同じ仕組みで、
             素早く2回押すと重なるはず（エミュレータでは、付ける前も付けたあとも未確認。docs/screens.md 5章） */}
         <Stack.Screen name="categories" dangerouslySingular />
+        {/* 固定費の一覧も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ。カテゴリと負担割合と同じ理由） */}
+        <Stack.Screen name="recurring" dangerouslySingular />
         {/* メンバーと招待は、`dangerouslySingular` で、2枚重ねない。入口は、設定の行と、ホームの「相手を招待する」カード。素早く2回
             押すと、`router.push` が2回通り、画面が2枚重なる（エミュレータで確かめた）。この画面は、発行した招待のトークンを画面の
             メモリだけに持つので、重なっていると、上の画面で発行して戻ったとき、下の画面の一覧では「共有」で出し直せない */}
@@ -78,6 +80,8 @@ function RootNavigator() {
         <Stack.Screen name="close" dangerouslySingular options={{ presentation: 'modal', gestureEnabled: false }} />
         {/* カテゴリの追加・編集のシート。入力中の破棄の確認を出すため、スワイプで閉じるのは止める（✕・戻る操作は、`beforeRemove` で確認する） */}
         <Stack.Screen name="category-edit" dangerouslySingular options={{ presentation: 'modal', gestureEnabled: false }} />
+        {/* 固定費の登録・編集のシート。入力中の破棄の確認を出すため、スワイプで閉じるのは止める（✕・戻る操作は、`beforeRemove` で確認する） */}
+        <Stack.Screen name="recurring-edit" dangerouslySingular options={{ presentation: 'modal', gestureEnabled: false }} />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'signed-in' && showJoin}>
         {/* 招待URLを開いたあとの参加確認。iOSのスワイプでは戻らない（抜ける道は「キャンセル」。招待を手放す） */}
