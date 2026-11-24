@@ -16,8 +16,10 @@ import {
   CATEGORY_COLOR_KEYS,
   checkDraft,
   draftFromCategory,
+  disableCap,
   enableCap,
   hasChanges,
+  isDirty,
   MAX_CATEGORY_NAME_LENGTH,
   newDraft,
   setCapMember,
@@ -93,6 +95,8 @@ describe('draftFromCategory', () => {
       capEnabled: false,
       capMemberId: null,
       capAmount: '',
+      percentsBeforeCap: null,
+      cappedMemory: null,
     });
   });
 
@@ -176,6 +180,87 @@ describe('上限額つきにする', () => {
   it('オンにし直しても、すでに選んだ人を保つ', () => {
     const draft = { ...draftOf(), capMemberId: 'm2' };
     assert.equal(enableCap(draft, ctxOf()).capMemberId, 'm2');
+  });
+});
+
+describe('上限額のスイッチ（入れて切っても、割合が書き換わらない）', () => {
+  it('入れて切ると、割合は入れる前に戻る（7:3 の費目で試しに入れて切っただけで、0:10 にならない）', () => {
+    const ctx = ctxOf();
+    const original = draftOf(ctx);
+    const on = enableCap(original, ctx);
+    assert.deepEqual(on.percents, { m1: '0', m2: '100' });
+    const off = disableCap(on);
+    assert.equal(off.capEnabled, false);
+    assert.deepEqual(off.percents, { m1: '70', m2: '30' });
+    assert.equal(isDirty(off, original), false);
+    // 切ったあとに、割合を保存しても、変更なしとして何も送らない
+    const plan = buildSavePlan(checkOk(checkDraft(off, ctx)), off, ctx);
+    assert.deepEqual(plan, { profile: null, shares: null });
+  });
+
+  it('入れたあとに直した割合・上限額は、また入れたときに戻る', () => {
+    const ctx = ctxOf();
+    let draft = enableCap(draftOf(ctx), ctx);
+    draft = { ...setPercentText(draft, ctx, 'm1', '20'), capAmount: '5000' };
+    assert.deepEqual(draft.percents, { m1: '20', m2: '80' });
+    const off = disableCap(draft);
+    assert.deepEqual(off.percents, { m1: '70', m2: '30' });
+    const again = enableCap(off, ctx);
+    assert.equal(again.capEnabled, true);
+    assert.deepEqual(again.percents, { m1: '20', m2: '80' });
+    assert.equal(again.capAmount, '5000');
+    assert.equal(again.capMemberId, 'm1');
+  });
+
+  it('もとから上限つきの費目は、切ってまた入れても、元の「超えた分」の割合・上限額・人を、初期値で上書きしない', () => {
+    const capped = rule([['m1', 2000], ['m2', 8000]], { memberId: 'm2', capMinor: 15000 });
+    const ctx = ctxOf({ rule: capped });
+    const original = draftOf(ctx);
+    assert.equal(original.capEnabled, true);
+    const off = disableCap(original);
+    assert.equal(off.capEnabled, false);
+    // 開いたときから上限つきだと、つける前の割合は分からない。いまの欄の値のまま（画面に出ているので、直してもらう）
+    assert.deepEqual(off.percents, { m1: '20', m2: '80' });
+    const again = enableCap(off, ctx);
+    assert.deepEqual(again, { ...original, percentsBeforeCap: { m1: '20', m2: '80' } });
+    assert.equal(isDirty(again, original), false);
+  });
+
+  it('すでに入っている（切れている）ときは、何も変えない', () => {
+    const ctx = ctxOf();
+    const on = enableCap(draftOf(ctx), ctx);
+    assert.equal(enableCap(on, ctx), on);
+    const off = draftOf(ctx);
+    assert.equal(disableCap(off), off);
+  });
+});
+
+describe('isDirty', () => {
+  const ctx = ctxOf();
+  const base = draftOf(ctx);
+
+  it('何も変えていなければ変更なし', () => {
+    assert.equal(isDirty({ ...base }, base), false);
+  });
+
+  it('名前・アイコン・色・割合・上限の有無を変えたら、変更あり', () => {
+    assert.equal(isDirty({ ...base, name: '住居' }, base), true);
+    assert.equal(isDirty({ ...base, icon: 'cart' }, base), true);
+    assert.equal(isDirty({ ...base, color: 'red' }, base), true);
+    assert.equal(isDirty(applyPreset(base, ctx, 5000), base), true);
+    assert.equal(isDirty(enableCap(base, ctx), base), true);
+  });
+
+  it('上限つきのとき、上限の人・上限額を変えたら変更あり。上限が切れていれば、それらは見ない', () => {
+    const on = { ...enableCap(base, ctx), capAmount: '1000' };
+    assert.equal(isDirty({ ...on, capAmount: '2000' }, on), true);
+    assert.equal(isDirty(setCapMember(on, ctx, 'm2'), on), true);
+    // 上限なし同士なら、上限の人・上限額の食い違い（切った後の持ち越し）は、変更に数えない
+    assert.equal(isDirty({ ...base, capMemberId: 'm2', capAmount: '999' }, base), false);
+  });
+
+  it('割合の欄は、メンバーの並びに依らず比べる', () => {
+    assert.equal(isDirty({ ...base, percents: { m2: '30', m1: '70' } }, base), false);
   });
 });
 

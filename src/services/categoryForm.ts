@@ -35,6 +35,13 @@ export interface CategoryDraft {
   capMemberId: string | null;
   /** 上限額（月あたり。入力欄の文字。通貨の単位で） */
   capAmount: string;
+  /**
+   * 上限額をつける直前の割合。つけたあとに切ったら、これに戻す（試しにスイッチを入れて切っただけで、割合が書き換わって
+   * 「変更あり」にならないように）。開いたときから上限つきの費目は、つける前の割合を知らないので `null`（切っても、いまの値のまま）。
+   */
+  percentsBeforeCap: Record<string, string> | null;
+  /** 上限額を切る直前の、上限つきの入力。また入れたら、これに戻す（元の「超えた分」の割合を、初期値で上書きしない） */
+  cappedMemory: { percents: Record<string, string>; capMemberId: string | null; capAmount: string } | null;
 }
 
 export interface CategoryFormContext {
@@ -67,6 +74,8 @@ export function newDraft(existing: readonly Category[]): CategoryDraft {
     capEnabled: false,
     capMemberId: null,
     capAmount: '',
+    percentsBeforeCap: null,
+    cappedMemory: null,
   };
 }
 
@@ -89,6 +98,8 @@ export function draftFromCategory(
     capEnabled: cap !== null,
     capMemberId: cap?.memberId ?? null,
     capAmount: cap === null ? '' : expressionFromAmount(cap.capMinor, ctx.minorUnit),
+    percentsBeforeCap: null,
+    cappedMemory: null,
   };
 }
 
@@ -128,11 +139,40 @@ export function setPercentText(draft: CategoryDraft, ctx: Pick<CategoryFormConte
 
 /**
  * 上限額つきにする。超えた分の割合の初期値は、上限まで負担する人を0%、残りを均等にする（docs/screens.md 6章）。
- * 上限まで負担する人の初期値は、先頭（本人）。
+ * 上限まで負担する人の初期値は、先頭（本人）。**いったん切った上限つきの入力があれば、それに戻す**（元の「超えた分」の割合や
+ * 上限額を、初期値で上書きしない）。つける直前の割合は、切ったときに戻すために持つ（`disableCap`）。
  */
 export function enableCap(draft: CategoryDraft, ctx: Pick<CategoryFormContext, 'memberOrder'>): CategoryDraft {
+  if (draft.capEnabled) return draft;
+  const before = draft.percents;
+  if (draft.cappedMemory !== null) {
+    return {
+      ...draft,
+      capEnabled: true,
+      percents: draft.cappedMemory.percents,
+      capMemberId: draft.cappedMemory.capMemberId,
+      capAmount: draft.cappedMemory.capAmount,
+      percentsBeforeCap: before,
+      cappedMemory: null,
+    };
+  }
   const capMemberId = draft.capMemberId ?? ctx.memberOrder[0] ?? null;
-  return withCapOverflow({ ...draft, capEnabled: true, capMemberId }, ctx);
+  return withCapOverflow({ ...draft, capEnabled: true, capMemberId, percentsBeforeCap: before }, ctx);
+}
+
+/**
+ * 上限額を切る。割合は、つける直前の値に戻す（開いたときから上限つきで、つける前の値を知らないときは、いまの値のまま。
+ * 画面に出ている欄を見て、直してもらう）。上限つきの入力は、また入れたときのために持っておく。
+ */
+export function disableCap(draft: CategoryDraft): CategoryDraft {
+  if (!draft.capEnabled) return draft;
+  return {
+    ...draft,
+    capEnabled: false,
+    percents: draft.percentsBeforeCap ?? draft.percents,
+    percentsBeforeCap: null,
+    cappedMemory: { percents: draft.percents, capMemberId: draft.capMemberId, capAmount: draft.capAmount },
+  };
 }
 
 /** 上限まで負担する人を変える。超えた分の割合も、新しい人を0%・残りを均等に直す（入れ替えたとき、前の割合が残らない）。 */
@@ -237,7 +277,23 @@ export function buildCreateInput(check: Extract<DraftCheck, { ok: true }>, draft
   return { name: check.name, icon: draft.icon, color: draft.color };
 }
 
-/** 保存できる変更があるか（変えていなければ、保存ボタンを押せなくする） */
+/** 送る変更があるか。無ければ、保存を押しても何も送らず、シートを閉じるだけ（保存ボタンは、押せるままにしている）。 */
 export function hasChanges(plan: SavePlan): boolean {
   return plan.profile !== null || plan.shares !== null;
+}
+
+/**
+ * 開いたとき（または、名前などが保存できたとき）の入力から、変えたか。閉じるときの破棄の確認に使う。上限額のスイッチを入れて
+ * 切っただけ、のような、元に戻った操作は「変えた」と数えない（`percentsBeforeCap`・`cappedMemory` は見ない。上限が切れていれば、
+ * 上限の人・上限額も見ない）。
+ */
+export function isDirty(draft: CategoryDraft, baseline: CategoryDraft): boolean {
+  if (draft.name !== baseline.name || draft.icon !== baseline.icon || draft.color !== baseline.color) return true;
+  if (JSON.stringify(sortedEntries(draft.percents)) !== JSON.stringify(sortedEntries(baseline.percents))) return true;
+  if (draft.capEnabled !== baseline.capEnabled) return true;
+  return draft.capEnabled && (draft.capMemberId !== baseline.capMemberId || draft.capAmount !== baseline.capAmount);
+}
+
+function sortedEntries(record: Record<string, string>): [string, string][] {
+  return Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }

@@ -5,24 +5,52 @@ import { describe, it } from 'node:test';
 
 import { AuthError } from '../repositories/authError.ts';
 import { CategoryRejectedError } from '../repositories/categoryRepository.ts';
-import { categoryErrorMessage, shouldReloadAfter } from './categoryMessage.ts';
+import { categoryErrorMessage, isCreateIdConflict, resultUnknown, shouldReloadAfter } from './categoryMessage.ts';
 
 const rejected = (reason: string | null, detail: ConstructorParameters<typeof CategoryRejectedError>[1] = {}, status = 409) =>
   new CategoryRejectedError(status, { reason, ...detail });
 
 describe('shouldReloadAfter', () => {
-  it('他のメンバーの操作で古くなったとき（競合・メンバーや費目の増減・月が締まった）は読み直す', () => {
+  it('編集で、他のメンバーの操作で古くなったとき（競合・メンバーや費目の増減・月が締まった）は読み直す', () => {
     for (const reason of ['conflict', 'members_changed', 'categories_changed', 'month_closed']) {
-      assert.equal(shouldReloadAfter(rejected(reason)), true, reason);
+      for (const action of ['save-share', 'update', 'reorder'] as const) {
+        assert.equal(shouldReloadAfter(rejected(reason), action), true, `${reason}/${action}`);
+      }
     }
   });
 
   it('入力・権限・範囲外などは、読み直しても同じなので読み直さない。通信の失敗も、読み直さない', () => {
     for (const reason of ['month_not_editable', 'too_many_categories', 'currency_mismatch', 'forbidden', 'not_found', null]) {
-      assert.equal(shouldReloadAfter(rejected(reason)), false, String(reason));
+      assert.equal(shouldReloadAfter(rejected(reason), 'save-share'), false, String(reason));
     }
-    assert.equal(shouldReloadAfter(new AuthError('network')), false);
-    assert.equal(shouldReloadAfter(new Error('x')), false);
+    assert.equal(shouldReloadAfter(new AuthError('network'), 'update'), false);
+    assert.equal(shouldReloadAfter(new Error('x'), 'update'), false);
+  });
+
+  it('追加は、どの理由でも読み直さない（読み直すと、入力した名前・アイコン・色が消える）', () => {
+    for (const reason of ['conflict', 'members_changed', 'categories_changed', 'month_closed', 'too_many_categories']) {
+      assert.equal(shouldReloadAfter(rejected(reason), 'create'), false, reason);
+    }
+  });
+});
+
+describe('isCreateIdConflict', () => {
+  it('409 conflict だけ（この id を他のグループが使っている。同じ id では直らない）', () => {
+    assert.equal(isCreateIdConflict(rejected('conflict')), true);
+    assert.equal(isCreateIdConflict(rejected('too_many_categories')), false);
+    assert.equal(isCreateIdConflict(rejected(null, {}, 400)), false);
+    assert.equal(isCreateIdConflict(new AuthError('network')), false);
+  });
+});
+
+describe('resultUnknown', () => {
+  it('サーバーが断ったときは、済んでいない（false）。通信の失敗・応答が読めない・混雑・知らない失敗は、済んだか分からない（true）', () => {
+    assert.equal(resultUnknown(rejected('too_many_categories')), false);
+    assert.equal(resultUnknown(rejected(null, {}, 400)), false);
+    for (const code of ['network', 'invalid-response', 'unavailable'] as const) {
+      assert.equal(resultUnknown(new AuthError(code)), true, code);
+    }
+    assert.equal(resultUnknown(new Error('x')), true);
   });
 });
 
@@ -35,7 +63,11 @@ describe('categoryErrorMessage（断られたとき）', () => {
     assert.match(categoryErrorMessage(rejected('currency_mismatch'), 'save-share'), /通貨が変わっています/);
     assert.match(categoryErrorMessage(rejected('forbidden', {}, 403), 'update'), /脱退が確定/);
     assert.match(categoryErrorMessage(rejected('not_found', {}, 404), 'update'), /確認できませんでした/);
-    assert.match(categoryErrorMessage(rejected('conflict'), 'create'), /重なりました/);
+    assert.match(categoryErrorMessage(rejected('conflict'), 'update'), /重なりました/);
+  });
+
+  it('追加の競合は、他の操作との競合ではないので、重なったとは言わない（入力は残っていて、もう一度押せばよい）', () => {
+    assert.equal(categoryErrorMessage(rejected('conflict'), 'create'), 'カテゴリを追加できませんでした。もう一度お試しください。');
   });
 
   it('直せる月の範囲が分かれば、範囲を案内する。分からなければ範囲なしの文言', () => {

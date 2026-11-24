@@ -60,8 +60,11 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
       setLoad({ status: 'ready', data });
       setRefreshError(null);
       setMonthError(null);
+      // 月の切り替えの最中に読み直したときは、切り替えの応答を捨てる（`requestSeq`）ので、その「切り替え中」も、ここで終える
+      setSwitching(false);
     } catch (e) {
       if (seq !== requestSeq.current) return;
+      setSwitching(false);
       const message = loadHomeErrorMessage(e);
       // 表示中の内容があれば、残して知らせる。無ければ、読み込みの失敗の表示
       if (hasData.current) setRefreshError(message);
@@ -111,7 +114,9 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   }, [load]);
 
   function openEdit(categoryId: string | null) {
-    if (load.status !== 'ready') return;
+    // 月の切り替えの最中は開かない（まだ前の月の割合を持っていて、シートが前の月で開く。戻ったときの読み直しが、切り替えの
+    // 応答を捨てて、選んだ月が前の月に戻ることもある）
+    if (load.status !== 'ready' || switching) return;
     const params: Record<string, string> = { groupId };
     if (categoryId !== null) params.categoryId = categoryId;
     if (load.data.month !== null) params.month = load.data.month;
@@ -185,11 +190,11 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
 
           <View style={[styles.list, switching && styles.dimmed]}>
             {view.active.map((row) => (
-              <CategoryRowView key={row.categoryId} row={row} onPress={() => openEdit(row.categoryId)} />
+              <CategoryRowView key={row.categoryId} row={row} disabled={switching} onPress={() => openEdit(row.categoryId)} />
             ))}
           </View>
 
-          <PrimaryButton label="カテゴリを追加" variant="secondary" onPress={() => openEdit(null)} />
+          <PrimaryButton label="カテゴリを追加" variant="secondary" disabled={switching} onPress={() => openEdit(null)} />
 
           {view.archived.length > 0 ? (
             <View style={styles.archivedBlock}>
@@ -198,7 +203,7 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
               </Text>
               <View style={styles.list}>
                 {view.archived.map((row) => (
-                  <CategoryRowView key={row.categoryId} row={row} onPress={() => openEdit(row.categoryId)} />
+                  <CategoryRowView key={row.categoryId} row={row} disabled={switching} onPress={() => openEdit(row.categoryId)} />
                 ))}
               </View>
             </View>
@@ -214,13 +219,15 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   );
 }
 
-function CategoryRowView({ row, onPress }: { row: CategoryRow; onPress(): void }) {
+function CategoryRowView({ row, disabled, onPress }: { row: CategoryRow; disabled: boolean; onPress(): void }) {
   const colors = useColors();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={row.archived ? `${row.summary}、使わないカテゴリ` : row.summary}
       accessibilityHint="編集します"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed, row.archived && styles.dimmed]}
     >

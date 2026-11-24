@@ -10,8 +10,11 @@
 // - 編集の保存は、変えたものだけを送る（名前・アイコン・色は `PATCH`、割合・上限額は `PUT`。2つの呼び出し）。名前などが
 //   済んで割合が断られたら、名前などは済んだこととして残し、やり直すときは割合だけを送る。
 // - 追加の `id` は、最初に保存を押したときに1回だけ作り、やり直しでも使い回す（結果が分からない失敗のあとで、同じカテゴリが
-//   2つにならない）。
-// - 他のメンバーの操作で古くなった（競合・メンバーの増減・月が締まった）と断られたら、読み直して、入力を新しい内容から作り直す。
+//   2つにならない）。**サーバーは、同じ `id` の再送に、保存済みの費目をそのまま返す**（内容は見比べない）ので、結果が分からない
+//   失敗のあとに入力を直して送り直すと、直した内容が反映されない。そのため、その送り直しのあとに、直した内容を `PATCH` で送る。
+//   追加の 409 `conflict` は、この `id` を他のグループが使っているとき（同じ `id` では直らない）なので、新しい `id` にする。
+// - 他のメンバーの操作で古くなった（競合・メンバーの増減・月が締まった）と断られたら、読み直して、入力を新しい内容から作り直す
+//   （編集だけ。追加は、入力を残す）。
 // - 通信の最中は、✕も、戻る操作も効かない。変えた入力があるときの✕・戻る操作は、破棄の確認を出す。止めているのは `beforeRemove`
 //   で、セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`ExpenseSheet.tsx` と同じ）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -42,9 +45,11 @@ import {
   canEditShares,
   CATEGORY_COLOR_KEYS,
   checkDraft,
+  disableCap,
   draftFromCategory,
   enableCap,
   hasChanges,
+  isDirty,
   MAX_CATEGORY_NAME_LENGTH,
   newDraft,
   RATIO_PRESETS,
@@ -53,7 +58,12 @@ import {
   type CategoryDraft,
   type CategoryFormContext,
 } from '../../src/services/categoryForm.ts';
-import { categoryErrorMessage, shouldReloadAfter } from '../../src/services/categoryMessage.ts';
+import {
+  categoryErrorMessage,
+  isCreateIdConflict,
+  resultUnknown,
+  shouldReloadAfter,
+} from '../../src/services/categoryMessage.ts';
 import type { CategorySettingsData } from '../../src/services/categoryService.ts';
 import { orderShareMembers } from '../../src/services/categoryView.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
@@ -110,8 +120,11 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);
-  // 追加の識別子（上のコメント）
+  // 追加の識別子と、結果が分からない失敗があったか（上のコメント）
   const createId = useRef<string | null>(null);
+  const createUncertain = useRef(false);
+  // 名前・アイコン・色の保存が済んだか（そのあとの破棄の確認の文言が、事実と合うように）
+  const profileSaved = useRef(false);
   // 読み込んだときの入力（変えたかの判定。保存で名前などが済んだら、その内容に更新する）
   const baseline = useRef<CategoryDraft | null>(null);
   const dirty = useRef(false);
@@ -142,7 +155,14 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
 
   const ctx = useMemo(() => (load.status === 'ready' ? contextOf(load.data, categoryId) : null), [load, categoryId]);
   const draft = load.status === 'ready' ? load.draft : null;
-  dirty.current = draft !== null && baseline.current !== null && JSON.stringify(draft) !== JSON.stringify(baseline.current);
+  dirty.current = draft !== null && baseline.current !== null && isDirty(draft, baseline.current);
+
+  /** 破棄・「使わない」で、捨てることになる入力の説明。名前などが保存済みなら、それは残ると伝える */
+  function unsavedNote(): string {
+    return profileSaved.current
+      ? '先に保存した名前・アイコン・色は、そのまま残ります。ほかの入力した変更は保存されません。'
+      : '入力した変更は保存されません。';
+  }
 
   // 通信の最中は閉じない。変えた入力があるときは、破棄の確認を出す
   useEffect(() => {
@@ -154,7 +174,7 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
       }
       if (!dirty.current) return;
       event.preventDefault();
-      Alert.alert('変更を破棄しますか？', '入力した内容は保存されません。', [
+      Alert.alert('変更を破棄しますか？', unsavedNote(), [
         { text: '編集を続ける', style: 'cancel' },
         {
           text: '破棄する',
@@ -171,7 +191,7 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   function leave() {
     leaving.current = true;
     if (router.canGoBack()) router.back();
-    else router.replace('/categories');
+    else router.replace({ pathname: '/categories', params: { groupId } });
   }
 
   function update(next: CategoryDraft) {
@@ -208,7 +228,12 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
       await task();
     } catch (e) {
       const message = categoryErrorMessage(e, action);
-      if (shouldReloadAfter(e)) await reloadAfterRejection(message);
+      if (action === 'create' && isCreateIdConflict(e)) {
+        // この `id` を他のグループが使っている。同じ `id` では直らないので、次に押したときは、新しい `id` にする
+        createId.current = null;
+        createUncertain.current = false;
+      }
+      if (shouldReloadAfter(e, action)) await reloadAfterRejection(message);
       else setError(message);
     } finally {
       running.current = false;
@@ -228,7 +253,17 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
     if (ctx.editing === null) {
       void run(async () => {
         createId.current ??= newId();
-        await categoryService.createCategory(groupId, { id: createId.current, ...buildCreateInput(check, current) });
+        const body = buildCreateInput(check, current);
+        // 前の送信の結果が分からないまま送り直すとき、サーバーは保存済みの費目をそのまま返す（上のコメント）。入力が変わって
+        // いても、直した内容が反映されるよう、送り直したあとに `PATCH` で確かめる（同じ内容なら、何も変わらない）
+        const retry = createUncertain.current;
+        try {
+          const created = await categoryService.createCategory(groupId, { id: createId.current, ...body });
+          if (retry) await categoryService.updateCategory(created.id, body);
+        } catch (e) {
+          if (resultUnknown(e)) createUncertain.current = true;
+          throw e;
+        }
         leave();
       }, 'create');
       return;
@@ -242,6 +277,7 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
     void run(async () => {
       if (plan.profile !== null) {
         await categoryService.updateCategory(editing.id, plan.profile);
+        profileSaved.current = true;
         // 名前などは済んだ。割合が断られても、やり直しでは名前などを送り直さない（開いたときの値を、済んだ内容に更新する）
         const saved = { ...editing, ...plan.profile };
         setLoad((state) =>
@@ -277,9 +313,11 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
     if (ctx?.editing == null) return;
     const editing = ctx.editing;
     const title = archived ? 'このカテゴリを使わなくしますか？' : 'このカテゴリをまた使いますか？';
-    const body = archived
+    const base = archived
       ? '過去の支出と割合は残ります。新しい支出では選べなくなります。あとから、また使えるようにできます。'
       : '新しい支出で、選べるようになります。';
+    // 入力を直したあとに押すと、そのまま閉じて、直した内容は保存されない（破棄の確認は出ない）ので、ここで伝える
+    const body = dirty.current ? `${base}\n\n${unsavedNote()}` : base;
     Alert.alert(title, body, [
       { text: 'キャンセル', style: 'cancel' },
       {
@@ -510,7 +548,7 @@ function ShareEditor({
           accessibilityLabel="上限額をつける"
           value={draft.capEnabled}
           disabled={disabled}
-          onValueChange={(on) => onChange(on ? enableCap(draft, ctx) : { ...draft, capEnabled: false })}
+          onValueChange={(on) => onChange(on ? enableCap(draft, ctx) : disableCap(draft))}
         />
       </View>
 

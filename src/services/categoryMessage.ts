@@ -25,8 +25,11 @@ function codeOf(error: unknown): string {
 /**
  * サーバーが断ったあとに、画面の内容を読み直すか。他のメンバーの操作で古くなったとき（競合・メンバーや費目の増減・月が
  * 締まった）は読み直して、もう一度操作してもらう。入力の形・権限・範囲外などは、読み直しても同じなので読み直さない。
+ * **追加（`create`）は読み直さない**: 追加の入力（名前・アイコン・色）に、サーバーの内容に合わせて作り直すものが無く、読み直すと
+ * 入力した内容が消える。追加の 409 `conflict` は、この `id` を他のグループが使っているとき（`isCreateIdConflict`）。
  */
-export function shouldReloadAfter(error: unknown): boolean {
+export function shouldReloadAfter(error: unknown, action: CategoryAction): boolean {
+  if (action === 'create') return false;
   if (!(error instanceof CategoryRejectedError)) return false;
   return (
     error.reason === 'conflict' ||
@@ -36,10 +39,29 @@ export function shouldReloadAfter(error: unknown): boolean {
   );
 }
 
+/**
+ * 追加の 409 `conflict`（この作成の `id` を、他のグループが使っている）。同じ `id` で送り直しても、同じ失敗になるので、
+ * 画面は新しい `id` を作る。
+ */
+export function isCreateIdConflict(error: unknown): boolean {
+  return error instanceof CategoryRejectedError && error.reason === 'conflict';
+}
+
+/**
+ * 送ったあと、サーバーで済んだか分からない失敗か（サーバーが断った場合は、済んでいない）。追加で、これに当たったあとに入力を
+ * 直して送り直すと、サーバーは同じ `id` の再送に、保存済みの費目をそのまま返す（内容は見比べない）ので、直した内容が反映
+ * されない。そのため、画面は送り直したあとに、直した内容を `PATCH` で送る。
+ */
+export function resultUnknown(error: unknown): boolean {
+  return !(error instanceof CategoryRejectedError);
+}
+
 export function categoryErrorMessage(error: unknown, action: CategoryAction): string {
   if (error instanceof CategoryRejectedError) {
     switch (error.reason) {
       case 'conflict':
+        // 追加の 409 は、他のメンバーの操作との競合ではない（`isCreateIdConflict`）。入力は残っているので、もう一度押してもらう
+        if (action === 'create') return 'カテゴリを追加できませんでした。もう一度お試しください。';
         return '他の操作と重なりました。画面を読み直しました。確認して、もう一度お試しください。';
       case 'month_closed':
         return 'この月は、すでに締められています。締めた月の割合は変えられません。';
