@@ -60,7 +60,10 @@ function RootNavigator() {
         <Stack.Screen name="(main)" />
         <Stack.Screen name="create-group" />
         <Stack.Screen name="categories" />
-        <Stack.Screen name="members" />
+        {/* メンバーと招待は、`dangerouslySingular` で、2枚重ねない。入口は、設定の行と、ホームの「相手を招待する」カード。素早く2回
+            押すと、`router.push` が2回通り、画面が2枚重なる（エミュレータで確かめた）。この画面は、発行した招待のトークンを画面の
+            メモリだけに持つので、重なっていると、上の画面で発行して戻ったとき、下の画面の一覧では「共有」で出し直せない */}
+        <Stack.Screen name="members" dangerouslySingular />
         {/* シート（モーダル）は、`dangerouslySingular` で、同じ画面を2枚重ねない。開くボタンを素早く2回押すと、`router.push` が
             2回通り、シートが2枚重なって、閉じても下のシートが残る（エミュレータで確かめた）。すでに開いていれば、その1枚を使う */}
         {/* 支出の登録・編集のシート。下から出る。入力中の破棄の確認を出すため、スワイプで閉じるのは止める（✕・戻る操作は確認する） */}
