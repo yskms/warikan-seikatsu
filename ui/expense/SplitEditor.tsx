@@ -1,6 +1,7 @@
 // 「この支出だけ負担を変える」の入力（docs/screens.md 4章）。方法は、割合・均等・金額指定・1人が全額。
 // **負担額の計算も、プレビューも出さない**（CLAUDE.md。負担・精算の計算はWorkerだけが持つ。割合・均等の端数の配り方を、
-// アプリに書き写さない）。入力の形の検査の結果（合計が100%でない、など）は、`message` で受けて出す。
+// アプリに書き写さない）。入力の形の検査の結果（合計が100%でない、など）は、保存ボタンの上に出す（`ExpenseSheet.tsx`。
+// この欄は、キーボードで隠れることがあるので、理由を保存ボタンの近くに1か所だけ出す）。
 // 金額指定のメンバーごとの欄は、金額の欄と同じキーパッドで入れる（`keypadTarget`）。割合は、OSの数字キーボード。
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -29,8 +30,6 @@ interface SplitEditorProps {
   currencyCode: string;
   minorUnit: number;
   keypadTarget: KeypadTarget;
-  /** 入力の形の検査で、直す点（無ければ `null`） */
-  message: string | null;
   disabled: boolean;
   onChange(split: SplitDraft): void;
   onKeypadTarget(target: KeypadTarget): void;
@@ -42,7 +41,6 @@ export function SplitEditor({
   currencyCode,
   minorUnit,
   keypadTarget,
-  message,
   disabled,
   onChange,
   onKeypadTarget,
@@ -51,7 +49,11 @@ export function SplitEditor({
   const memberOption = (member: GroupMember): ChipOption => ({
     key: member.id,
     label: member.displayName,
-    leading: <Avatar initial={initialOf(member.displayName)} color={member.color} size={24} />,
+    leading: (
+      <View style={[styles.ring, { backgroundColor: colors.background }]}>
+        <Avatar initial={initialOf(member.displayName)} color={member.color} size={22} />
+      </View>
+    ),
   });
 
   return (
@@ -140,18 +142,13 @@ export function SplitEditor({
             </View>
           ))
         : null}
-
-      {message !== null ? (
-        <Text style={[styles.message, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
-          {message}
-        </Text>
-      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   editor: { gap: 12 },
+  ring: { padding: 2, borderRadius: 999 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   name: { flex: 1, fontSize: 16, fontWeight: '600' },
   percent: {
@@ -164,5 +161,4 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   unit: { fontSize: 16, width: 20 },
-  message: { fontSize: 13, lineHeight: 18 },
 });

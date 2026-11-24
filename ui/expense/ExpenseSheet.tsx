@@ -17,7 +17,6 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -174,7 +173,11 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   const check = useMemo(() => checkDraft(draft, ctx), [draft, ctx]);
   const members = useMemo(() => splitMembers(ctx, month), [ctx, month]);
   const lockedSplit = splitLocked(ctx);
-  const choices = monthChoices(ctx);
+  // 選択肢は、登録できる月。いま選んでいる月が、その外にあるとき（「締められました」のあとに選んだ次の月）も、並べる
+  const choices = useMemo(() => {
+    const base = monthChoices(ctx);
+    return month === null || base.includes(month) ? base : [...base, month].sort();
+  }, [ctx, month]);
   const note = monthNote(draft, ctx);
   const busyNow = busy !== null;
 
@@ -239,7 +242,14 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
           `${formatMonthShort(to)}分として登録しますか？`,
           [
             { text: 'キャンセル', style: 'cancel' },
-            { text: '登録する', onPress: () => void save(to) },
+            {
+              text: '登録する',
+              onPress: () => {
+                // 画面の選択にも反映する（再送が失敗しても、選んだ月と送った月がずれない）
+                update((current) => syncSplitMembers({ ...current, monthChoice: to }, ctx));
+                void save(to);
+              },
+            },
           ],
         );
       } else {
@@ -283,7 +293,9 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* edge-to-edge（`android/gradle.properties` の `edgeToEdgeEnabled`）では、Androidも、キーボードでウィンドウが小さくならない
+          （`adjustResize` が効かない。エミュレータで、保存ボタンがキーボードの下に隠れることを確かめた）ので、iOSと同じく padding で避ける */}
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
             {title}
@@ -333,7 +345,11 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
                     key: category.id,
                     label: category.name,
                     note: category.archived ? '使わない設定のカテゴリ' : undefined,
-                    leading: <CategoryIcon icon={category.icon} color={category.color} size={24} />,
+                    leading: (
+                      <Ring>
+                        <CategoryIcon icon={category.icon} color={category.color} size={22} />
+                      </Ring>
+                    ),
                   }))}
                   selected={draft.categoryId}
                   onSelect={(id) => update((current) => ({ ...current, categoryId: id }))}
@@ -346,7 +362,11 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
                   options={payerOptions(ctx, month).map((member) => ({
                     key: member.id,
                     label: member.displayName,
-                    leading: <Avatar initial={initialOf(member.displayName)} color={member.color} size={24} />,
+                    leading: (
+                      <Ring>
+                        <Avatar initial={initialOf(member.displayName)} color={member.color} size={22} />
+                      </Ring>
+                    ),
                   }))}
                   selected={draft.payerMemberId}
                   onSelect={(id) => update((current) => ({ ...current, payerMemberId: id }))}
@@ -426,7 +446,6 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
                       currencyCode={ctx.currencyCode}
                       minorUnit={ctx.minorUnit}
                       keypadTarget={keypad}
-                      message={check.split?.message ?? null}
                       disabled={busyNow}
                       onChange={(split) => update((current) => ({ ...current, split }))}
                       onKeypadTarget={setKeypad}
@@ -450,7 +469,7 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
               <Text style={[styles.message, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
                 {error}
               </Text>
-            ) : check.blocker !== null && check.split?.ok !== false ? (
+            ) : check.blocker !== null ? (
               <Text style={[styles.hint, { color: colors.textSecondary }]} accessibilityLiveRegion="polite">
                 {check.blocker}
               </Text>
@@ -472,6 +491,12 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   );
 }
 
+/** チップの中のアイコンを、背景色（選んだときのピンク）と同じ色のアイコンでも見分けられるよう、白い縁で囲む。 */
+function Ring({ children }: { children: React.ReactNode }) {
+  const colors = useColors();
+  return <View style={[styles.ring, { backgroundColor: colors.background }]}>{children}</View>;
+}
+
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   const colors = useColors();
   return (
@@ -491,6 +516,7 @@ const styles = StyleSheet.create({
   close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -10 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, gap: 16 },
   section: { gap: 8 },
+  ring: { padding: 2, borderRadius: 999 },
   sectionLabel: { fontSize: 13, fontWeight: '600' },
   dateButton: {
     flexDirection: 'row',
