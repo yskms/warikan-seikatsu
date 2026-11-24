@@ -4,6 +4,8 @@
 // `src/services/categoryForm.ts`（`npm test` で守る）。この画面は、入力欄を並べて、押されたものを渡すだけ。**負担額の計算も、
 // プレビューも出さない**（CLAUDE.md。上限額つきの例を、入力した値でその場に出す案は、計算をアプリに書き写すので作っていない）。
 //
+// - 並びは、名前、負担割合、アイコン、色、使わない設定の順（この画面の主な用途は割合を直すことで、アイコン・色の選択肢は縦に長い
+//   ので、割合を下に置くと、スクロールしないと届かない）。
 // - 追加は、名前・アイコン・色だけ（割合は、サーバーが均等で作る。直すのは、追加したあとに一覧から）。
 // - 編集の保存は、変えたものだけを送る（名前・アイコン・色は `PATCH`、割合・上限額は `PUT`。2つの呼び出し）。名前などが
 //   済んで割合が断られたら、名前などは済んだこととして残し、やり直すときは割合だけを送る。
@@ -174,6 +176,8 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
 
   function update(next: CategoryDraft) {
     setLoad((current) => (current.status === 'ready' ? { ...current, draft: next } : current));
+    // 入力を直したら、前の失敗の文言は消す（直したあとの保存の結果ではないため）
+    setError(null);
   }
 
   /** 読み直して、入力を新しい内容から作り直す（断られたあと）。読み直せなければ、読み込みの失敗の表示にする */
@@ -336,6 +340,29 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
               placeholder="例: 美容"
             />
 
+            {canEditShares(ctx) && load.data.month !== null ? (
+              <ShareEditor
+                draft={draft}
+                ctx={ctx}
+                data={load.data}
+                month={load.data.month}
+                disabled={busy}
+                onChange={update}
+              />
+            ) : ctx.editing !== null ? (
+              <Text style={[styles.note, { color: colors.textSecondary }]}>
+                {load.data.month === null
+                  ? '締めていない月がないため、負担割合は変えられません。'
+                  : ctx.rule === null
+                    ? `${formatMonth(load.data.month)}には、このカテゴリの負担割合がありません。`
+                    : `${formatMonth(load.data.month)}の負担割合は、変えられません。`}
+              </Text>
+            ) : (
+              <Text style={[styles.note, { color: colors.textSecondary }]}>
+                負担割合は、はじめは均等になります。追加したあと、一覧から変えられます。
+              </Text>
+            )}
+
             <View style={styles.section}>
               <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>アイコン</Text>
               <View style={styles.grid} accessibilityRole="radiogroup">
@@ -369,29 +396,6 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
                 ))}
               </View>
             </View>
-
-            {canEditShares(ctx) && load.data.month !== null ? (
-              <ShareEditor
-                draft={draft}
-                ctx={ctx}
-                data={load.data}
-                month={load.data.month}
-                disabled={busy}
-                onChange={update}
-              />
-            ) : ctx.editing !== null ? (
-              <Text style={[styles.note, { color: colors.textSecondary }]}>
-                {load.data.month === null
-                  ? '締めていない月がないため、負担割合は変えられません。'
-                  : ctx.rule === null
-                    ? `${formatMonth(load.data.month)}には、このカテゴリの負担割合がありません。`
-                    : `${formatMonth(load.data.month)}の負担割合は、変えられません。`}
-              </Text>
-            ) : (
-              <Text style={[styles.note, { color: colors.textSecondary }]}>
-                負担割合は、はじめは均等になります。追加したあと、一覧から変えられます。
-              </Text>
-            )}
 
             {ctx.editing !== null ? (
               <View style={styles.section}>
@@ -525,6 +529,8 @@ function ShareEditor({
             value={draft.capAmount}
             onChangeText={(capAmount) => onChange({ ...draft, capAmount: capAmount.replace(/,/g, '.').replace(/[^0-9.]/g, '') })}
             editable={!disabled}
+            // 小数のある通貨（USDなど）は、小数点のある数字キーボード
+            keyboardType={ctx.minorUnit > 0 ? 'decimal-pad' : 'number-pad'}
             maxLength={16}
             placeholder="例: 10000"
           />

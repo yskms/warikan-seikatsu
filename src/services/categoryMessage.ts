@@ -40,7 +40,7 @@ export function categoryErrorMessage(error: unknown, action: CategoryAction): st
   if (error instanceof CategoryRejectedError) {
     switch (error.reason) {
       case 'conflict':
-        return `他の操作と重なりました。画面を読み直しました。確認して、もう一度お試しください。`;
+        return '他の操作と重なりました。画面を読み直しました。確認して、もう一度お試しください。';
       case 'month_closed':
         return 'この月は、すでに締められています。締めた月の割合は変えられません。';
       case 'month_not_editable':
@@ -67,7 +67,7 @@ export function categoryErrorMessage(error: unknown, action: CategoryAction): st
   }
   switch (codeOf(error)) {
     case 'network':
-      return `通信できませんでした。電波のよいところで、もう一度お試しください。`;
+      return '通信できませんでした。電波のよいところで、もう一度お試しください。';
     case 'unavailable':
       return 'サーバーが混み合っています。しばらくしてから、もう一度お試しください。';
     case 'unauthorized':
@@ -79,7 +79,7 @@ export function categoryErrorMessage(error: unknown, action: CategoryAction): st
       return `${FAILED[action]}アプリを最新の版に更新して、お試しください。`;
     case 'invalid-response':
       // 応答が読めない。サーバーでは済んでいるかもしれない。同じ操作をやり直しても、二重にはならない
-      return `結果を確認できませんでした。Wi-Fiの認証画面など、通信環境が原因のこともあります。もう一度操作しても、二重にはなりません。`;
+      return '結果を確認できませんでした。Wi-Fiの認証画面など、通信環境が原因のこともあります。もう一度操作しても、二重にはなりません。';
     default:
       return `${FAILED[action]}時間をおいて、もう一度お試しください。`;
   }

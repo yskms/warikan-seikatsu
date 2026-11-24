@@ -8,7 +8,15 @@ import { useColors } from './useColors.ts';
 interface TextFieldProps
   extends Pick<
     TextInputProps,
-    'value' | 'onChangeText' | 'placeholder' | 'maxLength' | 'autoFocus' | 'returnKeyType' | 'onSubmitEditing' | 'submitBehavior'
+    | 'value'
+    | 'onChangeText'
+    | 'placeholder'
+    | 'maxLength'
+    | 'autoFocus'
+    | 'returnKeyType'
+    | 'onSubmitEditing'
+    | 'submitBehavior'
+    | 'keyboardType'
   > {
   label: string;
   error?: string;
