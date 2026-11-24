@@ -1,12 +1,12 @@
 // 支出の一覧（docs/screens.md 3章）。その月の支出を全件、サーバーの並び（日付の新しい順）で出す。
-// **いまは読み取り専用**: 行をタップして編集のシートを開く操作は、支出の登録・編集の画面（4章）を作るときに足す。
-import { StyleSheet, Text, View } from 'react-native';
+// 行をタップすると、編集のシートを開く（詳細は挟まない。締めた月は、読み取り専用で開く。`ui/expense/ExpenseSheet.tsx`）。
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { ExpenseRow } from '../../src/services/homeView.ts';
 import { useColors } from '../useColors.ts';
 import { CategoryIcon } from './CategoryIcon.tsx';
 
-export function ExpenseSection({ rows }: { rows: ExpenseRow[] }) {
+export function ExpenseSection({ rows, onOpen }: { rows: ExpenseRow[]; onOpen(expenseId: string): void }) {
   const colors = useColors();
   return (
     <View style={styles.section}>
@@ -14,14 +14,16 @@ export function ExpenseSection({ rows }: { rows: ExpenseRow[] }) {
         支出
       </Text>
       {rows.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>この月の支出は、まだありません。</Text>
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>＋から支出を登録できます。</Text>
       ) : (
         rows.map((row) => (
-          <View
+          <Pressable
             key={row.id}
-            accessible
+            accessibilityRole="button"
+            accessibilityHint="押すと、この支出を開きます"
+            onPress={() => onOpen(row.id)}
             accessibilityLabel={`${row.title}、${row.subtitle}、${row.amountText}${row.badges.length > 0 ? `、${row.badges.join('、')}` : ''}`}
-            style={[styles.row, { borderColor: colors.border }]}
+            style={({ pressed }) => [styles.row, { borderColor: colors.border }, pressed && styles.pressed]}
           >
             <CategoryIcon icon={row.icon} color={row.color} />
             <View style={styles.body}>
@@ -42,7 +44,7 @@ export function ExpenseSection({ rows }: { rows: ExpenseRow[] }) {
               ) : null}
             </View>
             <Text style={[styles.amount, { color: colors.textPrimary }]}>{row.amountText}</Text>
-          </View>
+          </Pressable>
         ))
       )}
     </View>
@@ -60,6 +62,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  pressed: { opacity: 0.6 },
   body: { flex: 1, gap: 2 },
   title: { fontSize: 16, fontWeight: '600' },
   subtitle: { fontSize: 13 },

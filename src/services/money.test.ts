@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { CURRENCIES } from '../domain/group.ts';
-import { formatMoney, formatSignedMoney } from './money.ts';
+import { currencySymbol, formatMoney, formatSignedMoney } from './money.ts';
 
 describe('formatMoney', () => {
   it('小数のない通貨は、3桁区切り', () => {
@@ -56,5 +56,14 @@ describe('formatSignedMoney', () => {
     assert.equal(formatSignedMoney(3000, 'JPY', 0), '+¥3,000');
     assert.equal(formatSignedMoney(-3000, 'JPY', 0), '-¥3,000');
     assert.equal(formatSignedMoney(0, 'JPY', 0), '¥0');
+  });
+});
+
+describe('currencySymbol', () => {
+  it('選べる通貨は記号、知らない通貨はコード+空白、継承されたプロパティ名は記号にしない', () => {
+    assert.equal(currencySymbol('JPY'), '¥');
+    assert.equal(currencySymbol('USD'), '$');
+    assert.equal(currencySymbol('XYZ'), 'XYZ ');
+    assert.equal(currencySymbol('toString'), 'toString ');
   });
 });

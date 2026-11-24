@@ -1,33 +1,32 @@
-// ログイン後の最初の画面（docs/screens.md 1章）。所属グループを読んで、行き先を決める:
-// グループが無い → グループ作成、ある → メイン（ホーム。`ui/home/HomeScreen.tsx`）。
+// ログイン後の最初の関門（docs/screens.md 1章）。所属グループを読んで、行き先を決める:
+// グループが無い → グループ作成、ある → メイン（下のナビ。`app/(main)/_layout.tsx`）。
 //
 // 複数のグループに入っている人の切り替えと、最後に開いたグループを覚えておくことは、まだ作っていない（いまは、作成の古い順の
-// 先頭を出す）。下のナビ・設定（6章）も、まだ無い（ログアウトは、ホームの最後に仮に置いてある。設定を作るとき、そちらへ移す。
-// `ui/useSignOut.ts`）。
+// 先頭を出す）。
 //
 // **注意（招待）**: いまの分岐は、「グループが無ければグループ作成」を無条件に行う。招待URLから来た人は、ログイン後に
 // 参加確認へ進む（docs/screens.md 2章）ので、招待を保持する仕組みを足すときは、**この分岐で、保持した招待を先に見て**、
 // 参加確認へ回すこと（そうしないと、招待された人が、作る必要のないグループの作成画面へ回される）。作成画面には、
 // 作らずに出る道として、ログアウトだけを置いてある。
 import { Redirect } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { groupService } from '../platform/groupService.ts';
 import type { GroupListItem } from '../src/domain/group.ts';
 import { loadGroupsErrorMessage } from '../src/services/groupMessage.ts';
-import { HomeScreen } from '../ui/home/HomeScreen.tsx';
-import { PrimaryButton } from '../ui/PrimaryButton.tsx';
-import { useColors } from '../ui/useColors.ts';
-import { useSignOut } from '../ui/useSignOut.ts';
+import type { CurrentGroup } from './CurrentGroup.tsx';
+import { PrimaryButton } from './PrimaryButton.tsx';
+import { useColors } from './useColors.ts';
+import { useSignOut } from './useSignOut.ts';
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'loaded'; groups: GroupListItem[] };
 
-export default function Index() {
+export function GroupGate({ children }: { children: (group: CurrentGroup) => ReactNode }) {
   const colors = useColors();
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   // 読み直しの合図（「もう一度」を押すたびに増やす）
@@ -54,7 +53,7 @@ export default function Index() {
   // グループがある。ホームが、自分でデータを読む（ホームへ戻るたびに取り直す）ので、ここで読んだ一覧は、グループの特定にだけ使う。
   const first = load.status === 'loaded' ? load.groups[0] : undefined;
   // グループが変わったら、画面ごと作り直す（`key`。ホームは、グループごとの読み込みの状態を持つ）
-  if (first) return <HomeScreen key={first.id} groupId={first.id} groupName={first.name} />;
+  if (first) return <Fragment key={first.id}>{children({ id: first.id, name: first.name })}</Fragment>;
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>

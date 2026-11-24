@@ -34,6 +34,12 @@ export function formatMoney(amountMinor: number, currencyCode: string, minorUnit
   return `${sign}${symbol ?? `${currencyCode} `}${text}`;
 }
 
+/** 通貨の記号（`¥`、`$`）。知らない通貨は、コードに空白を添えたもの（`XYZ `。金額の前に付けて使う）。 */
+export function currencySymbol(currencyCode: string): string {
+  // 自分のキーだけを引く（`formatMoney` と同じ）
+  return Object.hasOwn(SYMBOLS, currencyCode) ? SYMBOLS[currencyCode]! : `${currencyCode} `;
+}
+
 /** 差額など、向きを見せたい金額（`+¥3,000`、`-¥3,000`。0は符号なし）。 */
 export function formatSignedMoney(amountMinor: number, currencyCode: string, minorUnit: number): string {
   const text = formatMoney(amountMinor, currencyCode, minorUnit);

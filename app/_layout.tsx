@@ -34,8 +34,10 @@ function RootNavigator() {
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Protected guard={state.status === 'signed-in'}>
-        <Stack.Screen name="index" />
+        <Stack.Screen name="(main)" />
         <Stack.Screen name="create-group" />
+        {/* 支出の登録・編集のシート。下から出る。入力中の破棄の確認を出すため、スワイプで閉じるのは止める（✕・戻る操作は確認する） */}
+        <Stack.Screen name="expense" options={{ presentation: 'modal', gestureEnabled: false }} />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'signed-out'}>
         <Stack.Screen name="login" />
