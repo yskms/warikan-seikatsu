@@ -7,10 +7,21 @@
 // リクエストの組み立てだけ。サーバーが、登録できる月・メンバーの使えるか・合計の一致を、もう一度検べる（docs/backend-design.md 9章）。
 //
 // 登録できる月は、アプリで計算せず、月の一覧（`GET /groups/:id/months`）の `open`（未締め）の月を使う。
-import { amountState, evaluateExpression, expressionFromAmount, MAX_AMOUNT_MINOR, type AmountState } from './amountExpression.ts';
+import { amountState, expressionFromAmount, MAX_AMOUNT_MINOR, type AmountState } from './amountExpression.ts';
 import { isRealDate, monthIndex, monthOfDate, todayIn } from './calendar.ts';
 import { formatMonthShort } from './dateFormat.ts';
-import { formatMoney, formatSignedMoney } from './money.ts';
+import { formatMoney } from './money.ts';
+import {
+  blankSplitDraft,
+  buildSplitRequest,
+  checkSplitDraft,
+  memberIdsOfSplit,
+  sameSplit,
+  splitDraftFromRequest,
+  syncSplitDraft,
+  type SplitCheck,
+  type SplitDraft,
+} from './splitForm.ts';
 import type { CreateExpenseRequest, SplitRequest, UpdateExpenseRequest } from '../domain/expense.ts';
 import type { GroupMember } from '../domain/group.ts';
 import type { Category, ExpenseDetail, MonthListItem } from '../domain/month.ts';
@@ -20,20 +31,9 @@ import type { ExpenseFormData } from './expenseService.ts';
 export const MAX_DESCRIPTION_LENGTH = 100;
 const BASIS_POINTS_TOTAL = 10000;
 
-export type CustomSplitMethod = 'ratio' | 'equal' | 'fixed' | 'single';
-
-/** 「この支出だけ負担を変える」の入力。4つの方法の入力を、切り替えても消えないよう、すべて持つ。 */
-export interface SplitDraft {
-  method: CustomSplitMethod;
-  /** 割合: メンバーIDごとの入力（%。整数部3桁・小数2桁まで）。空は0% */
-  percents: Record<string, string>;
-  /** 均等: 負担に入れるメンバー */
-  equalIds: string[];
-  /** 金額指定: メンバーIDごとの金額の式（キーパッドの入力）。空は0 */
-  amounts: Record<string, string>;
-  /** 1人が全額負担 */
-  singleId: string | null;
-}
+// 負担の指定の入力は、固定費のシートと共有する（`splitForm.ts`）。ここから使えるよう、再エクスポートする。
+export type { CustomSplitMethod, SplitCheck, SplitDraft } from './splitForm.ts';
+export { equalPercents, parsePercent, percentText } from './splitForm.ts';
 
 export interface ExpenseDraft {
   /** 金額の式（`amountExpression.ts`） */
@@ -172,38 +172,6 @@ export function categoryOptions(ctx: ExpenseFormContext): Category[] {
   return ctx.categories.filter((category) => !category.archived || category.id === own);
 }
 
-// --- 割合の入力（%） ---
-
-/** 1万分率を、入力欄の文字列にする（`7000` → `70`、`3334` → `33.34`、`3330` → `33.3`）。 */
-export function percentText(basisPoints: number): string {
-  const integer = Math.floor(basisPoints / 100);
-  const fraction = String(basisPoints % 100).padStart(2, '0').replace(/0+$/, '');
-  return fraction === '' ? String(integer) : `${integer}.${fraction}`;
-}
-
-/** 入力欄の文字列を、1万分率にする。空は0。形が違う・100%を超える値は `null`。 */
-export function parsePercent(text: string): number | null {
-  const trimmed = text.trim();
-  if (trimmed === '') return 0;
-  const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(trimmed);
-  if (!match) return null;
-  const basisPoints = Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0') || '0');
-  return basisPoints <= BASIS_POINTS_TOTAL ? basisPoints : null;
-}
-
-/** 均等割りの初期値（端数は、先頭のメンバーから 0.01% ずつ。入力の初期値にするだけで、負担額の計算ではない）。 */
-export function equalPercents(memberIds: readonly string[]): Record<string, string> {
-  const result: Record<string, string> = {};
-  const count = memberIds.length;
-  if (count === 0) return result;
-  const base = Math.floor(BASIS_POINTS_TOTAL / count);
-  const remainder = BASIS_POINTS_TOTAL - base * count;
-  memberIds.forEach((memberId, index) => {
-    result[memberId] = percentText(base + (index < remainder ? 1 : 0));
-  });
-  return result;
-}
-
 // --- 編集で開いた支出の、負担の指定 ---
 
 export type OriginalSplit = { kind: 'known'; split: SplitRequest } | { kind: 'unsupported' };
@@ -251,35 +219,13 @@ export function splitLocked(ctx: ExpenseFormContext): boolean {
 
 // --- 入力の初期値と、負担の入力の切り替え ---
 
-function blankSplitDraft(ctx: ExpenseFormContext, month: string | null, method: CustomSplitMethod): SplitDraft {
-  const ids = splitMembers(ctx, month).map((member) => member.id);
-  return { method, percents: equalPercents(ids), equalIds: ids, amounts: {}, singleId: null };
+function memberIdsFor(ctx: ExpenseFormContext, month: string | null): string[] {
+  return splitMembers(ctx, month).map((member) => member.id);
 }
 
-function splitDraftFromRequest(split: SplitRequest, ctx: ExpenseFormContext, month: string | null): SplitDraft | null {
-  if (split.method === 'category') return null;
-  const draft = blankSplitDraft(ctx, month, split.method);
-  // 保存された負担額を、「金額を指定する」の初期値にも入れる（割合・均等の支出から切り替えても、「いまの負担額のまま」
-  // 金額を上げられる。使えないメンバーを含む支出の金額を上げる回避策。docs/screens.md 4章）。保存値の表示で、計算ではない。
-  for (const row of ctx.editing?.allocations ?? []) draft.amounts[row.memberId] = expressionFromAmount(row.burdenMinor, ctx.minorUnit);
-  switch (split.method) {
-    case 'equal':
-      draft.equalIds = [...split.memberIds];
-      break;
-    case 'ratio': {
-      // 並ぶメンバーのうち、保存された割合に無い人は 0%
-      for (const key of Object.keys(draft.percents)) draft.percents[key] = '0';
-      for (const share of split.shares) draft.percents[share.memberId] = percentText(share.basisPoints);
-      break;
-    }
-    case 'fixed':
-      for (const row of split.amounts) draft.amounts[row.memberId] = expressionFromAmount(row.amountMinor, ctx.minorUnit);
-      break;
-    case 'single':
-      draft.singleId = split.memberId;
-      break;
-  }
-  return draft;
+function splitDraftOf(split: SplitRequest, ctx: ExpenseFormContext, month: string | null): SplitDraft | null {
+  // 保存された負担額を、「金額を指定する」の初期値にも入れる（`splitDraftFromRequest`）
+  return splitDraftFromRequest(split, memberIdsFor(ctx, month), ctx.minorUnit, ctx.editing?.allocations ?? []);
 }
 
 /**
@@ -297,7 +243,7 @@ export function initialDraft(ctx: ExpenseFormContext, lastCategoryId: string | n
       date: editing.expenseDate,
       description: editing.description ?? '',
       monthChoice: editing.targetMonth,
-      split: original.kind === 'known' ? splitDraftFromRequest(original.split, ctx, editing.targetMonth) : null,
+      split: original.kind === 'known' ? splitDraftOf(original.split, ctx, editing.targetMonth) : null,
     };
   }
   const options = categoryOptions(ctx);
@@ -318,7 +264,7 @@ export function initialDraft(ctx: ExpenseFormContext, lastCategoryId: string | n
 /** 「この支出だけ負担を変える」のオン・オフ。オンにしたときは、全員で均等から始める。 */
 export function toggleCustomSplit(draft: ExpenseDraft, ctx: ExpenseFormContext): ExpenseDraft {
   if (draft.split !== null) return { ...draft, split: null };
-  return { ...draft, split: blankSplitDraft(ctx, targetMonthOf(draft, ctx), 'equal') };
+  return { ...draft, split: blankSplitDraft(memberIdsFor(ctx, targetMonthOf(draft, ctx)), 'equal') };
 }
 
 /**
@@ -330,33 +276,10 @@ export function toggleCustomSplit(draft: ExpenseDraft, ctx: ExpenseFormContext):
  */
 export function syncForMonth(draft: ExpenseDraft, ctx: ExpenseFormContext): ExpenseDraft {
   if (draft.split === null) return draft;
-  const ids = new Set(splitMembers(ctx, targetMonthOf(draft, ctx)).map((member) => member.id));
-  const { split } = draft;
-  const percents: Record<string, string> = {};
-  const amounts: Record<string, string> = {};
-  for (const id of ids) {
-    percents[id] = split.percents[id] ?? '0';
-    amounts[id] = split.amounts[id] ?? '';
-  }
-  return {
-    ...draft,
-    split: {
-      ...split,
-      percents,
-      amounts,
-      equalIds: split.equalIds.filter((id) => ids.has(id)),
-      singleId: split.singleId !== null && ids.has(split.singleId) ? split.singleId : null,
-    },
-  };
+  return { ...draft, split: syncSplitDraft(draft.split, memberIdsFor(ctx, targetMonthOf(draft, ctx))) };
 }
 
 // --- 検査 ---
-
-export interface SplitCheck {
-  ok: boolean;
-  /** 直す点（入力欄の下に出す） */
-  message: string | null;
-}
 
 export interface FormCheck {
   amount: AmountState;
@@ -368,61 +291,18 @@ export interface FormCheck {
   saveLabel: string;
 }
 
-function codePointLength(text: string): number {
+export function codePointLength(text: string): number {
   let length = 0;
   for (const _ of text) length += 1;
   return length;
 }
 
-function checkSplit(
-  split: SplitDraft,
-  ctx: ExpenseFormContext,
-  month: string | null,
-  amount: AmountState,
-): SplitCheck {
-  const ids = splitMembers(ctx, month).map((member) => member.id);
-  const money = (value: number) => formatMoney(value, ctx.currencyCode, ctx.minorUnit);
-  switch (split.method) {
-    case 'ratio': {
-      let total = 0;
-      for (const id of ids) {
-        const basisPoints = parsePercent(split.percents[id] ?? '');
-        if (basisPoints === null) return { ok: false, message: '割合は、0から100の数で入力してください（小数は2桁まで）。' };
-        total += basisPoints;
-      }
-      return total === BASIS_POINTS_TOTAL
-        ? { ok: true, message: null }
-        : { ok: false, message: `合計が100%になるように入力してください（いま ${percentText(total)}%）。` };
-    }
-    case 'equal':
-      return split.equalIds.some((id) => ids.includes(id))
-        ? { ok: true, message: null }
-        : { ok: false, message: '負担する人を、1人以上選んでください。' };
-    case 'single':
-      return split.singleId !== null && ids.includes(split.singleId)
-        ? { ok: true, message: null }
-        : { ok: false, message: '全額を負担する人を選んでください。' };
-    case 'fixed': {
-      let total = 0;
-      for (const id of ids) {
-        const result = evaluateExpression(split.amounts[id] ?? '', ctx.minorUnit);
-        if (result.kind === 'invalid' || (result.kind === 'value' && (result.minor < 0 || result.minor > MAX_AMOUNT_MINOR))) {
-          return { ok: false, message: '金額を読み取れません。入力し直してください。' };
-        }
-        total += result.kind === 'value' ? result.minor : 0;
-      }
-      if (amount.kind !== 'ok') return { ok: false, message: '先に、上の金額を入力してください。' };
-      return total === amount.minor
-        ? { ok: true, message: null }
-        : {
-            ok: false,
-            message: `合計が${money(amount.minor)}になるように入力してください（差 ${formatSignedMoney(total - amount.minor, ctx.currencyCode, ctx.minorUnit)}）。`,
-          };
-    }
-  }
+function checkSplit(split: SplitDraft, ctx: ExpenseFormContext, month: string | null, amount: AmountState): SplitCheck {
+  return checkSplitDraft(split, memberIdsFor(ctx, month), amount, ctx);
 }
 
-function amountBlocker(amount: AmountState, ctx: ExpenseFormContext): string | null {
+/** 金額の入力が保存できない理由（固定費のシートも使う）。無ければ `null`。 */
+export function amountBlocker(amount: AmountState, ctx: { currencyCode: string; minorUnit: number }): string | null {
   switch (amount.kind) {
     case 'invalid':
       return '金額を計算できません。式を直してください。';
@@ -480,63 +360,14 @@ function originalSplitMemberIds(draft: ExpenseDraft, ctx: ExpenseFormContext): R
     : new Set();
 }
 
-/**
- * 負担の指定。`category`（`draft.split` が `null`）か、「この支出だけ負担を変える」の入力。検査に通らなければ `null`。
- * 割合・金額指定で、0%・0円のメンバーは送らない（元の負担にいた人を除く）: 0の行は、負担額が無いのに行が増え、あとで
- * 脱退の確定が、負担に関わっているとみなす（`worker/src/closedMonth.ts` の `markLeftStatement`）。送らなくても、負担は同じ。
- */
+/** 負担の指定（`buildSplitRequest`）。元の負担にいたメンバーは、0%・0円でも行を残す（`originalSplitMemberIds`）。 */
 function buildSplit(draft: ExpenseDraft, ctx: ExpenseFormContext, month: string | null): SplitRequest | null {
-  const split = draft.split;
-  if (split === null) return { method: 'category' };
-  const members = splitMembers(ctx, month).map((member) => member.id);
-  const kept = originalSplitMemberIds(draft, ctx);
-  switch (split.method) {
-    case 'equal': {
-      const memberIds = members.filter((id) => split.equalIds.includes(id));
-      return memberIds.length === 0 ? null : { method: 'equal', memberIds };
-    }
-    case 'single':
-      return split.singleId !== null && members.includes(split.singleId) ? { method: 'single', memberId: split.singleId } : null;
-    case 'ratio': {
-      const shares: { memberId: string; basisPoints: number }[] = [];
-      let total = 0;
-      for (const memberId of members) {
-        const basisPoints = parsePercent(split.percents[memberId] ?? '');
-        if (basisPoints === null) return null;
-        total += basisPoints;
-        if (basisPoints > 0 || kept.has(memberId)) shares.push({ memberId, basisPoints });
-      }
-      return total === BASIS_POINTS_TOTAL ? { method: 'ratio', shares } : null;
-    }
-    case 'fixed': {
-      const amounts: { memberId: string; amountMinor: number }[] = [];
-      for (const memberId of members) {
-        const result = evaluateExpression(split.amounts[memberId] ?? '', ctx.minorUnit);
-        if (result.kind === 'invalid') return null;
-        const minor = result.kind === 'value' ? result.minor : 0;
-        if (minor < 0) return null;
-        if (minor > 0 || kept.has(memberId)) amounts.push({ memberId, amountMinor: minor });
-      }
-      return { method: 'fixed', amounts };
-    }
-  }
+  return buildSplitRequest(draft.split, memberIdsFor(ctx, month), ctx.minorUnit, originalSplitMemberIds(draft, ctx));
 }
 
 /** 送る負担に入るメンバーのID（費目の割合・検査に通らない入力は空）。保存が断られたとき、文言を決めるために使う。 */
 export function splitMemberIdsOf(draft: ExpenseDraft, ctx: ExpenseFormContext): string[] {
-  const split = buildSplit(draft, ctx, targetMonthOf(draft, ctx));
-  switch (split?.method) {
-    case 'equal':
-      return split.memberIds;
-    case 'single':
-      return [split.memberId];
-    case 'ratio':
-      return split.shares.map((share) => share.memberId);
-    case 'fixed':
-      return split.amounts.map((row) => row.memberId);
-    default:
-      return [];
-  }
+  return memberIdsOfSplit(buildSplit(draft, ctx, targetMonthOf(draft, ctx)));
 }
 
 /** 登録のリクエスト。保存できないときは `null`。`id` は、シートごとに1回だけ作った識別子（最初の保存で作り、そのシートのあいだ使い回す。`CreateExpenseRequest.id`）。 */
@@ -558,22 +389,6 @@ export function buildCreateRequest(draft: ExpenseDraft, ctx: ExpenseFormContext,
     split,
     currencyCode: ctx.currencyCode,
   };
-}
-
-function sameSplit(a: SplitRequest, b: SplitRequest): boolean {
-  const byMember = <T extends { memberId: string }>(rows: T[]) => [...rows].sort((x, y) => (x.memberId < y.memberId ? -1 : 1));
-  switch (a.method) {
-    case 'category':
-      return b.method === 'category';
-    case 'single':
-      return b.method === 'single' && a.memberId === b.memberId;
-    case 'equal':
-      return b.method === 'equal' && JSON.stringify([...a.memberIds].sort()) === JSON.stringify([...b.memberIds].sort());
-    case 'ratio':
-      return b.method === 'ratio' && JSON.stringify(byMember(a.shares)) === JSON.stringify(byMember(b.shares));
-    case 'fixed':
-      return b.method === 'fixed' && JSON.stringify(byMember(a.amounts)) === JSON.stringify(byMember(b.amounts));
-  }
 }
 
 export type UpdatePlan =
