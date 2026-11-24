@@ -9,6 +9,7 @@ import {
   CANCEL_LEAVE_BUTTON_LABEL,
   LEAVE_AND_DELETE_BUTTON_LABEL,
   LEAVE_BUTTON_LABEL,
+  payerRecurringNote,
 } from './leaveView.ts';
 
 function member(overrides: Partial<GroupMember> & { id: string }): GroupMember {
@@ -66,7 +67,12 @@ describe('buildLeaveSection', () => {
 
   it('脱退を選んでいて、まだ確定していなければ、「脱退を取り消す」を出す。最後の1人なら、警告も添える', () => {
     const normal = buildLeaveSection(group({ leaveRequestedMonth: '2026-11' }));
-    assert.deepEqual(normal, { kind: 'cancel', buttonLabel: CANCEL_LEAVE_BUTTON_LABEL, note: '取り消すと、このグループに残ります。' });
+    assert.deepEqual(normal, {
+      kind: 'cancel',
+      buttonLabel: CANCEL_LEAVE_BUTTON_LABEL,
+      note: '取り消すと、このグループに残ります。',
+      payerNote: null,
+    });
     const last = buildLeaveSection(group({ leaveRequestedMonth: '2026-11' }, true));
     assert.equal(last.kind, 'cancel');
     assert.ok(last.kind === 'cancel' && last.note.includes('すべて削除され、元に戻せません'));
@@ -81,5 +87,51 @@ describe('buildLeaveSection', () => {
     assert.deepEqual(buildLeaveSection(group({ status: 'unknown' })), { kind: 'hidden' });
     assert.deepEqual(buildLeaveSection(group({ status: 'left', leaveEffective: true })), { kind: 'hidden' });
     assert.deepEqual(buildLeaveSection({ memberId: 'nobody', leaveDeletesGroup: false, members: [member({ id: 'm1' })] }), { kind: 'hidden' });
+  });
+});
+
+describe('固定費の支払う人の添え書き', () => {
+  it('名前が無ければ出さない。1件・2件はそのまま、3件以上は「ほかN件」', () => {
+    assert.equal(payerRecurringNote([]), null);
+    const one = payerRecurringNote(['家賃']);
+    assert.ok(one?.startsWith('家賃の固定費は、支払う人を選び直す必要があります。'));
+    assert.ok(one?.includes('脱退が確定すると、選び直していない固定費は自動登録が止まります。'));
+    assert.ok(one?.includes('確定する前に、設定の「固定費」から選び直してください。'));
+    assert.ok(payerRecurringNote(['家賃', '光熱費'])?.startsWith('家賃、光熱費の固定費は、'));
+    assert.ok(payerRecurringNote(['家賃', '光熱費', 'ネット', '保険'])?.startsWith('家賃、光熱費ほか2件の固定費は、'));
+  });
+
+  it('脱退を選ぶ前は、欄と確認の本文の両方に添える', () => {
+    const section = buildLeaveSection(group({}), ['家賃']);
+    assert.equal(section.kind, 'request');
+    if (section.kind !== 'request') return;
+    assert.ok(section.payerNote?.startsWith('家賃の固定費は、支払う人を選び直す必要があります。'));
+    assert.ok(section.confirm.message.includes(section.payerNote ?? '?'));
+    assert.ok(section.confirm.message.includes('確定するまでは、取り消せます'), '元の文言は残る');
+  });
+
+  it('脱退を選んで、まだ確定していないあいだも、欄に添える（確定する前なら、選び直せる）', () => {
+    const section = buildLeaveSection(group({ leaveRequestedMonth: '2026-11' }), ['家賃']);
+    assert.equal(section.kind, 'cancel');
+    assert.ok(section.kind === 'cancel' && section.payerNote?.startsWith('家賃の固定費は、'));
+  });
+
+  it('固定費が無い（または読めなかった）ときは、添えない。確認の本文も変わらない', () => {
+    const plain = buildLeaveSection(group({}));
+    assert.equal(plain.kind === 'request' && plain.payerNote, null);
+    const empty = buildLeaveSection(group({}), []);
+    assert.deepEqual(empty, plain);
+  });
+
+  it('最後の1人（グループごと消える）ときは、添えない（固定費も一緒に消える）', () => {
+    const last = buildLeaveSection(group({}, true), ['家賃']);
+    assert.equal(last.kind === 'request' && last.payerNote, null);
+    assert.ok(last.kind === 'request' && !last.confirm.message.includes('固定費'));
+    const lastCancel = buildLeaveSection(group({ leaveRequestedMonth: '2026-11' }, true), ['家賃']);
+    assert.equal(lastCancel.kind === 'cancel' && lastCancel.payerNote, null);
+  });
+
+  it('欄を出さない人には、固定費があっても出さない', () => {
+    assert.deepEqual(buildLeaveSection(group({ leaveEffective: true }), ['家賃']), { kind: 'hidden' });
   });
 });

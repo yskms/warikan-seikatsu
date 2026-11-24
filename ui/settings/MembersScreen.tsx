@@ -25,6 +25,8 @@
 //   断られたら、競合を含めて、いつも読み直す。グループが無い（404）ときは、所属グループの一覧も読み直す。成功・失敗のあとの
 //   読み直しは、終わるまで `busy` のまま（古い表示のボタンを、続けて押さない）。確定するまで取り消せる状態（`requested`）は、画面の表示が変わる
 //   （「脱退予定」と「脱退を取り消す」）だけ。失敗の文言は、発行と同じ理由で、ボタンのすぐ下に出す。
+//   **自分が支払う人の固定費があるときは、欄の説明の下と確認の本文に、付け替えの添え書きを足す**（`leaveView.ts` の `payerNote`。固定費は、
+//   グループ・招待と一緒に読む補助の読み込み `payerRecurring`。読めなければ添え書きが出ないだけで、画面は失敗にしない）。
 // - **期限の表示は、30秒ごとと、アプリが前面に戻ったときに更新する**（画面を開いたままでも、「あと…」が古くならない）。端末の時計で
 //   期限が切れた招待は、「期限切れ」と出して、**「共有」だけを隠す**（`isInviteExpired`。使えないURLを送ってしまわないため）。
 //   **行は一覧から外さず、「取り消す」は残す**: 時計が進んでいる端末では、サーバーでは有効な招待が「期限切れ」に見える。外すと、
@@ -65,6 +67,7 @@ import {
   sortInvites,
   type MemberRow,
 } from '../../src/services/memberView.ts';
+import { myPayerRecurringTitles } from '../../src/services/recurringView.ts';
 import { reloadGroups } from '../groupList.ts';
 import { Avatar } from '../home/Avatar.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
@@ -317,8 +320,17 @@ export function MembersScreen({ groupId }: { groupId: string }) {
 
   const view = useMemo(() => {
     if (load.status !== 'ready') return null;
-    const { group } = load.data;
-    return { members: buildMemberList(group.members), invite: buildInviteSection(group), leave: buildLeaveSection(group) };
+    const { group, payerRecurring } = load.data;
+    // 自分が支払う人の固定費の添え書き。固定費が読めていなければ（`null`）、出ないだけ
+    const payerTitles =
+      payerRecurring === null
+        ? []
+        : myPayerRecurringTitles({ ...payerRecurring, memberId: group.memberId });
+    return {
+      members: buildMemberList(group.members),
+      invite: buildInviteSection(group),
+      leave: buildLeaveSection(group, payerTitles),
+    };
   }, [load]);
 
   const invites = useMemo(() => (load.status === 'ready' ? sortInvites(load.data.invites) : []), [load]);
@@ -473,6 +485,9 @@ export function MembersScreen({ groupId }: { groupId: string }) {
                 </Text>
               ) : null}
               <Text style={[styles.note, { color: colors.textSecondary }]}>{view.leave.note}</Text>
+              {view.leave.payerNote !== null ? (
+                <Text style={[styles.note, { color: colors.textSecondary }]}>{view.leave.payerNote}</Text>
+              ) : null}
             </View>
           ) : null}
         </ScrollView>

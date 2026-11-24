@@ -7,14 +7,32 @@
 // 招待を開いて参加する側（`preview`・`join`。参加確認の画面。`joinMessage.ts`）も、同じServiceに置く。
 import type { GroupDetail } from '../domain/group.ts';
 import type { Invite, InvitePreview, IssuedInvite, JoinedInvite } from '../domain/invite.ts';
+import type { Category } from '../domain/month.ts';
+import type { RecurringExpense } from '../domain/recurring.ts';
+import type { CategoryRepository } from '../repositories/categoryRepository.ts';
 import type { GroupRepository } from '../repositories/groupRepository.ts';
 import type { InviteRepository } from '../repositories/inviteRepository.ts';
+import type { MonthRepository } from '../repositories/monthRepository.ts';
+import type { RecurringRepository } from '../repositories/recurringRepository.ts';
 import type { SessionAccess } from './accountService.ts';
+import { bestEffort } from './bestEffort.ts';
 
 export interface InviteServiceDeps {
   groups: GroupRepository;
   invites: InviteRepository;
+  /** 脱退の欄の、固定費の添え書きだけに使う（`MembersData.payerRecurring`） */
+  months: MonthRepository;
+  categories: CategoryRepository;
+  recurring: RecurringRepository;
   access: SessionAccess;
+}
+
+/** 脱退の欄の添え書きに要る、固定費とその題を決めるデータ（`recurringView.ts` の `myPayerRecurringTitles`）。 */
+export interface PayerRecurringData {
+  /** グループの今月（終了した固定費を除くため） */
+  currentMonth: string;
+  categories: Category[];
+  recurring: RecurringExpense[];
 }
 
 /** メンバーと招待の画面に要るデータ。 */
@@ -23,15 +41,37 @@ export interface MembersData {
   group: GroupDetail;
   /** 自分が発行した、未使用で期限内の招待 */
   invites: Invite[];
+  /**
+   * 脱退の欄の「自分が支払う人の固定費は、選び直す必要があります」の添え書きに使う。**3つのどれかが読めなければ `null`**
+   * （添え書きが出ないだけで、画面は失敗にしない。`bestEffort`。401だけは、投げる）。
+   */
+  payerRecurring: PayerRecurringData | null;
 }
 
-export function createInviteService({ groups, invites, access }: InviteServiceDeps) {
+export function createInviteService({ groups, invites, months, categories, recurring, access }: InviteServiceDeps) {
   return {
-    /** 画面を開くときの読み込み。グループ（メンバー）と招待の一覧を、1回の `withSession` の中で並べて読む。 */
+    /**
+     * 画面を開くときの読み込み。グループ（メンバー）と招待の一覧と、脱退の欄の添え書き用の固定費を、1回の `withSession` の中で
+     * 並べて読む。
+     */
     load(groupId: string): Promise<MembersData> {
       return access.withSession(async (session) => {
-        const [group, inviteList] = await Promise.all([groups.get(session, groupId), invites.list(session, groupId)]);
-        return { group, invites: inviteList };
+        const [group, inviteList, payerRecurring] = await Promise.all([
+          groups.get(session, groupId),
+          invites.list(session, groupId),
+          bestEffort(
+            Promise.all([
+              months.list(session, groupId),
+              categories.list(session, groupId),
+              recurring.list(session, groupId),
+            ]).then(([monthList, categoryList, recurringList]) => ({
+              currentMonth: monthList.currentMonth,
+              categories: categoryList,
+              recurring: recurringList,
+            })),
+          ),
+        ]);
+        return { group, invites: inviteList, payerRecurring };
       });
     },
 

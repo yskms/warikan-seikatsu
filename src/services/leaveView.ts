@@ -19,6 +19,8 @@ export type LeaveSection =
       kind: 'request';
       buttonLabel: string;
       note: string;
+      /** 自分が支払う人の固定費があるときの添え書き（無ければ `null`）。確認の本文にも含まれる */
+      payerNote: string | null;
       confirm: LeaveConfirm;
       /**
        * 確認に、グループが消える警告（`leaveDeletesGroup`。サーバーの値）を出すか。出したときだけ、送るときに、確認の申告
@@ -28,11 +30,30 @@ export type LeaveSection =
       deletesGroup: boolean;
     }
   /** 脱退を選んでいて、まだ確定していない。「脱退を取り消す」を出す */
-  | { kind: 'cancel'; buttonLabel: string; note: string };
+  | { kind: 'cancel'; buttonLabel: string; note: string; payerNote: string | null };
 
 export const LEAVE_BUTTON_LABEL = 'このグループから脱退する';
 export const LEAVE_AND_DELETE_BUTTON_LABEL = 'グループを削除して脱退';
 export const CANCEL_LEAVE_BUTTON_LABEL = '脱退を取り消す';
+
+/** 添え書きに並べる固定費の名前の数（それ以上は「ほかN件」） */
+const PAYER_NOTE_NAMES = 2;
+
+/**
+ * 自分が支払う人の固定費があるときの添え書き（docs/screens.md 6章）。サーバーは、脱退が確定すると、支払う人が脱退した固定費を止める
+ * （付け替えていなければ。docs/backend-design.md 5章の「脱退」）。確定したあとは、本人は固定費を変えられない（403）ので、「確定する前に」と
+ * 案内する（今月をすでに締めていて、すぐ確定する場合は、脱退を選ぶ前になる）。名前が無ければ `null`。
+ */
+export function payerRecurringNote(titles: readonly string[]): string | null {
+  if (titles.length === 0) return null;
+  const shown = titles.slice(0, PAYER_NOTE_NAMES);
+  const rest = titles.length - shown.length;
+  const names = rest > 0 ? `${shown.join('、')}ほか${rest}件` : shown.join('、');
+  return (
+    `${names}の固定費は、支払う人を選び直す必要があります。脱退が確定すると、選び直していない固定費は自動登録が止まります。` +
+    '確定する前に、設定の「固定費」から選び直してください。'
+  );
+}
 
 const LAST_MEMBER_WARNING =
   'あなたが、このグループの最後のメンバーです。脱退が確定すると、このグループのデータはすべて削除され、元に戻せません。';
@@ -43,15 +64,20 @@ const LAST_MEMBER_WARNING =
  * サーバーの値で、月の判定を書き写さない。**自分の状態が `unknown`（知らない値）のときは、出さない**（脱退を選べるかを、知らない
  * 状態から決めない。`GroupMember.status` の注意書きへの、この画面での答え）。
  *
- * 脱退を選んだあとに、グループが消えるか（`leaveDeletesGroup`）も、サーバーの値。**固定費の支払う人の注意**（設計にある、
- * 「家賃の固定費は、支払う人を選び直す必要があります」）は、固定費の画面を作っていないので、出していない。
+ * 脱退を選んだあとに、グループが消えるか（`leaveDeletesGroup`）も、サーバーの値。
+ *
+ * **固定費の支払う人の添え書き**（「家賃の固定費は、支払う人を選び直す必要があります」）は、`payerRecurringTitles`（自分が支払う人の、
+ * 止まっていない・終了していない固定費の題。`myPayerRecurringTitles`）があるときだけ出す。固定費が読めなかったとき（呼ぶ側が
+ * 空で渡す）は、出ないだけ。**グループが消える（`leaveDeletesGroup`）ときは出さない**（固定費も一緒に消える）。
  */
 export function buildLeaveSection(
   group: Pick<GroupDetail, 'memberId' | 'members' | 'leaveDeletesGroup'>,
+  payerRecurringTitles: readonly string[] = [],
 ): LeaveSection {
   const me = group.members.find((member) => member.id === group.memberId);
   if (me === undefined || me.status !== 'active' || me.leaveEffective) return { kind: 'hidden' };
   const lastMember = group.leaveDeletesGroup;
+  const payerNote = lastMember ? null : payerRecurringNote(payerRecurringTitles);
 
   if (me.leaveRequestedMonth !== null) {
     return {
@@ -60,6 +86,7 @@ export function buildLeaveSection(
       note: lastMember
         ? `${LAST_MEMBER_WARNING}取り消すと、このグループに残ります。`
         : '取り消すと、このグループに残ります。',
+      payerNote,
     };
   }
 
@@ -67,6 +94,7 @@ export function buildLeaveSection(
     return {
       kind: 'request',
       deletesGroup: true,
+      payerNote: null,
       buttonLabel: LEAVE_AND_DELETE_BUTTON_LABEL,
       note: `${LAST_MEMBER_WARNING}確定は、今月を締めたとき、または来月1日です。`,
       confirm: {
@@ -82,13 +110,15 @@ export function buildLeaveSection(
   return {
     kind: 'request',
     deletesGroup: false,
+    payerNote,
     buttonLabel: LEAVE_BUTTON_LABEL,
     note: '脱退を選ぶと、今月を締めたとき、または来月1日に、脱退が確定します。確定するまでは、取り消せます。',
     confirm: {
       title: 'このグループから脱退しますか？',
       message:
         '今月で脱退します。今月を締めるか、来月1日に確定します。確定するまでは、取り消せます。\n\n' +
-        '今月をすでに締めている場合は、すぐに確定します。',
+        '今月をすでに締めている場合は、すぐに確定します。' +
+        (payerNote === null ? '' : `\n\n${payerNote}`),
       confirmLabel: '脱退する',
     },
   };
