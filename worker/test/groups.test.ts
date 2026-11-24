@@ -313,6 +313,11 @@ describe('グループのAPI', () => {
       assert.equal(byName.dave.status, 'deleted');
       assert.equal(byName.erin.status, 'left');
       assert.equal(byName.newbie.historyFromMonth, '2026-11');
+      // 脱退が確定したものとして扱うか: 参加中は false、脱退が確定（leaving）・脱退済み・削除済みは true
+      assert.deepEqual(
+        group.members.map((m: { displayName: string; leaveEffective: boolean }) => [m.displayName, m.leaveEffective]),
+        [['alice', false], ['bob', false], ['carol', true], ['dave', true], ['erin', true], ['newbie', false]],
+      );
       assert.ok(!JSON.stringify(group).includes(f.alice.userId));
       assert.equal(group.currencyLocked, false);
     });
@@ -336,6 +341,23 @@ describe('グループのAPI', () => {
       assert.deepEqual([alice.seatedMembers, alice.canInvite], [MAX_MEMBERS_PER_GROUP - 1, true]);
       const erin = (await api.getGroup(g.people.erin, g.groupId)).body.group;
       assert.deepEqual([erin.seatedMembers, erin.canInvite], [MAX_MEMBERS_PER_GROUP - 1, false]);
+    });
+
+    it('leaveEffective: 脱退を選んだ月が終わった参加中の人は true（Cronの確定の前）。脱退月の途中・脱退を選んでいない人は false', async () => {
+      const g = await factory.createGroup(['alice', 'bob', 'carol']);
+      const leaveEffectiveOf = async (viewer: typeof g.people.alice, name: string) => {
+        const group = (await api.getGroup(viewer, g.groupId)).body.group;
+        return group.members.find((m: { displayName: string }) => m.displayName === name).leaveEffective;
+      };
+      // 今月（2026-11）に脱退を選んだだけ: 今月はまだいる
+      await db.prepare(`UPDATE group_members SET leave_requested_month = '2026-11', expense_end_month = '2026-11' WHERE id = ?`).bind(g.people.carol.memberId).run();
+      assert.equal(await leaveEffectiveOf(g.people.alice, 'carol'), false);
+      // 脱退月（2026-10）が終わった。status は active のまま
+      await db.prepare(`UPDATE group_members SET leave_requested_month = '2026-10', expense_end_month = '2026-10' WHERE id = ?`).bind(g.people.carol.memberId).run();
+      assert.equal(await leaveEffectiveOf(g.people.alice, 'carol'), true);
+      // 本人の画面でも、同じ値（自分の脱退が確定したものとして扱われる）
+      assert.equal(await leaveEffectiveOf(g.people.carol, 'carol'), true);
+      assert.equal(await leaveEffectiveOf(g.people.alice, 'alice'), false);
     });
 
     it('メンバーでない人・脱退済みの人・他のグループの人は、区別せず404', async () => {

@@ -10,6 +10,7 @@ import {
   authenticateRequest,
   canEditGroupSettings,
   canIssueInvitesFor,
+  isLeaveEffectiveFor,
   loadGroupAccess,
 } from './access.ts';
 import { minorUnitOf } from './currencies.ts';
@@ -77,7 +78,11 @@ const groupJson = (row: GroupRow) => ({
   createdAt: row.created_at,
 });
 
-const memberJson = (row: MemberRow, userId: string) => ({
+// `leaveEffective`: 脱退が確定したものとして扱うメンバーか（`isLeaveEffectiveFor`。招待の発行・参加と同じ判定）。`status` が
+// `active` のままでも、脱退を選んだ月が終わっていれば true（翌月1日のCronが `status` を書くまでの間は、`status` だけでは
+// 分からない）。`leaving`・`left`・`deleted` は、いつも true。アプリが、月の判定を書き写さずに、「脱退予定」の文言や招待の欄を
+// 出し分けるため。
+const memberJson = (row: MemberRow, userId: string, timezone: string, now: number) => ({
   id: row.id,
   displayName: row.display_name,
   color: row.color,
@@ -85,6 +90,7 @@ const memberJson = (row: MemberRow, userId: string) => ({
   historyFromMonth: row.history_from_month,
   leaveRequestedMonth: row.leave_requested_month,
   expenseEndMonth: row.expense_end_month,
+  leaveEffective: isLeaveEffectiveFor({ status: row.status, leaveRequestedMonth: row.leave_requested_month }, timezone, now),
   isMe: row.user_id === userId,
 });
 
@@ -139,7 +145,7 @@ async function loadGroupDetail(db: D1Database, userId: string, groupId: string, 
     maxMembers: MAX_MEMBERS_PER_GROUP,
     // 未使用の招待の上限(`too_many_invites`)は含まない(自分の招待の一覧で分かる)。
     canInvite: meCanIssue && !isGroupFull(seats, groupRow.timezone, now),
-    members: memberRows.map((row) => memberJson(row, userId)),
+    members: memberRows.map((row) => memberJson(row, userId, groupRow.timezone, now)),
     // 通貨を変えられないか（`PATCH` が 409 `currency_locked` を返す条件）。画面が、変更の入口を出すかを決めるため。
     currencyLocked: (locked.results[0] as { locked: number } | undefined)?.locked === 1,
   };
