@@ -12,9 +12,11 @@ interface PrimaryButtonProps {
   disabled?: boolean;
   /** 塗らない、控えめな見た目（取り消せない操作の隣など） */
   variant?: 'primary' | 'secondary';
+  /** 小さい見た目（カードの中の操作など）。高さは、押しやすさのために44以上を保つ */
+  compact?: boolean;
 }
 
-export function PrimaryButton({ label, onPress, busy = false, disabled = false, variant = 'primary' }: PrimaryButtonProps) {
+export function PrimaryButton({ label, onPress, busy = false, disabled = false, variant = 'primary', compact = false }: PrimaryButtonProps) {
   const colors = useColors();
   const inactive = disabled || busy;
   const primary = variant === 'primary';
@@ -28,6 +30,7 @@ export function PrimaryButton({ label, onPress, busy = false, disabled = false, 
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        compact && styles.compact,
         primary
           ? { backgroundColor: colors.accent, borderColor: colors.accent }
           : { backgroundColor: colors.surface, borderColor: colors.border },
@@ -35,7 +38,11 @@ export function PrimaryButton({ label, onPress, busy = false, disabled = false, 
         pressed && styles.pressed,
       ]}
     >
-      {busy ? <ActivityIndicator color={textColor} /> : <Text style={[styles.label, { color: textColor }]}>{label}</Text>}
+      {busy ? (
+        <ActivityIndicator color={textColor} />
+      ) : (
+        <Text style={[styles.label, compact && styles.labelCompact, { color: textColor }]}>{label}</Text>
+      )}
     </Pressable>
   );
 }
@@ -48,7 +55,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  compact: { height: 44, borderRadius: 10 },
   label: { fontSize: 17, fontWeight: '600' },
+  labelCompact: { fontSize: 15 },
   dimmed: { opacity: 0.5 },
   pressed: { opacity: 0.8 },
 });

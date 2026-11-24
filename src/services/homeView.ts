@@ -12,7 +12,7 @@ import type {
   MonthView,
   TransferStatus,
 } from '../domain/month.ts';
-import { formatExpenseDate, formatMonth, formatMonthShort, previousMonth } from './dateFormat.ts';
+import { formatExpenseDate, formatMonth, formatMonthShort, nextMonth, previousMonth } from './dateFormat.ts';
 import { formatMoney, formatSignedMoney } from './money.ts';
 
 const UNKNOWN_MEMBER = '不明なメンバー';
@@ -246,6 +246,8 @@ const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
 
 export interface TransferLine {
   key: string;
+  /** 締めた月の送金のID（精算完了・繰越に渡す）。締める前の見込みは `null` */
+  transferId: string | null;
   fromName: string;
   toName: string;
   amountText: string;
@@ -253,6 +255,8 @@ export interface TransferLine {
   statusText: string | null;
   /** 未処理か（締めた月だけ。操作のボタンを出す送金） */
   pending: boolean;
+  /** 未処理で、繰り越せるか（サーバーが返す `canCarry`。アプリは規則を持たない）。未処理でない送金は `false` */
+  canCarry: boolean;
 }
 
 export type SettlementModel =
@@ -266,6 +270,8 @@ export type SettlementModel =
       emptyText: string | null;
       /** 締められない理由（締められるとき、または理由を出さないときは `null`） */
       blockedText: string | null;
+      /** 「この月を締める」を押せるか（サーバーが返す `close.closable`） */
+      closable: boolean;
     }
   | {
       kind: 'closed';
@@ -275,6 +281,8 @@ export type SettlementModel =
       lines: TransferLine[];
       /** すべて処理済みのとき */
       doneText: string | null;
+      /** 繰越先の月の名前（「12月」。繰越の確認に出す）。繰越先はサーバーが決める。ここは表示用 */
+      carryMonthLabel: string;
     };
 
 /** 締められない理由（締める前の月）。締められるとき・月が締め済みのときは `null`。 */
@@ -305,24 +313,31 @@ export function buildSettlement(
   lookup: MemberLookup,
   money: MoneyFormatter,
 ): SettlementModel {
-  const lines: TransferLine[] = summary.transfers.map((transfer, index) => ({
-    key: transfer.kind === 'closed' ? transfer.id : `estimate-${index}`,
-    fromName: lookup.name(transfer.fromMemberId),
-    toName: lookup.name(transfer.toMemberId),
-    amountText: money(transfer.amountMinor),
-    statusText: transfer.kind === 'closed' ? TRANSFER_STATUS_LABELS[transfer.status] : null,
-    pending: transfer.kind === 'closed' && transfer.status === 'pending',
-  }));
+  const lines: TransferLine[] = summary.transfers.map((transfer, index) => {
+    const pending = transfer.kind === 'closed' && transfer.status === 'pending';
+    return {
+      key: transfer.kind === 'closed' ? transfer.id : `estimate-${index}`,
+      transferId: transfer.kind === 'closed' ? transfer.id : null,
+      fromName: lookup.name(transfer.fromMemberId),
+      toName: lookup.name(transfer.toMemberId),
+      amountText: money(transfer.amountMinor),
+      statusText: transfer.kind === 'closed' ? TRANSFER_STATUS_LABELS[transfer.status] : null,
+      pending,
+      canCarry: pending && transfer.kind === 'closed' && transfer.canCarry,
+    };
+  });
   const monthLabel = formatMonthShort(summary.month);
 
   if (summary.closed) {
     const pending = lines.filter((line) => line.pending).length;
+    const following = nextMonth(summary.month);
     return {
       kind: 'closed',
       title: `${monthLabel}の精算`,
       pendingText: pending > 0 ? `未処理 ${pending}件` : null,
       lines,
       doneText: summary.closing?.processed ? `${monthLabel}分は処理済みです` : null,
+      carryMonthLabel: following === null ? '次の月' : formatMonthShort(following),
     };
   }
 
@@ -335,8 +350,40 @@ export function buildSettlement(
     carryNote: carried > 0 ? `先月からの繰越 ${money(carried)} を含みます` : null,
     emptyText: lines.length === 0 ? 'いまのところ精算はありません' : null,
     blockedText: closeBlockedText(summary.close),
+    closable: summary.close.closable,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 精算完了・繰越の確認（docs/screens.md 5章）
+
+export interface ConfirmText {
+  title: string;
+  message: string;
+  /** 実行のボタンの文字 */
+  confirmLabel: string;
+}
+
+/** 「精算完了」の確認。 */
+export function settleConfirmText(line: TransferLine): ConfirmText {
+  return {
+    title: `${line.fromName} → ${line.toName} ${line.amountText} を精算済みにします。`,
+    message: '元に戻せません。',
+    confirmLabel: '精算済みにする',
+  };
+}
+
+/** 「繰越」の確認。`carryMonthLabel` は、繰越先の月（`SettlementModel` の `carryMonthLabel`。「12月」）。 */
+export function carryConfirmText(line: TransferLine, carryMonthLabel: string): ConfirmText {
+  return {
+    title: `${line.amountText} を${carryMonthLabel}の精算に合算します。`,
+    message: `${line.fromName} → ${line.toName} の送金です。元に戻せません。`,
+    confirmLabel: '繰り越す',
+  };
+}
+
+/** 繰り越せない未処理の送金（脱退するメンバー・削除されたユーザーが関わる）に添える一言。 */
+export const CARRY_BLOCKED_TEXT = '脱退するメンバーとの精算は繰り越せません';
 
 // ---------------------------------------------------------------------------
 // 支出の一覧

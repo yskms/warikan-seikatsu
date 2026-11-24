@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { formatExpenseDate, formatMonth, formatMonthShort, previousMonth } from './dateFormat.ts';
+import { formatExpenseDate, formatMonth, formatMonthShort, nextMonth, previousMonth } from './dateFormat.ts';
 
 describe('月の表示', () => {
   it('formatMonth / formatMonthShort', () => {
@@ -32,6 +32,19 @@ describe('previousMonth', () => {
   it('形が違う値は null', () => {
     assert.equal(previousMonth('2026-13'), null);
     assert.equal(previousMonth('x'), null);
+  });
+});
+
+describe('nextMonth', () => {
+  it('1つ後の月（年をまたぐ）', () => {
+    assert.equal(nextMonth('2026-11'), '2026-12');
+    assert.equal(nextMonth('2026-01'), '2026-02');
+    assert.equal(nextMonth('2026-12'), '2027-01');
+  });
+
+  it('形が違う値は null', () => {
+    assert.equal(nextMonth('2026-13'), null);
+    assert.equal(nextMonth('x'), null);
   });
 });
 

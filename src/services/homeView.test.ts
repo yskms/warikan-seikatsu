@@ -14,12 +14,15 @@ import {
   buildNotices,
   buildSettlement,
   buildTotal,
+  CARRY_BLOCKED_TEXT,
+  carryConfirmText,
   closeBlockedText,
   initialOf,
   memberColumns,
   memberLookup,
   moneyFormatters,
   neighborMonths,
+  settleConfirmText,
 } from './homeView.ts';
 
 const member = (id: string, displayName: string, color: string): GroupMember => ({
@@ -293,7 +296,16 @@ describe('精算（締める前の見込み）', () => {
     if (model.kind !== 'estimate') return;
     assert.equal(model.title, 'いまの精算見込み');
     assert.deepEqual(model.lines, [
-      { key: 'estimate-0', fromName: '彼女', toName: 'あなた', amountText: '¥13,450', statusText: null, pending: false },
+      {
+        key: 'estimate-0',
+        transferId: null,
+        fromName: '彼女',
+        toName: 'あなた',
+        amountText: '¥13,450',
+        statusText: null,
+        pending: false,
+        canCarry: false,
+      },
     ]);
     assert.equal(model.emptyText, null);
     assert.equal(model.carryNote, null);
@@ -345,6 +357,27 @@ describe('精算（締める前の見込み）', () => {
   });
 });
 
+describe('精算（締める前）の「この月を締める」', () => {
+  const lookup = memberLookup(group);
+
+  it('サーバーが返す close.closable を、そのまま押せるかにする（アプリで判断しない）', () => {
+    const closable = (close: MonthView['close']) => {
+      const model = buildSettlement(view({ close }), lookup, money);
+      return model.kind === 'estimate' ? model.closable : undefined;
+    };
+    assert.equal(closable({ closable: true }), true);
+    assert.equal(closable({ closable: false, reason: 'previous_month_not_closed', month: '2026-10' }), false);
+    assert.equal(closable({ closable: false, reason: 'unknown', month: null }), false);
+  });
+
+  it('押せないときは、必ず理由が添わる（理由の無い、押せないボタンを出さない）。ただし、知らない理由も文言にする', () => {
+    for (const reason of ['forbidden', 'month_skipped', 'month_not_started', 'previous_month_not_closed', 'previous_month_unsettled', 'unknown'] as const) {
+      const model = buildSettlement(view({ close: { closable: false, reason, month: null } }), lookup, money);
+      assert.ok(model.kind === 'estimate' && model.blockedText !== null && model.blockedText.length > 0, reason);
+    }
+  });
+});
+
 describe('closeBlockedText', () => {
   it('理由ごとの文言。月が無いときも、文が崩れない', () => {
     assert.equal(closeBlockedText({ closable: true }), null);
@@ -364,7 +397,7 @@ describe('closeBlockedText', () => {
 describe('精算（締めた月）', () => {
   const lookup = memberLookup(group);
   const closed = (
-    transfers: { id: string; status: 'pending' | 'settled' | 'carried' }[],
+    transfers: { id: string; status: 'pending' | 'settled' | 'carried'; canCarry?: boolean }[],
     processed: boolean,
   ): MonthView =>
     view({
@@ -378,7 +411,7 @@ describe('精算（締めた月）', () => {
         toMemberId: 'm1',
         amountMinor: 3000,
         status: transfer.status,
-        canCarry: transfer.status === 'pending',
+        canCarry: transfer.canCarry ?? transfer.status === 'pending',
       })),
       close: { closable: false, reason: 'month_closed', month: null },
     });
@@ -420,6 +453,94 @@ describe('精算（締めた月）', () => {
     const model = buildSettlement(closed([], true), lookup, money);
     assert.equal(model.kind === 'closed' && model.doneText, '10月分は処理済みです');
     assert.equal(model.kind === 'closed' && model.lines.length, 0);
+  });
+});
+
+describe('精算（締めた月）の操作に使う項目', () => {
+  const lookup = memberLookup(group);
+  const closedMonth = (month: string, transfers: { id: string; status: 'pending' | 'settled' | 'carried'; canCarry: boolean }[]): MonthView =>
+    view({
+      month,
+      closed: true,
+      closing: { id: 'cl1', closedAt: 0, closedByMemberId: 'm1', processed: false },
+      transfers: transfers.map((transfer) => ({
+        kind: 'closed',
+        id: transfer.id,
+        fromMemberId: 'm2',
+        toMemberId: 'm1',
+        amountMinor: 13450,
+        status: transfer.status,
+        canCarry: transfer.canCarry,
+      })),
+      close: { closable: false, reason: 'month_closed', month: null },
+    });
+
+  it('送金のID・未処理か・繰り越せるかを、送金ごとに持つ。繰り越せるのは、未処理で、サーバーが許したものだけ', () => {
+    const model = buildSettlement(
+      closedMonth('2026-10', [
+        { id: 't1', status: 'pending', canCarry: true },
+        { id: 't2', status: 'pending', canCarry: false },
+        // 処理済みは、サーバーの値が何でも、繰り越せない（操作のボタンを出さない）
+        { id: 't3', status: 'settled', canCarry: true },
+        { id: 't4', status: 'carried', canCarry: true },
+      ]),
+      lookup,
+      money,
+    );
+    assert.equal(model.kind, 'closed');
+    if (model.kind !== 'closed') return;
+    assert.deepEqual(
+      model.lines.map((line) => [line.transferId, line.pending, line.canCarry]),
+      [
+        ['t1', true, true],
+        ['t2', true, false],
+        ['t3', false, false],
+        ['t4', false, false],
+      ],
+    );
+  });
+
+  it('繰越先の月の名前（年をまたぐときも）', () => {
+    const label = (month: string) => {
+      const model = buildSettlement(closedMonth(month, [{ id: 't1', status: 'pending', canCarry: true }]), lookup, money);
+      return model.kind === 'closed' ? model.carryMonthLabel : undefined;
+    };
+    assert.equal(label('2026-10'), '11月');
+    assert.equal(label('2026-12'), '1月');
+  });
+});
+
+describe('精算完了・繰越の確認の文言', () => {
+  const line = {
+    key: 't1',
+    transferId: 't1',
+    fromName: '彼女',
+    toName: 'あなた',
+    amountText: '¥13,450',
+    statusText: '未処理',
+    pending: true,
+    canCarry: true,
+  };
+
+  it('精算完了: 向きと金額を示し、元に戻せないことを添える', () => {
+    assert.deepEqual(settleConfirmText(line), {
+      title: '彼女 → あなた ¥13,450 を精算済みにします。',
+      message: '元に戻せません。',
+      confirmLabel: '精算済みにする',
+    });
+  });
+
+  it('繰越: 繰越先の月に合算することと、どの送金かを示し、元に戻せないことを添える', () => {
+    assert.deepEqual(carryConfirmText(line, '12月'), {
+      title: '¥13,450 を12月の精算に合算します。',
+      message: '彼女 → あなた の送金です。元に戻せません。',
+      confirmLabel: '繰り越す',
+    });
+  });
+
+  it('長いダッシュを含まない', () => {
+    const texts = [settleConfirmText(line), carryConfirmText(line, '12月')].flatMap((text) => [text.title, text.message, text.confirmLabel]);
+    for (const text of [...texts, CARRY_BLOCKED_TEXT]) assert.ok(!/[\u2014\u2015\u2E3A\u2E3B]/.test(text), text);
   });
 });
 

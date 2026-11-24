@@ -1,17 +1,35 @@
-// 精算のカード（docs/screens.md 3章）。送金は、誰から誰へいくらかを、矢印と名前で出す。
+// 精算のカード（docs/screens.md 3章・5章）。送金は、誰から誰へいくらかを、矢印と名前で出す。
 //
-// すべて処理済みのときは、カードを小さくする（余白と文字を小さくし、送金は薄い色にする。screens.md 3章）。
-//
-// **いまは読み取り専用**: 「この月を締める」ボタンと、未処理の送金の「精算完了」「繰越」ボタン（5章）は、まだ作っていない
-// （締めの確認のシートと、書き込みのAPIの呼び出しを作るときに足す。`SettlementModel` の `blockedText`（締められない理由）と、
-// 送金の `pending` は、そのためにすでに組み立ててある）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+// - 締める前（見込み）: 「この月を締める」。押せるかは、サーバーが返す `close.closable`（`SettlementModel` の `closable`）。
+//   押せないときは、ボタンを押せなくして、理由（`blockedText`）を添える。押すと、締めの確認のシート（`app/close.tsx`）を開く。
+// - 締めた後: 未処理の送金ごとに「精算完了」「繰越」。繰り越せない送金（`canCarry` が false。サーバーが返す）には、「繰越」を
+//   出さず、理由を添える。確認（取り消せないことの確認ダイアログ）と、実行は、呼び出し側（`useTransferActions`）。
+//   通信の最中（`busy`）は、すべての操作ボタンを押せなくする（1つずつ処理する）。
+// - すべて処理済みのときは、カードを小さくする（余白と文字を小さくし、送金は薄い色にする）。
 import { StyleSheet, Text, View } from 'react-native';
 
-import type { SettlementModel, TransferLine } from '../../src/services/homeView.ts';
+import { CARRY_BLOCKED_TEXT, type SettlementModel, type TransferLine } from '../../src/services/homeView.ts';
+import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
+import { TransferRow } from './TransferRow.tsx';
 
-export function SettlementCard({ model }: { model: SettlementModel }) {
+export interface TransferBusy {
+  transferId: string;
+  action: 'settle' | 'carry';
+}
+
+interface SettlementCardProps {
+  model: SettlementModel;
+  onClose(): void;
+  onSettle(line: TransferLine): void;
+  onCarry(line: TransferLine): void;
+  /** 精算完了・繰越の通信の最中の送金と操作 */
+  busy: TransferBusy | null;
+  /** 精算完了・繰越の失敗の文言 */
+  actionError: string | null;
+}
+
+export function SettlementCard({ model, onClose, onSettle, onCarry, busy, actionError }: SettlementCardProps) {
   const colors = useColors();
   const done = model.kind === 'closed' && model.doneText !== null;
   return (
@@ -37,9 +55,45 @@ export function SettlementCard({ model }: { model: SettlementModel }) {
       {model.lines.length > 0 ? (
         <View style={[styles.lines, done && styles.linesDone]}>
           {model.lines.map((line) => (
-            <Transfer key={line.key} line={line} muted={done} />
+            <View key={line.key} style={styles.lineBlock}>
+              <TransferRow line={line} muted={done} />
+              {model.kind === 'closed' && line.pending && line.transferId !== null ? (
+                <View style={styles.actions}>
+                  <View style={styles.action}>
+                    <PrimaryButton
+                      compact
+                      label="精算完了"
+                      busy={busy?.transferId === line.transferId && busy.action === 'settle'}
+                      disabled={busy !== null}
+                      onPress={() => onSettle(line)}
+                    />
+                  </View>
+                  {line.canCarry ? (
+                    <View style={styles.action}>
+                      <PrimaryButton
+                        compact
+                        variant="secondary"
+                        label="繰越"
+                        busy={busy?.transferId === line.transferId && busy.action === 'carry'}
+                        disabled={busy !== null}
+                        onPress={() => onCarry(line)}
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+              {model.kind === 'closed' && line.pending && !line.canCarry ? (
+                <Text style={[styles.note, { color: colors.textSecondary }]}>{CARRY_BLOCKED_TEXT}</Text>
+              ) : null}
+            </View>
           ))}
         </View>
+      ) : null}
+
+      {model.kind === 'closed' && actionError !== null ? (
+        <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+          {actionError}
+        </Text>
       ) : null}
 
       {model.kind === 'estimate' && model.carryNote ? (
@@ -48,32 +102,9 @@ export function SettlementCard({ model }: { model: SettlementModel }) {
       {model.kind === 'estimate' && model.blockedText ? (
         <Text style={[styles.note, { color: colors.textSecondary }]}>{model.blockedText}</Text>
       ) : null}
-    </View>
-  );
-}
-
-function Transfer({ line, muted }: { line: TransferLine; muted: boolean }) {
-  const colors = useColors();
-  const color = muted ? colors.textSecondary : colors.textPrimary;
-  return (
-    <View
-      accessible
-      accessibilityLabel={`${line.fromName}から${line.toName}へ ${line.amountText}${line.statusText ? `、${line.statusText}` : ''}`}
-      style={styles.transfer}
-    >
-      <View style={styles.names}>
-        <Text style={[styles.name, muted && styles.nameDone, { color }]} numberOfLines={1}>
-          {line.fromName}
-        </Text>
-        <MaterialCommunityIcons name="arrow-right" size={muted ? 16 : 18} color={colors.textSecondary} />
-        <Text style={[styles.name, muted && styles.nameDone, { color }]} numberOfLines={1}>
-          {line.toName}
-        </Text>
-      </View>
-      <View style={styles.amountColumn}>
-        <Text style={[styles.amount, muted && styles.amountDone, { color }]}>{line.amountText}</Text>
-        {line.statusText ? <Text style={[styles.status, { color: colors.textSecondary }]}>{line.statusText}</Text> : null}
-      </View>
+      {model.kind === 'estimate' ? (
+        <PrimaryButton label="この月を締める" disabled={!model.closable} onPress={onClose} />
+      ) : null}
     </View>
   );
 }
@@ -86,14 +117,10 @@ const styles = StyleSheet.create({
   titleDone: { fontSize: 15 },
   pending: { fontSize: 14, fontWeight: '600' },
   note: { fontSize: 14, lineHeight: 20 },
-  lines: { gap: 12 },
+  error: { fontSize: 14, lineHeight: 20 },
+  lines: { gap: 16 },
   linesDone: { gap: 6 },
-  transfer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  names: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  name: { fontSize: 16, flexShrink: 1 },
-  nameDone: { fontSize: 14 },
-  amountColumn: { alignItems: 'flex-end' },
-  amount: { fontSize: 20, fontWeight: '700' },
-  amountDone: { fontSize: 15 },
-  status: { fontSize: 12 },
+  lineBlock: { gap: 8 },
+  actions: { flexDirection: 'row', gap: 10 },
+  action: { flex: 1 },
 });

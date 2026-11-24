@@ -28,6 +28,19 @@ export function previousMonth(month: string): string | null {
   return `${String(y).padStart(4, '0')}-${String(mm).padStart(2, '0')}`;
 }
 
+/**
+ * 1つ後の月。`2026-12` → `2027-01`。形が違う値は `null`。繰越の確認と、締めの確認の「12月分として登録します」の、月の名前を
+ * 出すためだけに使う（繰越先・登録できる月は、サーバーが決める。ここで判断に使わない）。
+ */
+export function nextMonth(month: string): string | null {
+  const match = MONTH_PATTERN.exec(month);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const m = Number(match[2]);
+  const [y, mm] = m === 12 ? [year + 1, 1] : [year, m + 1];
+  return `${String(y).padStart(4, '0')}-${String(mm).padStart(2, '0')}`;
+}
+
 /** `2026-11-19` → `11/19(木)`。実在しない日付（`2026-02-30`）は、曜日を付けない。形が違う値は、そのまま返す。 */
 export function formatExpenseDate(date: string): string {
   const match = DATE_PATTERN.exec(date);

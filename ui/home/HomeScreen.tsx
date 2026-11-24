@@ -1,9 +1,10 @@
 // ホーム（docs/screens.md 3章）。選んだ月の、支出の総額・メンバー別の負担額・精算・支出の一覧を、1画面の縦スクロールで出す。
 // 初期表示は、サーバーが返す今月（`currentMonth`）。月は、上部の切り替えか、お知らせのタップで変える。
 //
-// 支出の行をタップすると、編集のシートを開く（登録は、下のナビの＋。どちらも `app/expense.tsx`）。**まだ作っていない**もの
+// 支出の行をタップすると、編集のシートを開く（登録は、下のナビの＋。どちらも `app/expense.tsx`）。精算のカードの「この月を
+// 締める」は、締めの確認のシート（`app/close.tsx`）を開き、「精算完了」「繰越」は、確認のあと、その場で実行する
+// （`useTransferActions`。どちらも、終わると、ホームを読み直す）。**まだ作っていない**もの
 // （それぞれ、作るときにここへ足す）:
-// - 月締め・精算完了・繰越（5章）
 // - お知らせのうち「メンバーが増減した」「固定費が止まった」と、1人だけのグループの「相手を招待する」カード（招待の発行を作るとき）
 // - 複数のグループの切り替えと、最後に開いたグループを覚えること（`ui/GroupGate.tsx`。いまは作成の古い順の先頭を出す）
 //
@@ -39,6 +40,7 @@ import { ExpenseSection } from './ExpenseSection.tsx';
 import { MonthHeader } from './MonthHeader.tsx';
 import { SettlementCard } from './SettlementCard.tsx';
 import { BreakdownSection, MemberBurdens, NoticeList, TotalCard } from './SummarySections.tsx';
+import { useTransferActions } from './useTransferActions.ts';
 
 interface HomeScreenProps {
   groupId: string;
@@ -88,6 +90,14 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
       rows: buildExpenseRows(current.expenses.expenses, groupData.categories, lookup, formatters.money),
     };
   }, [groupData, current]);
+
+  // 精算完了・繰越（確認 → 実行 → 読み直し）。ホームの読み直しは、結果を `state` へ反映するだけで、失敗しても投げない
+  const reload = useCallback(() => loader.reload(false), [loader]);
+  const transfers = useTransferActions({
+    reload,
+    month: selected,
+    carryMonthLabel: view?.settlement.kind === 'closed' ? view.settlement.carryMonthLabel : '次の月',
+  });
 
   const months = groupData?.months.months ?? [];
   const neighbors = selected === null ? { previous: null, next: null } : neighborMonths(months, selected);
@@ -139,7 +149,14 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
             <TotalCard total={view.total} />
             <MemberBurdens items={view.burdens} />
             <BreakdownSection breakdown={view.breakdown} />
-            <SettlementCard model={view.settlement} />
+            <SettlementCard
+              model={view.settlement}
+              onClose={() => router.push({ pathname: '/close', params: { groupId, month: selected } })}
+              onSettle={transfers.settle}
+              onCarry={transfers.carry}
+              busy={transfers.busy}
+              actionError={transfers.error}
+            />
             <ExpenseSection
               rows={view.rows}
               registerable={months.find((item) => item.month === selected)?.status === 'open'}
