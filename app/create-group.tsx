@@ -7,7 +7,6 @@ import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -86,7 +85,9 @@ export default function CreateGroupScreen() {
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* edge-to-edge（`android/gradle.properties` の `edgeToEdgeEnabled`）では、Androidも、キーボードでウィンドウが小さくならない
+          （`adjustResize` が効かない）ので、iOSと同じく padding で避ける。指定しないと、下端の「作成」がキーボードの下に隠れる */}
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
             グループを作る
