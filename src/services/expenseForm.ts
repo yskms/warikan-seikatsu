@@ -322,19 +322,16 @@ export function toggleCustomSplit(draft: ExpenseDraft, ctx: ExpenseFormContext):
 }
 
 /**
- * 登録先の月（日付・月の選択）を変えたとき、その月で選べないものを外す。
- * - 支払った人: 新しい月で選べないメンバーは、選び直しにする（`null`。保存の検査が「支払った人を選んでください」と止める）。
- *   編集で開いた支出の支払者は、選べない月でも、いまの値として残る（`payerOptions`）。
- * - 負担の入力: その月に選べないメンバーを外し、選べるようになったメンバーを足す。入力済みの値は、残るメンバーでは保つ。
+ * 登録先の月（日付・月の選択）を変えたとき、負担の入力を、その月に選べるメンバーに合わせる（選べないメンバーを外し、選べるように
+ * なったメンバーを足す。入力済みの値は、残るメンバーでは保つ）。
+ * 支払った人は、**ここでは外さない**: 新しい月で選べないあいだは、保存の検査（`checkDraft`）が「支払った人を選び直してください」で止める
+ * （チップには、選べるメンバーしか出ないので、何も選ばれていない見た目になる）。選べる月に戻せば、選び直さなくても、また選ばれている。
+ * 編集で開いた支出の支払者は、選べない月でも、いまの値として選べる（`payerOptions`）。
  */
 export function syncForMonth(draft: ExpenseDraft, ctx: ExpenseFormContext): ExpenseDraft {
-  const month = targetMonthOf(draft, ctx);
-  const payerStays =
-    draft.payerMemberId === null || payerOptions(ctx, month).some((member) => member.id === draft.payerMemberId);
-  const base = payerStays ? draft : { ...draft, payerMemberId: null };
-  if (base.split === null) return base;
-  const ids = new Set(splitMembers(ctx, month).map((member) => member.id));
-  const { split } = base;
+  if (draft.split === null) return draft;
+  const ids = new Set(splitMembers(ctx, targetMonthOf(draft, ctx)).map((member) => member.id));
+  const { split } = draft;
   const percents: Record<string, string> = {};
   const amounts: Record<string, string> = {};
   for (const id of ids) {
@@ -342,7 +339,7 @@ export function syncForMonth(draft: ExpenseDraft, ctx: ExpenseFormContext): Expe
     amounts[id] = split.amounts[id] ?? '';
   }
   return {
-    ...base,
+    ...draft,
     split: {
       ...split,
       percents,
@@ -450,14 +447,15 @@ export function checkDraft(draft: ExpenseDraft, ctx: ExpenseFormContext): FormCh
   if (blocker === null && amount.kind === 'ok' && splitLocked(ctx) && amount.minor !== ctx.editing?.amountMinor) {
     blocker = 'この支出の負担の方法は、このアプリでは変えられないため、金額は変えられません。';
   }
+  // 登録できる月が無いときは、支払者などより先に、その案内を出す（登録できる月が無いと、支払者の選択肢も無い）
+  if (blocker === null && month === null) blocker = '登録できる月がありません。';
   if (blocker === null && draft.categoryId === null) blocker = 'カテゴリを選んでください。';
   if (blocker === null && draft.payerMemberId === null) blocker = '支払った人を選んでください。';
-  if (blocker === null && !isRealDate(draft.date)) blocker = '日付を選んでください。';
-  if (blocker === null && month === null) blocker = '登録できる月がありません。';
-  // 登録先の月で選べない支払者（月・日付の変更で `syncForMonth` が外すので、通常は通らない。通らない経路の保険）
+  // 登録先の月で選べない支払者（月・日付を変えたあと。その月に戻せば、また選べる。`syncForMonth`）
   if (blocker === null && !payerOptions(ctx, month).some((member) => member.id === draft.payerMemberId)) {
     blocker = '支払った人を選び直してください。';
   }
+  if (blocker === null && !isRealDate(draft.date)) blocker = '日付を選んでください。';
   if (blocker === null && codePointLength(draft.description.trim()) > MAX_DESCRIPTION_LENGTH) {
     blocker = `内容は、${MAX_DESCRIPTION_LENGTH}文字までにしてください。`;
   }

@@ -725,15 +725,21 @@ describe('月・日付を変えたときの支払者', () => {
   ];
   const ctx = () => context({ members: joined, months: two, registerableMonths: ['2026-10', '2026-11'] });
 
-  it('新しい月で選べない支払者は、選び直しになる（null にして、保存できなくする）', () => {
+  it('新しい月で選べない支払者は、保存できなくなる（外さない）。その月に戻すと、また保存できる', () => {
     const c = ctx();
     const d = draft(c, { payerMemberId: 'm2', date: '2026-11-05' });
+    assert.equal(checkDraft(d, c).canSave, true);
     const moved = syncForMonth({ ...d, date: '2026-10-05' }, c);
-    assert.equal(moved.payerMemberId, null);
+    assert.equal(moved.payerMemberId, 'm2');
     assert.equal(checkDraft(moved, c).canSave, false);
-    assert.equal(checkDraft(moved, c).blocker, '支払った人を選んでください。');
+    assert.equal(checkDraft(moved, c).blocker, '支払った人を選び直してください。');
+    assert.equal(buildCreateRequest(moved, c, '3f2b9c1e-0a4d-4f6b-9d2e-1c7a8b5e4f30'), null);
     // 月の選択でも同じ
-    assert.equal(syncForMonth({ ...d, monthChoice: '2026-10' }, c).payerMemberId, null);
+    assert.equal(checkDraft(syncForMonth({ ...d, monthChoice: '2026-10' }, c), c).canSave, false);
+    // 戻すと、選び直さなくても、また選ばれている
+    const back = syncForMonth({ ...moved, date: '2026-11-05' }, c);
+    assert.equal(back.payerMemberId, 'm2');
+    assert.equal(checkDraft(back, c).canSave, true);
   });
 
   it('選べる支払者は、そのまま', () => {
@@ -741,7 +747,14 @@ describe('月・日付を変えたときの支払者', () => {
     assert.equal(syncForMonth({ ...draft(c, { payerMemberId: 'm1' }), date: '2026-10-05' }, c).payerMemberId, 'm1');
   });
 
-  it('検査でも、選べない支払者を保存させない（同期を通らない経路の保険）', () => {
+  it('登録できる月が無いときは、支払者より先に、その案内を出す', () => {
+    const c = context({ registerableMonths: [] });
+    const d = { ...initialDraft(c, null), amount: '1200' };
+    assert.equal(d.payerMemberId, null);
+    assert.equal(checkDraft(d, c).blocker, '登録できる月がありません。');
+  });
+
+  it('検査でも、選べない支払者を保存させない', () => {
     const c = ctx();
     const bad = draft(c, { payerMemberId: 'm2', date: '2026-10-05' });
     const check = checkDraft(bad, c);
