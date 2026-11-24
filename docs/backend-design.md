@@ -684,7 +684,7 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 | 409 | `currency_locked` | 通貨の変更：金額に関わるものがある |
 | 409 | `conflict` | 作成：他の人が使っている `id`。変更：他のリクエストの書き込みと競合した（8章） |
 
-アプリ側（`src/repositories/groupRepository.ts`）は、`GET /groups`・`GET /groups/:id`・`POST /groups` だけ実装した。`PATCH` は、グループの設定の画面を作るときに足す（`src/repositories/apiClient.ts` の `ApiMethod` に `PATCH`・`DELETE` を足す）。失敗の分類は、アカウントと同じ `AuthError`（名前は認証用だが、HTTPの失敗の種類は共通。`authError.ts` はSingfolioのコピーなので、分けない）。通貨の表・色のキー・名前の長さの上限は `src/domain/group.ts` に持ち、`src/domain/group.test.ts` が、Workerのソース（`worker/src/` の `currencies.ts`・`membership.ts`・`limits.ts`）を読んで、食い違っていないかを確かめる（書き方が変わると、テストが失敗する。そのときは、テストの読み方を直す）。応答の読み方は、一覧（`GET /groups`）は全項目を検べ、**作成（`POST /groups`）は、書き込みの済んだ操作なので、グループの `id` だけを検べる**（形のずれで、作成が済んだものを失敗に見せない）。グループの詳細（`GET /groups/:id`。メンバーなど）も読み込みなので、全項目を検べる（ホームが使う）。
+アプリ側（`src/repositories/groupRepository.ts`）は、`GET /groups`・`GET /groups/:id`・`POST /groups` だけ実装した。`PATCH` は、グループの設定の画面を作るときに足す（`src/repositories/apiClient.ts` の `ApiMethod` には、支出の編集・削除で `PATCH`・`DELETE` を足してある）。失敗の分類は、アカウントと同じ `AuthError`（名前は認証用だが、HTTPの失敗の種類は共通。`authError.ts` はSingfolioのコピーなので、分けない）。通貨の表・色のキー・名前の長さの上限は `src/domain/group.ts` に持ち、`src/domain/group.test.ts` が、Workerのソース（`worker/src/` の `currencies.ts`・`membership.ts`・`limits.ts`）を読んで、食い違っていないかを確かめる（書き方が変わると、テストが失敗する。そのときは、テストの読み方を直す）。応答の読み方は、一覧（`GET /groups`）は全項目を検べ、**作成（`POST /groups`）は、書き込みの済んだ操作なので、グループの `id` だけを検べる**（形のずれで、作成が済んだものを失敗に見せない）。グループの詳細（`GET /groups/:id`。メンバーなど）も読み込みなので、全項目を検べる（ホームが使う）。
 
 ### 費目・負担割合・支出・固定費
 
@@ -827,6 +827,13 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 | 409 | `conflict` | 読み直してやり直しても、他のリクエストの書き込みと競合した（8章）。入力は残して、読み直してもらう |
 
 他のグループの費目・メンバーのIDを指定したときは、404でなく400。`field` は、費目なら `categoryId`、支払者なら `payerMemberId`、負担の対象なら負担の方法に合わせた項目（`split.memberId`・`split.memberIds`・`split.shares`・`split.amounts`）。
+
+アプリ側（`src/repositories/expenseRepository.ts`）：一覧・1件の取得・登録・編集・削除を実装した。
+
+- ホームの一覧（`list`）は、負担額（`allocations`）を**読まない**。編集のシートを開くときだけ、`get` が読む（1件を返すAPIが無いので、その月の一覧から探す）。読まない項目が崩れても、ホーム全体を失敗にしないため。`get` は、編集が依存する負担額を、全部検べる。
+- 書き込み（`create`・`update`・`remove`）の応答は、使う項目だけを検べる。登録・編集は `expense.id` だけ。削除は204で、本文を読まない。
+- 断られたとき（400・403・404・409）は、`ExpenseRejectedError`（`AuthError` の `invalid-request`。`src/repositories/expenseRepository.ts`）に、サーバーの理由（`error`）と `field`・`memberId`・`from`・`to` を載せる。形を確かめられた値だけを載せ、確かめられないものは `null`。画面が「他のメンバーが更新した」「月が締められた」「メンバーが使えない」などを出し分ける（`src/services/expenseMessage.ts`）。
+- 登録の `id` の作り方と、やり直しの規則は、`CreateExpenseRequest.id` のコメントと、docs/screens.md 4章の「実装したところ」。
 
 #### 固定費API（実装済み）
 
