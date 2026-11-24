@@ -31,6 +31,13 @@ function setup(options: { session?: string; failWith?: Error } = {}) {
       log.push(`create:${session}:${req.id}`);
       return created;
     },
+    async requestLeave(session: string, groupId: string) {
+      log.push(`requestLeave:${session}:${groupId}`);
+      return { confirmed: false, groupDeleted: false };
+    },
+    async cancelLeave(session: string, groupId: string) {
+      log.push(`cancelLeave:${session}:${groupId}`);
+    },
   } as unknown as GroupRepository;
   const access: SessionAccess = {
     async withSession(task) {
@@ -55,10 +62,19 @@ describe('groupService', () => {
     assert.deepEqual(log, ['withSession', `create:SESSION:${request.id}`]);
   });
 
+  it('requestLeave・cancelLeave は withSession を通して、セッションとグループのIDを Repository に渡す', async () => {
+    const { service, log } = setup({ session: 'SESSION' });
+    assert.deepEqual(await service.requestLeave('g1'), { confirmed: false, groupDeleted: false });
+    await service.cancelLeave('g1');
+    assert.deepEqual(log, ['withSession', 'requestLeave:SESSION:g1', 'withSession', 'cancelLeave:SESSION:g1']);
+  });
+
   it('サインインしていない（withSession の失敗）は、そのまま投げる。Repository は呼ばない', async () => {
     const { service, log } = setup({ failWith: new AuthError('not-signed-in') });
     await assert.rejects(service.listGroups(), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     await assert.rejects(service.createGroup(request), (e) => e instanceof AuthError && e.code === 'not-signed-in');
-    assert.deepEqual(log, ['withSession', 'withSession']);
+    await assert.rejects(service.requestLeave('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    await assert.rejects(service.cancelLeave('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    assert.deepEqual(log, ['withSession', 'withSession', 'withSession', 'withSession']);
   });
 });

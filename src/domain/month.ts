@@ -74,7 +74,14 @@ export type CloseBlockReason = (typeof CLOSE_BLOCK_REASONS)[number];
  * 知らない理由（サーバーが足した値）は `'unknown'`。文言の出し分けにしか使わないので、失敗にしない（CLAUDE.md）。
  */
 export type CloseState =
-  | { closable: true }
+  | {
+      closable: true;
+      /**
+       * 締めると、締めずにグループのデータがすべて消えるか（この月を脱退月に選んでいるのが、最後の1人のとき。サーバーの値）。
+       * 締める前の確認で警告する。**最後の1人かの規則は、アプリに書き写さない**（`closeView.ts`）。
+       */
+      deletesGroup: boolean;
+    }
   | { closable: false; reason: CloseBlockReason | 'unknown'; month: string | null };
 
 /** `GET /groups/:id/months/:month/summary`（締めた月は、締めた時点の結果） */

@@ -69,6 +69,7 @@ function group(extra: Partial<GroupDetail> = {}): GroupDetail {
     createdAt: 0,
     memberId: 'm1',
     currencyLocked: false,
+    leaveDeletesGroup: false,
     seatedMembers: 2,
     maxMembers: 5,
     canInvite: true,

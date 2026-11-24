@@ -47,6 +47,7 @@ const group: GroupDetail = {
   createdAt: 0,
   memberId: 'm1',
   currencyLocked: false,
+  leaveDeletesGroup: false,
   seatedMembers: 2,
   maxMembers: 5,
   canInvite: true,
@@ -75,7 +76,7 @@ function view(patch: Partial<MonthView> = {}): MonthView {
     members: [monthMember('m1', { paidMinor: 100000, burdenMinor: 64225 }), monthMember('m2', { burdenMinor: 64225 })],
     categories: [],
     transfers: [],
-    close: { closable: true },
+    close: { closable: true, deletesGroup: false },
     ...patch,
   };
 }
@@ -173,7 +174,7 @@ describe('お知らせ', () => {
       { month: '2026-10', status: 'open' },
       { month: '2026-11', status: 'open' },
     ];
-    assert.deepEqual(buildNotices('2026-11', months, { closable: true }), []);
+    assert.deepEqual(buildNotices('2026-11', months, { closable: true, deletesGroup: false }), []);
   });
 
   it('前の月が未締めでも、先に締めるよう求められていない理由のときは出さない', () => {
@@ -218,8 +219,16 @@ describe('お知らせ', () => {
 });
 
 describe('「相手を招待する」のカード', () => {
+  // 自分（m1）だけのグループ。自分の行は、`leaveRequestedMonth` を変えられる
+  const solo = (patch: { canInvite?: boolean; seatedMembers?: number; leaveRequestedMonth?: string | null } = {}) => ({
+    canInvite: patch.canInvite ?? true,
+    seatedMembers: patch.seatedMembers ?? 1,
+    memberId: 'm1',
+    members: [{ ...member('m1', 'あなた', 'pink'), leaveRequestedMonth: patch.leaveRequestedMonth ?? null }],
+  });
+
   it('1人だけで、招待できるときに出す', () => {
-    assert.deepEqual(buildInviteCard({ canInvite: true, seatedMembers: 1 }), {
+    assert.deepEqual(buildInviteCard(solo()), {
       title: '相手を招待する',
       message: 'URLを送ると、一緒に記録できます',
     });
@@ -227,16 +236,27 @@ describe('「相手を招待する」のカード', () => {
 
   it('2人以上のときは出さない', () => {
     for (const seatedMembers of [2, 3, 5]) {
-      assert.equal(buildInviteCard({ canInvite: true, seatedMembers }), null, String(seatedMembers));
+      assert.equal(buildInviteCard(solo({ seatedMembers })), null, String(seatedMembers));
     }
   });
 
   it('サーバーが招待できないと答えたときは、1人でも出さない（自分の脱退が確定している）', () => {
-    assert.equal(buildInviteCard({ canInvite: false, seatedMembers: 1 }), null);
+    assert.equal(buildInviteCard(solo({ canInvite: false })), null);
   });
 
   it('人数が0のとき（本人も数えない状態）は出さない', () => {
-    assert.equal(buildInviteCard({ canInvite: true, seatedMembers: 0 }), null);
+    assert.equal(buildInviteCard(solo({ seatedMembers: 0 })), null);
+  });
+
+  it('自分が脱退を選んでいる（確定する前）あいだは、出さない。取り消せば、また出る', () => {
+    assert.equal(buildInviteCard(solo({ leaveRequestedMonth: '2026-11' })), null);
+    assert.notEqual(buildInviteCard(solo({ leaveRequestedMonth: null })), null);
+  });
+
+  it('ほかの人が脱退を選んでいても、自分が選んでいなければ、人数の値どおり', () => {
+    const base = solo();
+    const other = { ...member('m2', '彼女', 'blue'), leaveRequestedMonth: '2026-11' };
+    assert.notEqual(buildInviteCard({ ...base, members: [...base.members, other] }), null);
   });
 
   it('人数はサーバーの値で決め、メンバーの一覧は見ない（脱退済みの人が一覧にいても、2人のグループは出さない）', () => {
@@ -375,7 +395,7 @@ describe('精算（締める前の見込み）', () => {
       const model = buildSettlement(view({ close }), lookup, money);
       return model.kind === 'estimate' ? model.blockedText : undefined;
     };
-    assert.equal(blocked({ closable: true }), null);
+    assert.equal(blocked({ closable: true, deletesGroup: false }), null);
     assert.equal(
       blocked({ closable: false, reason: 'previous_month_not_closed', month: '2026-10' }),
       '先に10月を締めてください',
@@ -395,7 +415,7 @@ describe('精算（締める前）の「この月を締める」', () => {
       const model = buildSettlement(view({ close }), lookup, money);
       return model.kind === 'estimate' ? model.closable : undefined;
     };
-    assert.equal(closable({ closable: true }), true);
+    assert.equal(closable({ closable: true, deletesGroup: false }), true);
     assert.equal(closable({ closable: false, reason: 'previous_month_not_closed', month: '2026-10' }), false);
     assert.equal(closable({ closable: false, reason: 'unknown', month: null }), false);
   });
@@ -410,7 +430,7 @@ describe('精算（締める前）の「この月を締める」', () => {
 
 describe('closeBlockedText', () => {
   it('理由ごとの文言。月が無いときも、文が崩れない', () => {
-    assert.equal(closeBlockedText({ closable: true }), null);
+    assert.equal(closeBlockedText({ closable: true, deletesGroup: false }), null);
     assert.equal(closeBlockedText({ closable: false, reason: 'month_closed', month: null }), null);
     assert.equal(
       closeBlockedText({ closable: false, reason: 'previous_month_not_closed', month: null }),

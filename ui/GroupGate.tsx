@@ -23,6 +23,7 @@ import { pickGroup } from '../src/services/groupChoice.ts';
 import { loadGroupsErrorMessage } from '../src/services/groupMessage.ts';
 import { openGroup, useActiveGroupId } from './activeGroup.ts';
 import type { CurrentGroup } from './CurrentGroup.tsx';
+import { useGroupsRevision } from './groupList.ts';
 import { PrimaryButton } from './PrimaryButton.tsx';
 import { useColors } from './useColors.ts';
 import { useSignOut } from './useSignOut.ts';
@@ -39,23 +40,32 @@ export function GroupGate({ children }: { children: (group: CurrentGroup) => Rea
   const [attempt, setAttempt] = useState(0);
   const { confirmSignOut, busy: signingOut, error: signOutError } = useSignOut();
   const activeGroupId = useActiveGroupId();
+  // 脱退・グループの削除のあとの読み直しの合図（`ui/groupList.ts` の `reloadGroups`）
+  const revision = useGroupsRevision();
 
   useEffect(() => {
     let cancelled = false;
-    setLoad({ status: 'loading' });
+    // 読み込み済みの一覧は、読み直しのあいだも残す（画面を、読み込み中の表示に差し替えない。いま開いているグループの画面が、
+    // 脱退の案内を出している最中かもしれない）。最初の読み込みと、失敗からの「もう一度」だけ、読み込み中にする
+    setLoad((current) => (current.status === 'loaded' ? current : { status: 'loading' }));
     // 端末に覚えた最後に開いたグループは、一覧と一緒に読む（読めなければ `null`。投げない）
     Promise.all([groupService.listGroups(), loadLastGroup()]).then(
       ([groups, lastGroupId]) => {
         if (!cancelled) setLoad({ status: 'loaded', groups, lastGroupId });
       },
       (error: unknown) => {
-        if (!cancelled) setLoad({ status: 'error', message: loadGroupsErrorMessage(error) });
+        // 読み直しの失敗は、前の一覧のままにする（最初の読み込みの失敗だけ、エラーの表示にする）
+        if (!cancelled) {
+          setLoad((current) =>
+            current.status === 'loaded' ? current : { status: 'error', message: loadGroupsErrorMessage(error) },
+          );
+        }
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, revision]);
 
   if (load.status === 'loaded' && load.groups.length === 0) return <Redirect href="/create-group" />;
   // グループがある。ホームが、自分でデータを読む（ホームへ戻るたびに取り直す）ので、ここで読んだ一覧は、グループの特定と、切り替えの

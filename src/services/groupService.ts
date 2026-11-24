@@ -2,7 +2,12 @@
 // （端末のセッションが無くなったことを画面へ伝えるのは、その包みだけ。CLAUDE.md）。
 // `access` は、`platform/accountService.ts` の `sessionAccess`（通知で包んだもの）を渡す。
 import type { GroupListItem } from '../domain/group.ts';
-import type { CreatedGroup, CreateGroupRequest, GroupRepository } from '../repositories/groupRepository.ts';
+import type {
+  CreatedGroup,
+  CreateGroupRequest,
+  GroupRepository,
+  LeaveRequested,
+} from '../repositories/groupRepository.ts';
 import type { SessionAccess } from './accountService.ts';
 
 export interface GroupServiceDeps {
@@ -23,6 +28,20 @@ export function createGroupService({ groups, access }: GroupServiceDeps) {
      */
     createGroup(request: CreateGroupRequest): Promise<CreatedGroup> {
       return access.withSession((session) => groups.create(session, request));
+    },
+
+    /**
+     * 「今月で脱退する」を選ぶ。**やり直さない**（競合したら、画面が読み直して、もう一度押してもらう。確認の内容が変わりうる）。
+     * 脱退月がすでに締められていれば、その場で確定する（`confirmed`）。最後の1人なら、グループが消える（`groupDeleted`）。
+     * 確定した人は、所属の一覧から消えることがあるので、画面は、一覧を読み直す（`ui/groupList.ts` の `reloadGroups`）。
+     */
+    requestLeave(groupId: string): Promise<LeaveRequested> {
+      return access.withSession((session) => groups.requestLeave(session, groupId));
+    },
+
+    /** 脱退を取り消す（確定するまで）。やり直さない。 */
+    cancelLeave(groupId: string): Promise<void> {
+      return access.withSession((session) => groups.cancelLeave(session, groupId));
     },
   };
 }

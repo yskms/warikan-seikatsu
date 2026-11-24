@@ -29,15 +29,31 @@ export interface CloseConfirmModel {
   emptyText: string | null;
   /** 先月からの繰越を含むときだけ */
   carryNote: string | null;
-  /** 常に出す注意（締めた後の制限） */
-  notice: string;
+  /** 常に出す注意（締めた後の制限）。締めるとグループが消えるとき（`deletesGroup`）は、締めた月ができないので `null` */
+  notice: string | null;
   /** 月の途中で締めるときの注意（目立たせる）。月の途中でなければ `null` */
   midMonthNote: string | null;
   /** この月を脱退月に選んでいるメンバーがいるときの注意（1人につき1行） */
   leaveNotes: string[];
+  /**
+   * 締めると、締めずにグループのデータがすべて消えるか（サーバーの `close.deletesGroup`）。最後の1人が脱退を選んでいる月で、
+   * **最後の1人かの規則は、アプリに書き写さない**。このときは、送金・月の途中・脱退の注意は出さず（月は締められない）、
+   * `deleteWarning` と、「締める」の文言・確認ダイアログ（`deleteConfirm`）を出し分ける。
+   */
+  deletesGroup: boolean;
+  /** `deletesGroup` のときの、取り消せない削除の警告（目立たせる）。そうでなければ `null` */
+  deleteWarning: string | null;
+  /** 実行するボタンの文言。`deletesGroup` のときは、「締める」ではなく、起きることを書く */
+  closeLabel: string;
+  /** `deletesGroup` のときだけ、押したあとの確認ダイアログ（`Alert`）の内容。そうでなければ `null` */
+  deleteConfirm: { title: string; message: string; confirmLabel: string } | null;
 }
 
 export const CLOSE_NOTICE = '締めた後は、この月の支出を追加・変更・削除できません。';
+export const CLOSE_LABEL = '締める';
+export const DELETE_GROUP_CLOSE_LABEL = 'グループを削除して脱退';
+export const DELETE_GROUP_WARNING =
+  'あなたが、このグループの最後のメンバーです。この月を締めると、脱退が確定し、月は締めずに、このグループのデータがすべて削除されます。元に戻せません。';
 export const ALREADY_CLOSED_TEXT = 'この月は、すでに締められています。ホームで、結果を確認してください。';
 
 export function buildCloseConfirm({ group, months, summary }: CloseConfirmInput): CloseConfirmModel {
@@ -57,6 +73,33 @@ export function buildCloseConfirm({ group, months, summary }: CloseConfirmInput)
       notice: CLOSE_NOTICE,
       midMonthNote: null,
       leaveNotes: [],
+      deletesGroup: false,
+      deleteWarning: null,
+      closeLabel: CLOSE_LABEL,
+      deleteConfirm: null,
+    };
+  }
+
+  // 締めると、グループが消える（サーバーの値）。確定する送金は作られないので、見込みの送金・月の途中・脱退の注意は、出さない
+  if (summary.close.closable && summary.close.deletesGroup) {
+    return {
+      title,
+      state: 'ready',
+      statusText: null,
+      lines: [],
+      emptyText: null,
+      carryNote: null,
+      notice: null,
+      midMonthNote: null,
+      leaveNotes: [],
+      deletesGroup: true,
+      deleteWarning: DELETE_GROUP_WARNING,
+      closeLabel: DELETE_GROUP_CLOSE_LABEL,
+      deleteConfirm: {
+        title: 'グループを削除して脱退しますか？',
+        message: 'このグループの支出・精算の記録はすべて削除され、元に戻せません。',
+        confirmLabel: 'グループを削除して脱退',
+      },
     };
   }
 
@@ -81,5 +124,9 @@ export function buildCloseConfirm({ group, months, summary }: CloseConfirmInput)
       : null,
     // 自分が脱退を選んでいるときは、「あなた」と言う（自分の名前に「さん」を付けない）
     leaveNotes: leaving.map((member) => `${member.isMe ? 'あなた' : `${member.displayName}さん`}の脱退は、この月を締めると確定します。`),
+    deletesGroup: false,
+    deleteWarning: null,
+    closeLabel: CLOSE_LABEL,
+    deleteConfirm: null,
   };
 }

@@ -101,6 +101,12 @@ export interface GroupDetail {
   memberId: string;
   /** 通貨を変えられないか（金額に関わるものがある） */
   currencyLocked: boolean;
+  /**
+   * 自分が脱退を選んで確定したら、グループのデータがすべて消えるか（最後の1人。サーバーの `isLastMember`）。脱退を選ぶ操作の確認で、
+   * 「グループを削除して脱退」と警告する。**最後の1人かの規則は、アプリに書き写さない**（人数 `seatedMembers` からは分からない:
+   * 脱退が確定して精算を待つ人も、メンバーとして残っている）。
+   */
+  leaveDeletesGroup: boolean;
   /** 人数の上限で数える人数 */
   seatedMembers: number;
   maxMembers: number;

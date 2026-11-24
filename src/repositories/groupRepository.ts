@@ -1,4 +1,4 @@
-// グループのHTTP（GET /groups・GET /groups/:id・POST /groups）。Serviceからだけ使う。画面・Serviceは、URLやレスポンスの形を知らない。
+// グループのHTTP（GET /groups・GET /groups/:id・POST /groups・脱退を選ぶ POST /groups/:id/leave と取り消す DELETE）。Serviceからだけ使う。画面・Serviceは、URLやレスポンスの形を知らない。
 // リクエスト・レスポンスの形は docs/backend-design.md 9章の「グループAPI」が正で、Worker（worker/）とはコードを共有しない。
 //
 // HTTPの共通の扱い（再試行しない・5xxの扱い・Cookieを送らない・タイムアウト）は `apiClient.ts`。失敗は、アカウントと同じ
@@ -13,7 +13,8 @@ import {
   type GroupListItem,
   type GroupMember,
 } from '../domain/group.ts';
-import { createApiClient, type ApiFetchLike } from './apiClient.ts';
+import { createApiClient, isOpaqueValue, type ApiFetchLike } from './apiClient.ts';
+import { AuthError } from './authError.ts';
 import { array, bool, id, int, nullableStr, oneOfOrUnknown, record, str } from './parse.ts';
 
 export type GroupFetchLike = ApiFetchLike;
@@ -25,6 +26,48 @@ export type GroupFetchLike = ApiFetchLike;
  */
 export interface CreatedGroup {
   id: string;
+}
+
+/**
+ * 脱退を選ぶ・取り消す書き込みを、サーバーが断った（403・404・409）。`code` は `invalid-request`。やり直しても同じ結果になる失敗で、
+ * 理由（`reason`。サーバーの `error`）によって、画面の案内を変える。理由の形が読めなければ `null`。
+ */
+export class GroupRejectedError extends AuthError {
+  readonly status: number;
+  /** サーバーの `error`（`not_found`・`leave_already_requested`・`leave_confirmed`・`not_leaving`・`conflict` など） */
+  readonly reason: string | null;
+
+  constructor(status: number, reason: string | null) {
+    super('invalid-request', `HTTP ${status}`);
+    this.name = 'GroupRejectedError';
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+/** 書き込みの断り（403・404・409）から、`GroupRejectedError` を作る。`ApiRequestInit.rejected` に渡す。 */
+async function groupRejection(status: number, response: { json(): Promise<unknown> }): Promise<Error> {
+  // 本文が読めなくても、サーバーが断ったことは確か。理由だけ `null` にして返す（投げると、`apiClient.ts` が、ただの
+  // `invalid-request` にし、画面が「済んでいない」と「分からない」を見分けられなくなる。`InviteRejectedError` と同じ）
+  let reason: string | null = null;
+  try {
+    const data = record(await response.json());
+    if (isOpaqueValue(data.error) && data.error.length <= 64) reason = data.error;
+  } catch {
+    // reason は null のまま
+  }
+  return new GroupRejectedError(status, reason);
+}
+
+/**
+ * 脱退を選んだ結果。**使う項目だけ**を読む（書き込みの応答。形が少しずれただけで失敗にすると、サーバーでは済んでいるのに、画面が
+ * 失敗と受け取る）。どちらも、無ければ `false`。
+ */
+export interface LeaveRequested {
+  /** その場で脱退が確定した（脱退月がすでに締められていた）。確定すると、所属の一覧から消えることがある */
+  confirmed: boolean;
+  /** 最後の1人の脱退が確定して、グループのデータがすべて消えた */
+  groupDeleted: boolean;
 }
 
 export interface CreateGroupRequest {
@@ -84,6 +127,8 @@ function parseDetail(value: unknown): GroupDetail {
     createdAt: int(data.createdAt),
     memberId: id(data.memberId),
     currencyLocked: bool(data.currencyLocked),
+    // 脱退を選ぶ操作の確認の警告に使う。読めなければ、警告が出ないまま選ばせてしまうので、失敗にする（読み込み）
+    leaveDeletesGroup: bool(data.leaveDeletesGroup),
     seatedMembers: int(data.seatedMembers),
     maxMembers: int(data.maxMembers),
     canInvite: bool(data.canInvite),
@@ -113,6 +158,37 @@ export function createGroupRepository(
     get(session: string, groupId: string): Promise<GroupDetail> {
       return client.request('GET', `/groups/${encodeURIComponent(groupId)}`, { session }, async (response) =>
         parseDetail(record(await response.json()).group),
+      );
+    },
+
+    /**
+     * `POST /groups/:id/leave`。「今月で脱退する」。確定するまでは取り消せる。脱退月がすでに締められていれば、その場で確定する
+     * （`confirmed`）。最後の1人の確定は、グループを消す（`groupDeleted`）。応答は、この2つだけを読む（`LeaveRequested`）。
+     * 断られたら `GroupRejectedError`: 409 `leave_already_requested`（すでに選んでいる）・409 `leave_confirmed`（すでに確定した）・
+     * 409 `conflict`（他の書き込みと競合した。やり直さない）・404 `not_found`。
+     */
+    requestLeave(session: string, groupId: string): Promise<LeaveRequested> {
+      return client.request(
+        'POST',
+        `/groups/${encodeURIComponent(groupId)}/leave`,
+        { session, rejected: groupRejection },
+        async (response) => {
+          const data = record(await response.json());
+          return { confirmed: data.confirmed === true, groupDeleted: data.groupDeleted === true };
+        },
+      );
+    },
+
+    /**
+     * `DELETE /groups/:id/leave`。脱退を取り消す（確定するまで。脱退月が終わったあとは、Cronの確定の前でも取り消せない）。応答は
+     * 読まない。断られたら `GroupRejectedError`: 409 `leave_confirmed`・409 `not_leaving`（選んでいない）・409 `conflict`・404。
+     */
+    cancelLeave(session: string, groupId: string): Promise<void> {
+      return client.request(
+        'DELETE',
+        `/groups/${encodeURIComponent(groupId)}/leave`,
+        { session, rejected: groupRejection },
+        async () => undefined,
       );
     },
 

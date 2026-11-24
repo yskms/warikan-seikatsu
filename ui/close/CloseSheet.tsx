@@ -11,11 +11,14 @@
 //   `beforeRemove` で、セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`ExpenseSheet.tsx` と同じ）。
 //   招待URLによる参加確認への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
 // - 最後の1人の脱退で、締めずにグループごと消えたとき（サーバーが `groupDeleted` を返す）は、そのことを案内して閉じる。
-//   ホームは、読めなくなったグループの案内を出す（screens.md 3章の「所属を失ったとき」）。
+//   所属グループの一覧は、読み直す（`reloadGroups`。`ui/GroupGate.tsx` が、別のグループか、グループの作成へ回す）。
+// - **締めるとグループが消える月**（集計の `close.deletesGroup`。サーバーの値で、最後の1人かの規則は書き写さない）は、削除の警告を
+//   出し、ボタンの文言を「グループを削除して脱退」にして、押したあとに確認ダイアログを挟む（取り消せないため）。送金・締めた後の
+//   制限は出さない（月は締められず、送金も作られない）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { settlementService } from '../../platform/settlementService.ts';
@@ -29,6 +32,7 @@ import {
   withReloadFailure,
 } from '../../src/services/settlementMessage.ts';
 import type { CloseFormData } from '../../src/services/settlementService.ts';
+import { reloadGroups } from '../groupList.ts';
 import { TransferRow } from '../home/TransferRow.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
 import { useMounted } from '../useMounted.ts';
@@ -105,6 +109,8 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
       const result = await settlementService.close(groupId, month);
       if (result.kind === 'group-deleted') {
         setGroupDeleted(true);
+        // 所属グループの一覧を読み直す（このグループは、もう無い）。シートを閉じたあと、`GroupGate` が行き先を決める
+        reloadGroups();
         return;
       }
       leave();
@@ -127,6 +133,27 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
       running.current = false;
       setBusy(false);
     }
+  }
+
+  /** 「締める」を押したとき。締めるとグループが消える月は、確認ダイアログを挟む（取り消せない）。 */
+  function requestClose() {
+    if (running.current || model === null || model.state !== 'ready') return;
+    const confirm = model.deleteConfirm;
+    if (confirm === null) {
+      void close();
+      return;
+    }
+    Alert.alert(confirm.title, confirm.message, [
+      { text: 'やめる', style: 'cancel' },
+      {
+        text: confirm.confirmLabel,
+        style: 'destructive',
+        // 外れたあと（セッション切れ・招待URLによる切り替え）に、開いたままの確認ダイアログから、書き込みを始めない
+        onPress: () => {
+          if (mounted.current) void close();
+        },
+      },
+    ]);
   }
 
   // 読み込みの前後でも、見出しは同じ（`closeView.ts` の見出しと同じ形）
@@ -181,7 +208,16 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
               </Text>
             ) : null}
 
-            {model.state !== 'closed' ? (
+            {model.deleteWarning !== null ? (
+              <Text
+                style={[styles.emphasis, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.error }]}
+                accessibilityRole="alert"
+              >
+                {model.deleteWarning}
+              </Text>
+            ) : null}
+
+            {model.state !== 'closed' && !model.deletesGroup ? (
               <View style={styles.section}>
                 <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>確定する送金</Text>
                 {model.lines.length > 0 ? (
@@ -211,7 +247,7 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
                 {note}
               </Text>
             ))}
-            {model.state !== 'closed' ? (
+            {model.state !== 'closed' && model.notice !== null ? (
               <Text style={[styles.note, { color: colors.textSecondary }]}>{model.notice}</Text>
             ) : null}
           </ScrollView>
@@ -227,7 +263,7 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
               <PrimaryButton label="閉じる" onPress={() => router.back()} />
             ) : (
               <>
-                <PrimaryButton label="締める" busy={busy} disabled={model.state !== 'ready'} onPress={() => void close()} />
+                <PrimaryButton label={model.closeLabel} busy={busy} disabled={model.state !== 'ready'} onPress={requestClose} />
                 <PrimaryButton label="キャンセル" variant="secondary" disabled={busy} onPress={() => router.back()} />
               </>
             )}

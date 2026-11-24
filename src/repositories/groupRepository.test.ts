@@ -6,7 +6,12 @@ import { describe, it } from 'node:test';
 
 import { API_ORIGIN } from './apiClient.ts';
 import { AuthError } from './authError.ts';
-import { createGroupRepository, type CreateGroupRequest, type GroupFetchLike } from './groupRepository.ts';
+import {
+  createGroupRepository,
+  GroupRejectedError,
+  type CreateGroupRequest,
+  type GroupFetchLike,
+} from './groupRepository.ts';
 
 type Init = Parameters<GroupFetchLike>[1];
 
@@ -52,6 +57,7 @@ const group = {
   createdAt: 1790000000000,
   memberId: 'm1',
   currencyLocked: false,
+  leaveDeletesGroup: false,
   seatedMembers: 1,
   maxMembers: 5,
   canInvite: true,
@@ -160,6 +166,8 @@ describe('get', () => {
       { group: { ...group, members: [{ ...member, leaveEffective: 'no' }] } },
       { group: { ...group, members: [{ ...member, leaveEffective: undefined }] } },
       { group: { ...group, currencyLocked: 'no' } },
+      { group: { ...group, leaveDeletesGroup: undefined } },
+      { group: { ...group, leaveDeletesGroup: 'yes' } },
       { group: { ...group, maxMembers: 5.5 } },
       { group: { ...group, name: 1 } },
     ];
@@ -252,5 +260,108 @@ describe('create', () => {
       assert.ok(!error.message.includes('secret'));
       return true;
     });
+  });
+});
+
+describe('requestLeave', () => {
+  it('POST /groups/:id/leave を、セッションつき・本文なしで呼ぶ。応答の confirmed・groupDeleted を返す', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { leaveRequestedMonth: '2026-11', confirmed: false }));
+    const result = await createGroupRepository(fetchImpl).requestLeave(SESSION, 'g1');
+    assert.deepEqual(result, { confirmed: false, groupDeleted: false });
+    assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/g1/leave`);
+    assert.equal(calls[0]!.init.method, 'POST');
+    assert.equal(calls[0]!.init.headers.Authorization, `Bearer ${SESSION}`);
+    assert.equal(calls[0]!.init.body, undefined);
+  });
+
+  it('その場で確定した・グループが消えた応答', async () => {
+    const confirmed = fakeFetch(() => reply(200, { leaveRequestedMonth: '2026-11', confirmed: true })).fetchImpl;
+    assert.deepEqual(await createGroupRepository(confirmed).requestLeave(SESSION, 'g1'), { confirmed: true, groupDeleted: false });
+    const deleted = fakeFetch(() =>
+      reply(200, { leaveRequestedMonth: '2026-11', confirmed: true, groupDeleted: true }),
+    ).fetchImpl;
+    assert.deepEqual(await createGroupRepository(deleted).requestLeave(SESSION, 'g1'), { confirmed: true, groupDeleted: true });
+  });
+
+  it('使う項目（confirmed・groupDeleted）が足りない・型が違っても、成功（書き込みの応答。済んでいる操作を失敗に見せない）', async () => {
+    for (const body of [{}, { confirmed: 'yes', groupDeleted: 1 }, { leaveRequestedMonth: 5 }]) {
+      const { fetchImpl } = fakeFetch(() => reply(200, body));
+      assert.deepEqual(await createGroupRepository(fetchImpl).requestLeave(SESSION, 'g1'), { confirmed: false, groupDeleted: false });
+    }
+  });
+
+  it('JSONの本文でない200（宿のWi-Fiの認証画面など）は invalid-response', async () => {
+    for (const body of [null, 'ok']) {
+      const { fetchImpl } = fakeFetch(() => reply(200, body));
+      await rejectsWith(createGroupRepository(fetchImpl).requestLeave(SESSION, 'g1'), 'invalid-response');
+    }
+  });
+
+  it('サーバーが断った（404・409）は GroupRejectedError（invalid-request）。理由を載せる', async () => {
+    for (const [status, error] of [
+      [409, 'leave_already_requested'],
+      [409, 'leave_confirmed'],
+      [409, 'conflict'],
+      [404, 'not_found'],
+    ] as const) {
+      const { fetchImpl } = fakeFetch(() => reply(status, { error }));
+      await assert.rejects(createGroupRepository(fetchImpl).requestLeave(SESSION, 'g1'), (e) => {
+        assert.ok(e instanceof GroupRejectedError);
+        assert.deepEqual([e.code, e.status, e.reason], ['invalid-request', status, error]);
+        return true;
+      });
+    }
+  });
+
+  it('断りの本文が読めなくても、GroupRejectedError（理由は null）。「済んでいない」と「分からない」を見分けられるように', async () => {
+    const { fetchImpl } = fakeFetch(() =>
+      Promise.resolve({ ok: false, status: 409, json: async () => Promise.reject(new Error('not json')) }),
+    );
+    await assert.rejects(createGroupRepository(fetchImpl).requestLeave(SESSION, 'g1'), (e) => {
+      assert.ok(e instanceof GroupRejectedError);
+      assert.equal(e.reason, null);
+      return true;
+    });
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network（GroupRejectedError ではない）', async () => {
+    for (const [respond, code] of [
+      [() => reply(401), 'unauthorized'],
+      [() => reply(500), 'unavailable'],
+      [() => new Error('offline'), 'network'],
+    ] as const) {
+      await assert.rejects(createGroupRepository(fakeFetch(respond).fetchImpl).requestLeave(SESSION, 'g1'), (e) => {
+        assert.ok(e instanceof AuthError && !(e instanceof GroupRejectedError));
+        assert.equal(e.code, code);
+        return true;
+      });
+    }
+  });
+});
+
+describe('cancelLeave', () => {
+  it('DELETE /groups/:id/leave を、セッションつきで呼ぶ。応答の本文は読まない', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => Promise.resolve({ ok: true, status: 200, json: async () => Promise.reject(new Error('unused')) }));
+    await createGroupRepository(fetchImpl).cancelLeave(SESSION, 'g1');
+    assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/g1/leave`);
+    assert.equal(calls[0]!.init.method, 'DELETE');
+    assert.equal(calls[0]!.init.headers.Authorization, `Bearer ${SESSION}`);
+  });
+
+  it('断られたら GroupRejectedError（leave_confirmed・not_leaving・conflict）', async () => {
+    for (const error of ['leave_confirmed', 'not_leaving', 'conflict']) {
+      const { fetchImpl } = fakeFetch(() => reply(409, { error }));
+      await assert.rejects(createGroupRepository(fetchImpl).cancelLeave(SESSION, 'g1'), (e) => {
+        assert.ok(e instanceof GroupRejectedError);
+        assert.equal(e.reason, error);
+        return true;
+      });
+    }
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network', async () => {
+    await rejectsWith(createGroupRepository(fakeFetch(() => reply(401)).fetchImpl).cancelLeave(SESSION, 'g1'), 'unauthorized');
+    await rejectsWith(createGroupRepository(fakeFetch(() => reply(503)).fetchImpl).cancelLeave(SESSION, 'g1'), 'unavailable');
+    await rejectsWith(createGroupRepository(fakeFetch(() => new Error('offline')).fetchImpl).cancelLeave(SESSION, 'g1'), 'network');
   });
 });

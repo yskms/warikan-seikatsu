@@ -178,9 +178,21 @@ describe('summary', () => {
     assert.equal(view.totalMinor, 14000);
   });
 
+  it('締めるとグループが消える月は deletesGroup: true。読めなければ、警告が出ないまま締めさせないよう invalid-response', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(200, { ...estimate, close: { closable: true, deletesGroup: true } }));
+    assert.deepEqual((await createMonthRepository(fetchImpl).summary(SESSION, 'g1', '2026-11')).close, { closable: true, deletesGroup: true });
+    for (const close of [{ closable: true }, { closable: true, deletesGroup: 'yes' }]) {
+      const bad = fakeFetch(() => reply(200, { ...estimate, close })).fetchImpl;
+      await assert.rejects(
+        createMonthRepository(bad).summary(SESSION, 'g1', '2026-11'),
+        (e) => e instanceof AuthError && e.code === 'invalid-response',
+      );
+    }
+  });
+
   it('締められる月は closable: true', async () => {
-    const { fetchImpl } = fakeFetch(() => reply(200, { ...estimate, close: { closable: true } }));
-    assert.deepEqual((await createMonthRepository(fetchImpl).summary(SESSION, 'g1', '2026-11')).close, { closable: true });
+    const { fetchImpl } = fakeFetch(() => reply(200, { ...estimate, close: { closable: true, deletesGroup: false } }));
+    assert.deepEqual((await createMonthRepository(fetchImpl).summary(SESSION, 'g1', '2026-11')).close, { closable: true, deletesGroup: false });
   });
 
   it('月を渡すときは、形を確かめる（パスに入れる値）', async () => {

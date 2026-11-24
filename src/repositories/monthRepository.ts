@@ -64,7 +64,9 @@ function parseTransfer(value: unknown, closed: boolean): MonthTransfer {
 
 function parseClose(value: unknown): CloseState {
   const data = record(value);
-  if (bool(data.closable)) return { closable: true };
+  // `deletesGroup` は、締める前の警告に使う（取り消せない削除の直前に出す）。読めなければ、警告が出ないまま締めさせてしまうので、
+  // 失敗にする（読み込みなので、何も変わらない）。
+  if (bool(data.closable)) return { closable: true, deletesGroup: bool(data.deletesGroup) };
   return {
     closable: false,
     // 文言の出し分けにしか使わないので、知らない理由は失敗にしない

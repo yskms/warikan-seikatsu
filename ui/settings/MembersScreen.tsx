@@ -1,6 +1,6 @@
 // メンバーと招待（設定の中。docs/screens.md 6章）。メンバーの一覧と状態、招待URLの発行と共有、自分が発行した未使用の招待の
-// 一覧と取り消し。**脱退を選ぶ操作は、まだ作っていない**（Workerの `summary` に「締めるとグループが消える」値を足してから。
-// screens.md 5章の「脱退を選ぶ操作を作る前に決めること」）。招待URLを開いて参加する側は、作った（screens.md 2章の「参加確認」）。
+// 一覧と取り消し、そして、このグループから脱退する・脱退を取り消す操作（一番下。出し分けは `src/services/leaveView.ts`）。
+// 招待URLを開いて参加する側は、別の画面（screens.md 2章の「参加確認」）。
 // 入口は、設定の「メンバーと招待」と、ホームの「相手を招待する」カード（1人だけのグループ。screens.md 3章）。
 //
 // 出す内容の組み立ては、画面の外の `src/services/memberView.ts`（`npm test` で守る）。この画面は、それを並べるだけ。招待できるかは
@@ -16,6 +16,11 @@
 //   （取り消し・共有）の失敗は、ダイアログ（`Alert`）で出す**。一覧は最大10件で、メンバーの欄の下にあり、下のほうの行を操作したとき、
 //   ボタンの下の文言は画面の外になりうる。行の上に文言を足すと、続けて押したタップが別の行に当たる。ダイアログなら、位置によらず見え、
 //   読み上げ（iOSの `accessibilityLiveRegion` は効かない）にも乗る。
+// - **脱退を選ぶ操作**は、確認ダイアログ（`Alert`）のあとに送る（取り消せるのは、確定するまで）。**最後の1人かは、書き写さない**:
+//   確認の警告とボタンの文言は、グループ情報の `leaveDeletesGroup`（サーバーの値）で出し分ける。やり直さない（競合なら、読み直して、
+//   もう一度押してもらう）。**その場で確定した・グループが消えた**ときは、案内のダイアログを出して、所属グループの一覧を読み直し
+//   （`reloadGroups`。`ui/GroupGate.tsx` が行き先を決める）、閉じる。確定するまで取り消せる状態（`requested`）は、画面の表示が変わる
+//   （「脱退予定」と「脱退を取り消す」）だけ。失敗の文言は、発行と同じ理由で、ボタンのすぐ下に出す。
 // - **期限の表示は、30秒ごとと、アプリが前面に戻ったときに更新する**（画面を開いたままでも、「あと…」が古くならない）。端末の時計で
 //   期限が切れた招待は、「期限切れ」と出して、**「共有」だけを隠す**（`isInviteExpired`。使えないURLを送ってしまわないため）。
 //   **行は一覧から外さず、「取り消す」は残す**: 時計が進んでいる端末では、サーバーでは有効な招待が「期限切れ」に見える。外すと、
@@ -26,7 +31,9 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { groupService } from '../../platform/groupService.ts';
 import { inviteService } from '../../platform/inviteService.ts';
+import type { LeaveRequested } from '../../src/repositories/groupRepository.ts';
 import type { MembersData } from '../../src/services/inviteService.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
 import {
@@ -38,6 +45,14 @@ import {
 } from '../../src/services/inviteMessage.ts';
 import { inviteShareMessage, inviteUrl } from '../../src/services/inviteUrl.ts';
 import {
+  leaveDone,
+  leaveErrorMessage,
+  leaveOutcome,
+  leaveResultUnknown,
+  shouldReloadAfterLeave,
+} from '../../src/services/leaveMessage.ts';
+import { buildLeaveSection, type LeaveConfirm } from '../../src/services/leaveView.ts';
+import {
   buildInviteSection,
   buildMemberList,
   formatInviteExpiry,
@@ -45,6 +60,7 @@ import {
   sortInvites,
   type MemberRow,
 } from '../../src/services/memberView.ts';
+import { reloadGroups } from '../groupList.ts';
 import { Avatar } from '../home/Avatar.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
 import { useMounted } from '../useMounted.ts';
@@ -56,7 +72,13 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'ready'; data: MembersData };
 
-type Busy = { kind: 'issue' } | { kind: 'share' } | { kind: 'revoke'; inviteId: string } | null;
+type Busy =
+  | { kind: 'issue' }
+  | { kind: 'share' }
+  | { kind: 'revoke'; inviteId: string }
+  | { kind: 'leave' }
+  | { kind: 'cancel-leave' }
+  | null;
 
 // 期限の表示を更新する間隔（`formatInviteExpiry` は分の単位。30秒なら、表示は、実際の残りから1分以上ずれない）
 const EXPIRY_TICK_MS = 30_000;
@@ -68,6 +90,8 @@ export function MembersScreen({ groupId }: { groupId: string }) {
   // 読み直しの失敗（表示中の内容は残す）と、操作の失敗
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // 脱退を選ぶ・取り消すの失敗（発行の失敗と同じ理由で、ボタンのすぐ下に出す）
+  const [leaveError, setLeaveError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // この画面で発行した招待のトークン（招待のID → トークン）。一覧の「共有」で、URLを出し直すため。画面を閉じると失われる
   const [tokens, setTokens] = useState<Record<string, string>>({});
@@ -75,7 +99,8 @@ export function MembersScreen({ groupId }: { groupId: string }) {
   // 招待の発行の通信の最中だけ、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）。トークンは発行の応答でしか分からず、
   // この画面のメモリにだけ持つ（外れると、招待はできるのに、トークンが失われ、未使用の招待として上限に数えられる）。応答を受けたあとは
   // `busy` が `share` に変わり、共有シートに渡したトークンは、外れても失われないので、遅らせない。
-  useHoldInviteSwap(busy?.kind === 'issue');
+  // 脱退を選ぶ・取り消す通信の最中も遅らせる（結果を受ける画面が無くなる。通信のあとの案内のダイアログは、遅らせない）。
+  useHoldInviteSwap(busy?.kind === 'issue' || busy?.kind === 'leave' || busy?.kind === 'cancel-leave');
   // 外れたあと（セッション切れ・招待URLによる参加確認への切り替え）に、開いたままの確認ダイアログから取り消しを始めたり、見えない画面の
   // 失敗のダイアログを出したりしない（`ui/useMounted.ts`）
   const mounted = useMounted();
@@ -223,10 +248,59 @@ export function MembersScreen({ groupId }: { groupId: string }) {
     else router.replace('/settings');
   }
 
+  function confirmLeave(confirm: LeaveConfirm) {
+    if (busyRef.current) return;
+    Alert.alert(confirm.title, confirm.message, [
+      { text: 'やめる', style: 'cancel' },
+      { text: confirm.confirmLabel, style: 'destructive', onPress: requestLeave },
+    ]);
+  }
+
+  function requestLeave() {
+    // 外れたあとに、開いたままの確認ダイアログから呼ばれたときは、何もしない
+    if (!mounted.current) return;
+    void exclusive({ kind: 'leave' }, async () => {
+      setLeaveError(null);
+      let result: LeaveRequested;
+      try {
+        result = await groupService.requestLeave(groupId);
+      } catch (e) {
+        setLeaveError(leaveErrorMessage(e, 'request'));
+        // 状態が変わったとき（すでに選んでいた・確定していた・グループが無い）と、結果が分からないとき（選べているかもしれない）は、読み直す
+        if (shouldReloadAfterLeave(e) || leaveResultUnknown(e)) void reload();
+        return;
+      }
+      const done = leaveDone(leaveOutcome(result));
+      if (done === null) {
+        // 確定するまで取り消せる状態。表示が、「脱退予定」と「脱退を取り消す」に変わる
+        void reload();
+        return;
+      }
+      // その場で確定した・グループが消えた。確定した人は、所属の一覧から消えることがあるので、一覧を読み直す（`GroupGate` が行き先を決める）
+      reloadGroups();
+      if (!mounted.current) return;
+      Alert.alert(done.title, done.message, [{ text: 'OK', onPress: () => mounted.current && goBack() }]);
+    });
+  }
+
+  function cancelLeave() {
+    void exclusive({ kind: 'cancel-leave' }, async () => {
+      setLeaveError(null);
+      try {
+        await groupService.cancelLeave(groupId);
+      } catch (e) {
+        setLeaveError(leaveErrorMessage(e, 'cancel'));
+        if (shouldReloadAfterLeave(e) || leaveResultUnknown(e)) void reload();
+        return;
+      }
+      void reload();
+    });
+  }
+
   const view = useMemo(() => {
     if (load.status !== 'ready') return null;
     const { group } = load.data;
-    return { members: buildMemberList(group.members), invite: buildInviteSection(group) };
+    return { members: buildMemberList(group.members), invite: buildInviteSection(group), leave: buildLeaveSection(group) };
   }, [load]);
 
   const invites = useMemo(() => (load.status === 'ready' ? sortInvites(load.data.invites) : []), [load]);
@@ -350,6 +424,37 @@ export function MembersScreen({ groupId }: { groupId: string }) {
                   ) : null}
                 </View>
               ) : null}
+            </View>
+          ) : null}
+
+          {view.leave.kind !== 'hidden' ? (
+            <View style={styles.block}>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]} accessibilityRole="header">
+                脱退
+              </Text>
+              {view.leave.kind === 'request' ? (
+                <PrimaryButton
+                  variant="secondary"
+                  label={view.leave.buttonLabel}
+                  busy={busy?.kind === 'leave'}
+                  disabled={busy !== null}
+                  onPress={() => view.leave.kind === 'request' && confirmLeave(view.leave.confirm)}
+                />
+              ) : (
+                <PrimaryButton
+                  variant="secondary"
+                  label={view.leave.buttonLabel}
+                  busy={busy?.kind === 'cancel-leave'}
+                  disabled={busy !== null}
+                  onPress={cancelLeave}
+                />
+              )}
+              {leaveError !== null ? (
+                <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                  {leaveError}
+                </Text>
+              ) : null}
+              <Text style={[styles.note, { color: colors.textSecondary }]}>{view.leave.note}</Text>
             </View>
           ) : null}
         </ScrollView>

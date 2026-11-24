@@ -6,7 +6,14 @@ import { describe, it } from 'node:test';
 
 import type { GroupDetail, GroupMember } from '../domain/group.ts';
 import type { MonthList, MonthView } from '../domain/month.ts';
-import { ALREADY_CLOSED_TEXT, buildCloseConfirm, CLOSE_NOTICE } from './closeView.ts';
+import {
+  ALREADY_CLOSED_TEXT,
+  buildCloseConfirm,
+  CLOSE_LABEL,
+  CLOSE_NOTICE,
+  DELETE_GROUP_CLOSE_LABEL,
+  DELETE_GROUP_WARNING,
+} from './closeView.ts';
 
 const member = (id: string, displayName: string, patch: Partial<GroupMember> = {}): GroupMember => ({
   id,
@@ -30,6 +37,7 @@ const baseGroup: GroupDetail = {
   createdAt: 0,
   memberId: 'm1',
   currencyLocked: false,
+  leaveDeletesGroup: false,
   seatedMembers: 2,
   maxMembers: 5,
   canInvite: true,
@@ -55,7 +63,7 @@ const estimate = (patch: Partial<MonthView> = {}): MonthView => ({
   members: [summaryMember('m1', 'あなた'), summaryMember('m2', '彼女')],
   categories: [],
   transfers: [{ kind: 'estimate', fromMemberId: 'm2', toMemberId: 'm1', amountMinor: 13450 }],
-  close: { closable: true },
+  close: { closable: true, deletesGroup: false },
   ...patch,
 });
 
@@ -180,8 +188,50 @@ describe('buildCloseConfirm', () => {
     assert.deepEqual(model.leaveNotes, []);
   });
 
+  it('締めるとグループが消える月（サーバーの deletesGroup）は、削除の警告と、起きることを書いたボタン・確認を出す', () => {
+    const model = buildCloseConfirm({
+      group: baseGroup,
+      months: monthList('2026-11'),
+      summary: estimate({ close: { closable: true, deletesGroup: true } }),
+    });
+    assert.equal(model.state, 'ready', '締めるボタンは押せる（確認ダイアログを挟む）');
+    assert.equal(model.deletesGroup, true);
+    assert.equal(model.deleteWarning, DELETE_GROUP_WARNING);
+    assert.equal(model.closeLabel, DELETE_GROUP_CLOSE_LABEL);
+    assert.deepEqual(model.deleteConfirm, {
+      title: 'グループを削除して脱退しますか？',
+      message: 'このグループの支出・精算の記録はすべて削除され、元に戻せません。',
+      confirmLabel: 'グループを削除して脱退',
+    });
+    // 月は締められない（確定する送金は作られない）ので、送金・月の途中・脱退の注意・締めた後の制限は出さない
+    assert.deepEqual(model.lines, []);
+    assert.equal(model.emptyText, null);
+    assert.equal(model.carryNote, null);
+    assert.equal(model.notice, null);
+    assert.equal(model.midMonthNote, null);
+    assert.deepEqual(model.leaveNotes, []);
+  });
+
+  it('締めるとグループが消えない月は、いつもの「締める」で、削除の警告・確認は出さない', () => {
+    const model = buildCloseConfirm({ group: baseGroup, months: monthList('2026-12'), summary: estimate() });
+    assert.equal(model.deletesGroup, false);
+    assert.equal(model.deleteWarning, null);
+    assert.equal(model.deleteConfirm, null);
+    assert.equal(model.closeLabel, CLOSE_LABEL);
+  });
+
+  it('開いているあいだに他のメンバーが先に締めた（closed）ときは、削除の警告を出さない', () => {
+    const model = buildCloseConfirm({
+      group: baseGroup,
+      months: monthList('2026-12'),
+      summary: estimate({ closed: true, close: { closable: false, reason: 'month_closed', month: null } }),
+    });
+    assert.equal(model.deletesGroup, false);
+    assert.equal(model.deleteWarning, null);
+  });
+
   it('文言に長いダッシュを含まない', () => {
-    const texts = [CLOSE_NOTICE, ALREADY_CLOSED_TEXT];
+    const texts = [CLOSE_NOTICE, ALREADY_CLOSED_TEXT, DELETE_GROUP_WARNING, DELETE_GROUP_CLOSE_LABEL];
     for (const text of texts) assert.ok(!/[—―⸺⸻]/.test(text), text);
   });
 });

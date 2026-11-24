@@ -148,9 +148,17 @@ export interface InviteCard {
  * （`seatedMembers`。脱退が確定した人は数えない）が1人のとき。**人数・脱退の判定は書き写さない**: 脱退した人しか残っていない
  * グループも、この値で「1人だけ」と分かる。押せないとき（満員など）は、そもそも出さない。
  * カードは、メンバーと招待の画面を開くだけで、自分では発行しない（発行の規則は、その画面だけに置く。CLAUDE.md）。
+ *
+ * **自分が脱退を選んでいる（`leaveRequestedMonth` がある。確定する前）あいだは、出さない**: 抜けようとしている人に、相手を招待するよう
+ * 促さない。最後の1人が脱退を選んでいるときは、月が終われば、グループが消える（サーバーの `canInvite` は true のまま、
+ * `seatedMembers` も 1 のままなので、人数の値だけでは分からない）。脱退を取り消せば、また出る。値はサーバーのもの（月の判定はしない）。
  */
-export function buildInviteCard(group: Pick<GroupDetail, 'canInvite' | 'seatedMembers'>): InviteCard | null {
+export function buildInviteCard(
+  group: Pick<GroupDetail, 'canInvite' | 'seatedMembers' | 'memberId' | 'members'>,
+): InviteCard | null {
   if (!group.canInvite || group.seatedMembers !== 1) return null;
+  const me = group.members.find((member) => member.id === group.memberId);
+  if (me !== undefined && me.leaveRequestedMonth !== null) return null;
   return { title: '相手を招待する', message: 'URLを送ると、一緒に記録できます' };
 }
 
