@@ -73,7 +73,7 @@ export interface GroupMember {
    * 操作の可否には使わない**（招待できるかは `GroupDetail.canInvite`、脱退が確定したものとして扱うかは `leaveEffective`）。
    * 知らない状態の人は、何も添えず、いる人として出す（`src/services/memberView.ts`）。一覧全体を失敗にしない（CLAUDE.md）。
    * **この値で操作の可否を決める画面（脱退を選ぶ操作など）を作るときは、`'unknown'` の扱い（厳密な検査に戻すか、安全側に
-   * 倒すか）を、その画面で決める**。
+   * 倒すか）を、その画面で決める**（脱退の欄は、自分が `unknown` のときは出さない。`src/services/leaveView.ts`）。
    */
   status: MemberStatus | 'unknown';
   historyFromMonth: string;
