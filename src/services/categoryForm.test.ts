@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 
 import type { CategoryShareRule } from '../domain/categoryShare.ts';
 import type { Category } from '../domain/month.ts';
-import { CATEGORY_ICON_KEYS } from '../theme/categoryIcons.ts';
+import { categoryColorLabel, categoryIconGlyph, categoryIconLabel, CATEGORY_ICON_KEYS } from '../theme/categoryIcons.ts';
 import {
   applyEqual,
   applyPreset,
@@ -333,5 +333,24 @@ describe('buildCreateInput', () => {
     const ctx = ctxOf({ editing: null, rule: null });
     const draft: CategoryDraft = { ...newDraft([]), name: ' 美容 ', icon: 'scissors', color: 'pink' };
     assert.deepEqual(buildCreateInput(checkOk(checkDraft(draft, ctx)), draft), { name: '美容', icon: 'scissors', color: 'pink' });
+  });
+});
+
+describe('アイコン・色の読み上げ名', () => {
+  it('すべてのアイコン・色に、名前がある（重ならない）', () => {
+    const iconLabels = CATEGORY_ICON_KEYS.map((key) => categoryIconLabel(key));
+    assert.ok(iconLabels.every((label) => label !== 'アイコン'));
+    assert.equal(new Set(iconLabels).size, iconLabels.length);
+    const colorLabels = CATEGORY_COLOR_KEYS.map((key) => categoryColorLabel(key));
+    assert.ok(colorLabels.every((label) => label !== '色'));
+    assert.equal(new Set(colorLabels).size, colorLabels.length);
+  });
+
+  it('知らないキーは、既定の見た目と名前。継承されたプロパティ名も、既定にする', () => {
+    assert.equal(categoryIconGlyph('rocket'), 'shape-outline');
+    assert.equal(categoryIconGlyph('toString'), 'shape-outline');
+    assert.equal(categoryIconLabel('toString'), 'アイコン');
+    assert.equal(categoryColorLabel('toString'), '色');
+    assert.equal(categoryIconGlyph('home'), 'home');
   });
 });
