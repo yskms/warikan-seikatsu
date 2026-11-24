@@ -20,6 +20,8 @@ export type SaveResult =
       context: GroupSettingsContext;
       /** 失敗する前に、済んだ段階があるか（失敗の文言が、保存できたものを伝えるため） */
       saved: boolean;
+      /** 自分の表示名・色を送るはずだったのに、グループ名・通貨の失敗で、送らずに止めたか（失敗の文言が、まだ保存していないことを伝えるため） */
+      meNotSent: boolean;
     };
 
 export async function saveSettings(
@@ -34,7 +36,7 @@ export async function saveSettings(
     try {
       await service.updateGroup(groupId, plan.group);
     } catch (error) {
-      return { ok: false, step: 'group', error, context: current, saved };
+      return { ok: false, step: 'group', error, context: current, saved, meNotSent: plan.me !== null };
     }
     current = applySaved(current, plan, 'group');
     saved = true;
@@ -43,7 +45,7 @@ export async function saveSettings(
     try {
       await service.updateMe(groupId, plan.me);
     } catch (error) {
-      return { ok: false, step: 'me', error, context: current, saved };
+      return { ok: false, step: 'me', error, context: current, saved, meNotSent: false };
     }
     current = applySaved(current, plan, 'me');
   }

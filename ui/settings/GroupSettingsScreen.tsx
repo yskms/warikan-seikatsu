@@ -12,6 +12,9 @@
 //   セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`ExpenseSheet.tsx` と同じ）。招待URLによる参加確認への
 //   切り替えも同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`）。
 // - グループ名を変えたら、所属グループの一覧を読み直す（`reloadGroups`。ホームの上部・グループの切り替えに出る名前が、古いままにならない）。
+//   名前を送った呼び出しが、済んだか分からない失敗（通信が切れた、など）で終わったときも読み直す（やり直さずに戻っても、古い名前が残らない）。
+// - グループが無い（404）と分かったら、保存を押せなくし、戻る操作の破棄の確認も出さない（この画面から先へは進めない。`GroupGate` が、
+//   別のグループか、グループの作成へ切り替える）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -40,7 +43,13 @@ import {
   type GroupSettingsDraft,
   type GroupSettingsErrors,
 } from '../../src/services/groupSettingsForm.ts';
-import { discardNote, saveErrorMessage, saveLostGroup, shouldReloadAfterSave } from '../../src/services/groupSettingsMessage.ts';
+import {
+  discardNote,
+  saveErrorMessage,
+  saveLostGroup,
+  saveResultUnknown,
+  shouldReloadAfterSave,
+} from '../../src/services/groupSettingsMessage.ts';
 import { saveSettings } from '../../src/services/groupSettingsSave.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
 import { initialOf } from '../../src/services/homeView.ts';
@@ -80,6 +89,9 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
   const leaving = useRef(false);
   // グループ名・通貨の保存が済んだか（そのあとの破棄の確認の文言が、事実と合うように）
   const groupSaved = useRef(false);
+  // グループが無くなった（404。グループが消えた・自分が脱退済みになった）。この画面から先へは進めない（保存を押せなくする。戻る操作の
+  // 破棄の確認も出さない）。`GroupGate` が、別のグループか、グループの作成へ切り替える
+  const [lost, setLost] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,8 +116,10 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
   }, [groupId, attempt]);
 
   const dirty = load.status === 'ready' && isDirty(load.draft, load.context);
+  // 破棄の確認を出す・スワイプで戻らせないのは、保存できる入力があるあいだだけ（グループが無くなったあとの入力は、保存できない）
+  const unsaved = dirty && !lost;
   const dirtyRef = useRef(false);
-  dirtyRef.current = dirty;
+  dirtyRef.current = unsaved;
 
   // 通信の最中は閉じない。変えた入力があるときは、破棄の確認を出す
   useEffect(() => {
@@ -135,8 +149,8 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
   // iOSの端のスワイプで戻る操作は、ネイティブ側で先に実行され、`beforeRemove` で止めても戻ってしまうことがある。通信の最中と、
   // 変えた入力があるあいだは、スワイプを無効にする（戻る矢印・Androidの戻る操作は、上で止める・確認する）
   useEffect(() => {
-    navigation.setOptions({ gestureEnabled: !busy && !dirty });
-  }, [navigation, busy, dirty]);
+    navigation.setOptions({ gestureEnabled: !busy && !unsaved });
+  }, [navigation, busy, unsaved]);
 
   // 失敗を、読み上げにも伝える（Androidは、`accessibilityLiveRegion` が伝える。iOSは伝えないので、ここで読み上げる）
   useEffect(() => {
@@ -189,10 +203,14 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
         return;
       }
       groupSaved.current = groupSaved.current || result.saved;
-      // 済んだ段階は、基準に取り込む（やり直しで、残りだけを送る）
-      if (result.saved && plan.group?.name !== undefined) reloadGroups();
-      if (saveLostGroup(result.error)) reloadGroups();
-      const message = saveErrorMessage(result.error, result.step, result.saved);
+      // グループ名の変更が済んでいる（済んだ段階がある）か、済んだか分からない（通信が切れた、など）ときは、所属グループの一覧を読み直す。
+      // やり直さずに戻っても、ホームの上部に古い名前が残らない
+      if (plan.group?.name !== undefined && (result.saved || saveResultUnknown(result.error))) reloadGroups();
+      if (saveLostGroup(result.error)) {
+        reloadGroups();
+        setLost(true);
+      }
+      const message = saveErrorMessage(result.error, result.step, result.saved, result.meNotSent);
       if (shouldReloadAfterSave(result.error)) {
         await reloadAfterRejection(result.context, draft, message);
       } else {
@@ -281,7 +299,7 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
                   <Text style={[styles.note, { color: colors.textSecondary }]}>
                     {load.context.access.currencyLocked
                       ? '支出・固定費・上限額つきの負担・締めた月のどれかがあるあいだは、通貨を変えられません。'
-                      : '支出などを登録したあとは、通貨を変えられません。'}
+                      : '支出・固定費などを登録しているあいだは、通貨を変えられません。'}
                   </Text>
                 ) : null}
               </View>
@@ -341,7 +359,7 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
                 {error}
               </Text>
             ) : null}
-            <PrimaryButton label="保存" busy={busy} disabled={!dirty} onPress={() => void save()} />
+            <PrimaryButton label="保存" busy={busy} disabled={!unsaved} onPress={() => void save()} />
           </View>
         </KeyboardAvoidingView>
       )}

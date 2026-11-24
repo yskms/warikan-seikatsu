@@ -64,6 +64,15 @@ describe('saveSettings', () => {
     assert.ok(!result.ok);
     assert.deepEqual([result.step, result.saved, result.error], ['group', false, error]);
     assert.deepEqual(result.context, context);
+    // 自分の表示名・色を送るはずだったのに、送らずに止めた（文言が、まだ保存していないことを伝える）
+    assert.equal(result.meNotSent, true);
+  });
+
+  it('グループ名・通貨だけを送るときに失敗しても、送らずに止めた段階は無い（meNotSent は偽）', async () => {
+    const { service: s } = service({ group: new AuthError('network') });
+    const result = await saveSettings(s, 'g1', planOf({ ...context.baseline, name: '新' }), context);
+    assert.ok(!result.ok);
+    assert.equal(result.meNotSent, false);
   });
 
   it('自分の表示名・色が失敗したら、グループ名・通貨は保存済みとして返す。やり直しでは、残りだけが送られる', async () => {
@@ -72,6 +81,8 @@ describe('saveSettings', () => {
     const result = await saveSettings(first.service, 'g1', planOf(edited), context);
     assert.ok(!result.ok);
     assert.deepEqual([result.step, result.saved, result.error], ['me', true, error]);
+    // 2つ目は、送って失敗した（送らずに止めたのではない）
+    assert.equal(result.meNotSent, false);
     assert.equal(result.context.baseline.name, '新');
     assert.equal(result.context.baseline.currencyCode, 'USD');
     assert.equal(result.context.baseline.displayName, 'あなた');
