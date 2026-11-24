@@ -8,7 +8,7 @@
 //   サーバーが 409 `already_member` で教える。それを成功として扱い、そのグループを開く（`src/services/joinMessage.ts`）。
 //   失敗のあとに、自動では送り直さない。
 // - 終わり方は、どれも招待を手放すこと（`pendingInvite.clear`）。手放すと、`app/join.tsx` が最初の画面へ戻し、グループの一覧を
-//   読み直す。参加したグループは、`activeGroup` で開く（切り替えを作るまでの代わり）。
+//   読み直す。参加したグループは、`openGroup` で開く（次の起動でも、そのグループが開く）。
 // - レイアウトとキーボードの避け方は、グループ作成（`app/create-group.tsx`）と同じ: ボタンは下に固定し、失敗の文言はその上に出す。
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -23,7 +23,7 @@ import {
   GROUP_FULL_MESSAGE,
   INVITE_UNAVAILABLE_MESSAGE,
 } from '../../src/services/joinMessage.ts';
-import { activeGroup } from '../activeGroup.ts';
+import { openGroup } from '../activeGroup.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { TextField } from '../TextField.tsx';
 import { useColors } from '../useColors.ts';
@@ -49,7 +49,7 @@ export function JoinScreen({ token }: { token: string }) {
 
   // 招待を手放して終える。参加した（または、すでに参加していた）グループがあれば、それを開く。
   function finish(groupId: string | null) {
-    if (groupId !== null) activeGroup.set(groupId);
+    if (groupId !== null) openGroup(groupId);
     pendingInvite.clear(token);
   }
 

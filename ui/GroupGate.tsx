@@ -1,24 +1,27 @@
 // ログイン後の最初の関門（docs/screens.md 1章）。所属グループを読んで、行き先を決める:
 // グループが無い → グループ作成、ある → メイン（下のナビ。`app/(main)/_layout.tsx`）。
 //
-// 複数のグループに入っている人の切り替えと、最後に開いたグループを覚えておくことは、まだ作っていない（いまは、作成の古い順の
-// 先頭を出す）。
+// 開くグループは、`ui/activeGroup.ts` のメモリ（この起動中に切り替えた・参加したもの）、端末に覚えた最後に開いたグループ
+// （`platform/lastGroup.ts`）、作成の古い順の先頭、の順に決める（`src/services/groupChoice.ts`）。複数のグループに入っている人の
+// 切り替えは、ホームの上部のグループ名から（`CurrentGroup` の `groups` と `select`。docs/screens.md 1章）。
 //
 // **招待**: 招待URLから来た人の参加確認（`app/join.tsx`。docs/screens.md 2章）は、ここでは扱わない。ルート（`app/_layout.tsx` の
 // `RootNavigator`）が、招待を持っているあいだ、`(main)`（この画面）ごと外して、参加確認だけを出す。**招待の分岐を、ここ（や、
 // `create-group` の画面）の `Redirect` に戻さない**（`Redirect` は、その画面にフォーカスがあるときしか動かず、ほかの画面・シートの上に
 // 招待が届いても、参加確認へ移らない）。このゲートが描かれるのは、招待を持っていないときだけ。
 //
-// 参加した直後は、参加したグループを開く（`ui/activeGroup.ts`。切り替えを作るまでの代わり）。
+// 参加した直後は、参加したグループを開く（参加確認の画面が `openGroup` で置く）。
 import { Redirect } from 'expo-router';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { groupService } from '../platform/groupService.ts';
+import { loadLastGroup } from '../platform/lastGroup.ts';
 import type { GroupListItem } from '../src/domain/group.ts';
+import { pickGroup } from '../src/services/groupChoice.ts';
 import { loadGroupsErrorMessage } from '../src/services/groupMessage.ts';
-import { useActiveGroupId } from './activeGroup.ts';
+import { openGroup, useActiveGroupId } from './activeGroup.ts';
 import type { CurrentGroup } from './CurrentGroup.tsx';
 import { PrimaryButton } from './PrimaryButton.tsx';
 import { useColors } from './useColors.ts';
@@ -27,7 +30,7 @@ import { useSignOut } from './useSignOut.ts';
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'loaded'; groups: GroupListItem[] };
+  | { status: 'loaded'; groups: GroupListItem[]; lastGroupId: string | null };
 
 export function GroupGate({ children }: { children: (group: CurrentGroup) => ReactNode }) {
   const colors = useColors();
@@ -40,9 +43,10 @@ export function GroupGate({ children }: { children: (group: CurrentGroup) => Rea
   useEffect(() => {
     let cancelled = false;
     setLoad({ status: 'loading' });
-    groupService.listGroups().then(
-      (groups) => {
-        if (!cancelled) setLoad({ status: 'loaded', groups });
+    // 端末に覚えた最後に開いたグループは、一覧と一緒に読む（読めなければ `null`。投げない）
+    Promise.all([groupService.listGroups(), loadLastGroup()]).then(
+      ([groups, lastGroupId]) => {
+        if (!cancelled) setLoad({ status: 'loaded', groups, lastGroupId });
       },
       (error: unknown) => {
         if (!cancelled) setLoad({ status: 'error', message: loadGroupsErrorMessage(error) });
@@ -54,12 +58,23 @@ export function GroupGate({ children }: { children: (group: CurrentGroup) => Rea
   }, [attempt]);
 
   if (load.status === 'loaded' && load.groups.length === 0) return <Redirect href="/create-group" />;
-  // グループがある。ホームが、自分でデータを読む（ホームへ戻るたびに取り直す）ので、ここで読んだ一覧は、グループの特定にだけ使う。
-  // 参加した直後のグループが一覧にあれば、それを開く。無ければ（一覧の取得と食い違ったとき）、先頭。
-  const first =
-    load.status === 'loaded' ? (load.groups.find((group) => group.id === activeGroupId) ?? load.groups[0]) : undefined;
+  // グループがある。ホームが、自分でデータを読む（ホームへ戻るたびに取り直す）ので、ここで読んだ一覧は、グループの特定と、切り替えの
+  // 候補にだけ使う。切り替えた・参加したグループ（メモリ）、最後に開いたグループ（端末）の順に、一覧にあるものを開く。
+  const current =
+    load.status === 'loaded' ? pickGroup(load.groups, [activeGroupId, load.lastGroupId]) : undefined;
   // グループが変わったら、画面ごと作り直す（`key`。ホームは、グループごとの読み込みの状態を持つ）
-  if (first) return <Fragment key={first.id}>{children({ id: first.id, name: first.name })}</Fragment>;
+  if (load.status === 'loaded' && current) {
+    return (
+      <Fragment key={current.id}>
+        {children({
+          id: current.id,
+          name: current.name,
+          groups: load.groups.map((group) => ({ id: group.id, name: group.name })),
+          select: openGroup,
+        })}
+      </Fragment>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>

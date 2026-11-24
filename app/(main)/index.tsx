@@ -4,5 +4,5 @@ import { HomeScreen } from '../../ui/home/HomeScreen.tsx';
 
 export default function HomeRoute() {
   const group = useCurrentGroup();
-  return <HomeScreen groupId={group.id} groupName={group.name} />;
+  return <HomeScreen groupId={group.id} groupName={group.name} groups={group.groups} onSelectGroup={group.select} />;
 }

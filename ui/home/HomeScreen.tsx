@@ -7,7 +7,6 @@
 // メンバーと招待の画面を開くだけ。招待の発行はその画面だけに置く）。**まだ作っていない**もの
 // （それぞれ、作るときにここへ足す）:
 // - お知らせのうち「メンバーが増減した」「固定費が止まった」（費目の割合を見直した印・固定費のAPIを読む画面を作るとき）
-// - 複数のグループの切り替えと、最後に開いたグループを覚えること（`ui/GroupGate.tsx`。いまは作成の古い順の先頭を出す）
 //
 // 読み込みの流れ: グループ（メンバー）・月の一覧・費目を読み、選ぶ月を決めてから、その月の集計と支出を読む。
 // 画面を開いたとき・ホームへ戻ったとき・引っ張ったときに取り直す（1章。プッシュ通知やリアルタイム更新はしない）。取り直しの
@@ -36,9 +35,11 @@ import {
   moneyFormatters,
   neighborMonths,
 } from '../../src/services/homeView.ts';
+import type { GroupOption } from '../CurrentGroup.tsx';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 import { ExpenseSection } from './ExpenseSection.tsx';
+import { GroupSwitcher } from './GroupSwitcher.tsx';
 import { MonthHeader } from './MonthHeader.tsx';
 import { SettlementCard } from './SettlementCard.tsx';
 import { BreakdownSection, InviteCardView, MemberBurdens, NoticeList, TotalCard } from './SummarySections.tsx';
@@ -47,9 +48,12 @@ import { useTransferActions } from './useTransferActions.ts';
 interface HomeScreenProps {
   groupId: string;
   groupName: string;
+  /** 所属グループ。2つ以上のときだけ、上部のグループ名が切り替えになる（`GroupSwitcher`） */
+  groups: readonly GroupOption[];
+  onSelectGroup(groupId: string): void;
 }
 
-export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
+export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeScreenProps) {
   const colors = useColors();
   // 読み込みの状態を持つ入れ物なので、`useMemo`（Reactが捨てて作り直すことがある）ではなく `useState` で持つ。
   // グループが変わるときは、呼び出し側が `key` を変えて、この画面ごと作り直す（`ui/GroupGate.tsx`）。`groupId` は、作ったあとは変えない。
@@ -111,9 +115,12 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loader.reload(true)} />}
       >
-        <Text style={[styles.groupName, { color: colors.textSecondary }]} accessibilityRole="header" numberOfLines={1}>
-          {groupData?.group.name ?? groupName}
-        </Text>
+        <GroupSwitcher
+          name={groupData?.group.name ?? groupName}
+          currentId={groupId}
+          groups={groups}
+          onSelect={onSelectGroup}
+        />
 
         {selected !== null && groupData !== null ? (
           <MonthHeader
@@ -194,7 +201,6 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24, gap: 20 },
-  groupName: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
   error: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
   errorBlock: { gap: 16, paddingVertical: 24 },
   loading: { paddingVertical: 48 },
