@@ -8,7 +8,9 @@
 //   （`Stack.Protected`。`beforeRemove` を通らない）。結果の文言は、この画面ではなく、ログイン画面の上に出す（`ui/loginNotice.ts`）。
 //   サーバーが認めなかった（401）ときも同じ（端末のセッションを捨ててログイン画面へ移る）。
 // - 端末のセッションを捨てられなかったとき（`sessionCleared: false`）だけ、この画面が残る。削除は済んでいるので、結果を出し、
-//   「ログアウト」を案内する（端末の値を捨てられる）。もう削除はできない。
+//   「ログアウト」を案内する（端末の値を捨てられる）。もう削除はできない。**ログアウトも、同じ保存先を消すので、失敗しうる**
+//   （その文言は、ボタンの上に出る）。そのときの抜け道は、戻る操作だけ（メインへ戻れるが、次のAPIの呼び出しが 401 になり、
+//   層が端末のセッションを捨て直して、ログイン画面へ移る。`src/services/sessionLost.ts`）。戻る操作は、止めない。
 // - 実行中（再認証の画面を待つあいだと通信）は、戻る操作を止める（結果を受けるのは、この画面）。止めているのは `beforeRemove`
 //   で、セッション切れの除去は通らない。招待URLによる参加確認への切り替えは、実行中だけ遅らせる（`useHoldInviteSwap`）。
 // - **確認ダイアログから削除を始めるので、画面が外れていれば何もしない**（`useMounted`）。外れたあとに、取り消せない削除を、
@@ -33,7 +35,7 @@ import { useSignOut } from '../useSignOut.ts';
 // 削除する前に伝えること（docs/plan.md 8章の「アカウント削除」）。サーバーの扱いと合わせる
 const POINTS = [
   '参加しているすべてのグループから、すぐに脱退します（月の終わりを待ちません）。',
-  '表示名は「削除されたユーザー」になります。支出や精算の記録は、残るメンバーのために、グループに残ります。',
+  '表示名は「削除されたユーザー」になります。支出の内容（自由に入力した文章を含む）や精算の記録は、残るメンバーのために、グループに残り、削除されません。',
   '自分だけが残っているグループは、グループごと削除されます。',
   '精算が済んでいない送金があるときは、削除すると、その送金は次の月への繰越を選べなくなります。金額と送金の向きは残るので、残るメンバーが確認して、精算済みにします。',
   '元に戻せません。',
@@ -65,10 +67,16 @@ export function DeleteAccountScreen() {
     navigation.setOptions({ gestureEnabled: !busy });
   }, [navigation, busy]);
 
-  // 結果を、読み上げにも伝える（Androidは、`accessibilityLiveRegion` が伝える）
+  // 結果を、読み上げにも伝える（Androidは、`accessibilityLiveRegion` が伝える。iOSは伝えないので、ここで読み上げる）。
+  // 失敗（`error`）と、削除は済んだが端末のログイン情報が残ったとき（`done`）
   useEffect(() => {
-    if (error !== null && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(error);
+    if (Platform.OS !== 'ios') return;
+    if (error !== null) AccessibilityInfo.announceForAccessibility(error);
   }, [error]);
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || done === null) return;
+    AccessibilityInfo.announceForAccessibility(done.join('\n'));
+  }, [done]);
 
   function goBack() {
     if (running.current) return;
@@ -179,7 +187,7 @@ export function DeleteAccountScreen() {
               <PrimaryButton label="アカウントを削除" variant="destructive" busy={busy} disabled={disabled} onPress={confirmDelete} />
               {busy ? (
                 <Text style={[styles.note, { color: colors.textSecondary }]} accessibilityLiveRegion="polite">
-                  本人確認と削除を行っています。最大30秒ほどかかります。
+                  本人確認と削除を行っています。終わるまで、この画面のままお待ちください。
                 </Text>
               ) : null}
             </View>

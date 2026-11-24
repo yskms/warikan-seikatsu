@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Linking,
   Platform,
@@ -39,6 +40,10 @@ export default function LoginScreen() {
   const invited = usePendingInvite() !== null;
   // アカウントを削除したあとの案内など（`ui/loginNotice.ts`）。ログインが済むまで出す
   const notice = useLoginNotice();
+  // iOSは `accessibilityLiveRegion` で読み上げないので、ここで読み上げる（Androidは、下の `accessibilityLiveRegion`）
+  useEffect(() => {
+    if (Platform.OS === 'ios' && notice !== null) AccessibilityInfo.announceForAccessibility(notice.join('\n'));
+  }, [notice]);
   // 進行中のログイン手段。あるあいだは、どのボタンも押せない。表示用の `busy` とは別に、`ref` でも持つ: `busy` は、
   // 再描画されるまで古いままなので、続けて2回押されると、どちらの押下も `null` を見て、各社の画面が2回開きうる。
   const [busy, setBusy] = useState<AuthProvider | null>(null);
