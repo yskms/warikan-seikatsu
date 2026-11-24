@@ -111,6 +111,8 @@ describe('固定費の支払う人の添え書き', () => {
     const cancel = payerRecurringNote(['家賃'], 'cancel') ?? '';
     assert.ok(request.includes('今月をすでに締めている場合は、脱退を選ぶとすぐ確定するので、脱退する前に選び直してください。'));
     assert.ok(!cancel.includes('今月をすでに締めている'), '脱退を選んだあとは、確定していないので、添えない');
+    const confirm = payerRecurringNote(['家賃'], 'confirm') ?? '';
+    assert.ok(!confirm.includes('今月をすでに締めている'), '確認の本文には、すでに同じ説明があるので、繰り返さない');
   });
 
   it('脱退を選ぶ前は、欄と確認の本文の両方に添える', () => {
@@ -119,7 +121,11 @@ describe('固定費の支払う人の添え書き', () => {
     if (section.kind !== 'request') return;
     assert.ok(section.payerNote?.startsWith('家賃の固定費は、支払う人を選び直す必要があります。'));
     assert.ok(section.payerNote?.includes('脱退する前に選び直してください'));
-    assert.ok(section.confirm.message.includes(section.payerNote ?? '?'));
+    // 確認の本文は、直前の「今月をすでに締めている場合は、すぐに確定します。」と重ならないよう、最後の1文を省いた同じ内容
+    const confirmNote = payerRecurringNote(['家賃'], 'confirm') ?? '?';
+    assert.ok(section.confirm.message.includes(confirmNote));
+    assert.ok(section.payerNote?.startsWith(confirmNote));
+    assert.equal(section.confirm.message.match(/今月をすでに締めている場合は/g)?.length, 1, '同じ説明を2回出さない');
     assert.ok(section.confirm.message.includes('確定するまでは、取り消せます'), '元の文言は残る');
   });
 
