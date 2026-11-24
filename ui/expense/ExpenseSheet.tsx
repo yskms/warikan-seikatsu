@@ -57,6 +57,7 @@ import { initialOf } from '../../src/services/homeView.ts';
 import { formatMonth } from '../../src/services/dateFormat.ts';
 import { Avatar } from '../home/Avatar.tsx';
 import { CategoryIcon } from '../home/CategoryIcon.tsx';
+import { useHoldInviteSwap } from '../inviteHold.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 import { AmountField } from './AmountField.tsx';
@@ -151,6 +152,8 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   const [keypad, setKeypad] = useState<KeypadTarget>(ctx.readOnly || splitLocked(ctx) ? null : { kind: 'amount' });
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
+  // 保存・削除の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`。外れると、保存の `id` が捨てられる）
+  useHoldInviteSwap(busy !== null);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);

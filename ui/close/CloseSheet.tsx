@@ -9,6 +9,7 @@
 //   （自動で締め直さない。内容を見て、もう一度押してもらう）。通信の失敗は、読み直さない（同じ失敗になりうる）。
 // - 通信の最中は、✕も、戻る操作も効かない（閉じると、完了したあとに、閉じたシートから画面を戻してしまう）。止めているのは
 //   `beforeRemove` で、セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`ExpenseSheet.tsx` と同じ）。
+//   招待URLによる参加確認への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
 // - 最後の1人の脱退で、締めずにグループごと消えたとき（サーバーが `groupDeleted` を返す）は、そのことを案内して閉じる。
 //   ホームは、読めなくなったグループの案内を出す（screens.md 3章の「所属を失ったとき」）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -29,6 +30,7 @@ import {
 } from '../../src/services/settlementMessage.ts';
 import type { CloseFormData } from '../../src/services/settlementService.ts';
 import { TransferRow } from '../home/TransferRow.tsx';
+import { useHoldInviteSwap } from '../inviteHold.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 
@@ -50,6 +52,8 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
+  // 締めている通信の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）
+  useHoldInviteSwap(busy);
   const [error, setError] = useState<string | null>(null);
   const [groupDeleted, setGroupDeleted] = useState(false);
   const running = useRef(false);

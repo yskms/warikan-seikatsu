@@ -16,6 +16,7 @@
 //   （編集だけ。追加は、入力を残す）。
 // - 通信の最中は、✕も、戻る操作も効かない。変えた入力があるときの✕・戻る操作は、破棄の確認を出す。止めているのは `beforeRemove`
 //   で、セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`ExpenseSheet.tsx` と同じ）。
+//   招待URLによる参加確認への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -69,6 +70,7 @@ import { paletteColor } from '../../src/theme/palette.ts';
 import { Chips } from '../expense/Chips.tsx';
 import { Avatar } from '../home/Avatar.tsx';
 import { CategoryIcon } from '../home/CategoryIcon.tsx';
+import { useHoldInviteSwap } from '../inviteHold.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { TextField } from '../TextField.tsx';
 import { useColors } from '../useColors.ts';
@@ -112,6 +114,8 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
+  // 保存の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）
+  useHoldInviteSwap(busy);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);

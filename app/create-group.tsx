@@ -23,6 +23,7 @@ import { CURRENCIES, DEFAULT_CURRENCY_CODE, DEFAULT_GROUP_NAME } from '../src/do
 import { createGroupErrorMessage } from '../src/services/groupMessage.ts';
 import { validateCreateGroupForm, type CreateGroupFormErrors } from '../src/services/groupForm.ts';
 import { getDeviceTimeZone } from '../src/services/timeZone.ts';
+import { useHoldInviteSwap } from '../ui/inviteHold.ts';
 import { PrimaryButton } from '../ui/PrimaryButton.tsx';
 import { TextField } from '../ui/TextField.tsx';
 import { useColors } from '../ui/useColors.ts';
@@ -37,6 +38,8 @@ export default function CreateGroupScreen() {
   const [fieldErrors, setFieldErrors] = useState<CreateGroupFormErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 作成の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`。完了後に `router.replace('/')` を呼ぶため）
+  useHoldInviteSwap(busy);
   const submitting = useRef(false);
   // この作成の識別子。画面を開いてから最初に送るときに1回だけ作り、やり直しでも同じ値を送る: 通信が切れて、サーバーで
   // 作成が済んだか分からないとき、同じ `id` なら、グループが2つにならない（サーバーは、済んでいれば保存済みのグループを返す）。

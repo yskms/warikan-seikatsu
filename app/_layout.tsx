@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { startInviteLinks } from '../platform/inviteLink.ts';
 import { AuthStateProvider, useAuth } from '../ui/AuthStateProvider.tsx';
 import { useColors } from '../ui/useColors.ts';
+import { useInviteSwapHeld } from '../ui/inviteHold.ts';
 import { useInviteLinksReady, usePendingInvite } from '../ui/usePendingInvite.ts';
 
 // 端末のログイン情報を調べ終えるまで、スプラッシュを出したままにする（調べ終えたら `RootNavigator` が隠す）。
@@ -14,8 +15,8 @@ import { useInviteLinksReady, usePendingInvite } from '../ui/usePendingInvite.ts
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  // 招待URLの受け取りを始める。ルートが描かれるたびに、起動したときのURLを読み直す（Activityが作り直されたとき、`url` イベントが
-  // 届かないため。`platform/inviteLink.ts`）。
+  // 招待URLの受け取りを始める。**ルートがマウントされるたび**（依存は `[]`。描画のたびではない）に、起動したときのURLを読み直す
+  // （Androidで、新しいActivityが作られ、ルートがマウントし直されたとき、`url` イベントが届かないため。`platform/inviteLink.ts`）。
   useEffect(() => {
     startInviteLinks();
   }, []);
@@ -37,7 +38,11 @@ function RootNavigator() {
   const colors = useColors();
   const linksReady = useInviteLinksReady();
   // 参加の確認を待っている招待（`platform/inviteLink.ts`）
-  const invited = usePendingInvite() !== null;
+  const pending = usePendingInvite() !== null;
+  // 書き込みの最中の画面（支出・月締め・カテゴリ編集のシート、グループ作成）があるあいだは、切り替えを遅らせる（`ui/inviteHold.ts`）。
+  // 終わったら切り替わる。**参加確認を出しているあいだは、遅らせない**（そこには、書き込みの最中の画面は無い）
+  const held = useInviteSwapHeld();
+  const showJoin = pending && !held;
   const checking = state.status === 'checking' || !linksReady;
   useEffect(() => {
     if (!checking) void SplashScreen.hideAsync().catch(() => {});
@@ -48,9 +53,10 @@ function RootNavigator() {
       {/* 招待を持っているあいだ（`pendingInvite`）は、ログイン済みでも、参加確認（`join`）だけを出す。**この切り替えを、`GroupGate` や
           画面ごとの `Redirect` に移さない**: `Redirect` は、その画面にフォーカスがあるときしか動かない（グループ作成の画面や、設定の
           先の画面・シートが開いていると、参加確認へ移らない）。ここで外せば、どの画面にいても、参加確認が出る（開いていた画面・シートは
-          閉じられ、入力中のものは失われる。招待URLを開くのは、アプリの外から来る操作なので、割り込みを許す）。招待を手放すと
-          （参加・キャンセルなど）、最初の画面（メイン、またはグループの作成）からやり直す。 */}
-      <Stack.Protected guard={state.status === 'signed-in' && !invited}>
+          閉じられ、入力中のものは失われる。招待URLを開くのは、アプリの外から来る操作なので、割り込みを許す。ただし、書き込みの最中の
+          画面があるあいだは、終わるまで遅らせる）。招待を手放すと（参加・キャンセルなど）、最初の画面（メイン、またはグループの作成）
+          からやり直す。 */}
+      <Stack.Protected guard={state.status === 'signed-in' && !showJoin}>
         <Stack.Screen name="(main)" />
         <Stack.Screen name="create-group" />
         <Stack.Screen name="categories" />
@@ -64,7 +70,7 @@ function RootNavigator() {
         {/* カテゴリの追加・編集のシート。入力中の破棄の確認を出すため、スワイプで閉じるのは止める（✕・戻る操作は、`beforeRemove` で確認する） */}
         <Stack.Screen name="category-edit" dangerouslySingular options={{ presentation: 'modal', gestureEnabled: false }} />
       </Stack.Protected>
-      <Stack.Protected guard={state.status === 'signed-in' && invited}>
+      <Stack.Protected guard={state.status === 'signed-in' && showJoin}>
         {/* 招待URLを開いたあとの参加確認。iOSのスワイプでは戻らない（抜ける道は「キャンセル」。招待を手放す） */}
         <Stack.Screen name="join" options={{ gestureEnabled: false }} />
       </Stack.Protected>
