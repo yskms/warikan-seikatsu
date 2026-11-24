@@ -1,9 +1,9 @@
 // ログイン後の最初の画面（docs/screens.md 1章）。所属グループを読んで、行き先を決める:
-// グループが無い → グループ作成、ある → メイン（ホーム）。
+// グループが無い → グループ作成、ある → メイン（ホーム。`ui/home/HomeScreen.tsx`）。
 //
-// **ホームは仮のまま**: グループ名と、ログアウトだけを出す。ホーム（3章）と、下のナビ・設定（6章）を作るときに置き換える
-// （ログアウトは設定へ移す。`ui/useSignOut.ts`）。複数のグループに入っている人の切り替えと、最後に開いたグループを
-// 覚えておくことも、そのとき作る（いまは、作成の古い順の先頭を出す）。
+// 複数のグループに入っている人の切り替えと、最後に開いたグループを覚えておくことは、まだ作っていない（いまは、作成の古い順の
+// 先頭を出す）。下のナビ・設定（6章）も、まだ無い（ログアウトは、ホームの最後に仮に置いてある。設定を作るとき、そちらへ移す。
+// `ui/useSignOut.ts`）。
 //
 // **注意（招待）**: いまの分岐は、「グループが無ければグループ作成」を無条件に行う。招待URLから来た人は、ログイン後に
 // 参加確認へ進む（docs/screens.md 2章）ので、招待を保持する仕組みを足すときは、**この分岐で、保持した招待を先に見て**、
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { groupService } from '../platform/groupService.ts';
 import type { GroupListItem } from '../src/domain/group.ts';
 import { loadGroupsErrorMessage } from '../src/services/groupMessage.ts';
+import { HomeScreen } from '../ui/home/HomeScreen.tsx';
 import { PrimaryButton } from '../ui/PrimaryButton.tsx';
 import { useColors } from '../ui/useColors.ts';
 import { useSignOut } from '../ui/useSignOut.ts';
@@ -50,6 +51,10 @@ export default function Index() {
   }, [attempt]);
 
   if (load.status === 'loaded' && load.groups.length === 0) return <Redirect href="/create-group" />;
+  // グループがある。ホームが、自分でデータを読む（ホームへ戻るたびに取り直す）ので、ここで読んだ一覧は、グループの特定にだけ使う。
+  const first = load.status === 'loaded' ? load.groups[0] : undefined;
+  // グループが変わったら、画面ごと作り直す（`key`。ホームは、グループごとの読み込みの状態を持つ）
+  if (first) return <HomeScreen key={first.id} groupId={first.id} groupName={first.name} />;
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -65,14 +70,6 @@ export default function Index() {
           </>
         ) : null}
 
-        {load.status === 'loaded' && load.groups[0] ? (
-          <>
-            <Text style={[styles.groupName, { color: colors.textPrimary }]} accessibilityRole="header">
-              {load.groups[0].name}
-            </Text>
-            <Text style={[styles.message, { color: colors.textSecondary }]}>ホームは、これから作ります。</Text>
-          </>
-        ) : null}
       </View>
 
       {/* 読み込みに失敗したままでも、ログアウトできるようにする（先へ進めなくなるのを避ける） */}
@@ -91,7 +88,6 @@ export default function Index() {
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 24 },
   body: { flex: 1, alignItems: 'stretch', justifyContent: 'center', gap: 16 },
-  groupName: { fontSize: 28, fontWeight: '700', textAlign: 'center' },
   message: { fontSize: 15, lineHeight: 22, textAlign: 'center' },
   footer: { gap: 12, paddingBottom: 16 },
 });
