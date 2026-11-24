@@ -69,14 +69,22 @@ export interface GroupMember {
   /** メンバーの色のキー（`MEMBER_COLORS`）。知らないキーでも読めるよう、文字列で持つ（画面が既定の色にする） */
   color: string;
   /**
-   * 知らない状態（サーバーが足した値）は `'unknown'`。いまの画面は、この値で判断していない（名前と色だけを使う）ので、
-   * 一覧全体を失敗にしない（CLAUDE.md）。**この値で出し分ける・操作の可否を決める画面（メンバー一覧、脱退など）を作るときは、
-   * `'unknown'` の扱い（厳密な検査に戻すか、安全側に倒すか）を、その画面で決める**。
+   * 知らない状態（サーバーが足した値）は `'unknown'`。**メンバー一覧の表示（「以前のメンバー」への振り分けと状態の文言）にだけ使い、
+   * 操作の可否には使わない**（招待できるかは `GroupDetail.canInvite`、脱退が確定したものとして扱うかは `leaveEffective`）。
+   * 知らない状態の人は、何も添えず、いる人として出す（`src/services/memberView.ts`）。一覧全体を失敗にしない（CLAUDE.md）。
+   * **この値で操作の可否を決める画面（脱退を選ぶ操作など）を作るときは、`'unknown'` の扱い（厳密な検査に戻すか、安全側に
+   * 倒すか）を、その画面で決める**。
    */
   status: MemberStatus | 'unknown';
   historyFromMonth: string;
   leaveRequestedMonth: string | null;
   expenseEndMonth: string | null;
+  /**
+   * 脱退が確定したものとして扱うか（サーバーの `isLeaveEffectiveFor`。招待の発行・参加と同じ判定）。`status` が `active` の
+   * ままでも、脱退を選んだ月が終わっていれば true（翌月1日のCronが `status` を書くまでの間は、`status` だけでは分からない）。
+   * アプリは、月の判定を書き写さず、この値で「脱退予定」の文言と招待の欄を出し分ける。
+   */
+  leaveEffective: boolean;
   /** 操作している本人か */
   isMe: boolean;
 }

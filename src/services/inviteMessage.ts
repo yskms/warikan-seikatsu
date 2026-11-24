@@ -20,13 +20,20 @@ function codeOf(error: unknown): string {
 
 /**
  * サーバーが断ったあとに、画面の内容を読み直すか。招待できるかの状態や、招待の一覧が、読んだときから変わったとき
- * （満員になった・脱退が確定した・すでに使われた・もう無い）は、読み直す。上限（`too_many_invites`）と競合（`conflict`）は、
- * 読み直しても画面の状態は変わらない。**取り消しの失敗のあとは、もう無いなど一覧が古いことが多いので、断られたら読み直す**。
+ * （満員になった・脱退が確定した・すでに使われた・もう無い）は、読み直す。**未使用の招待が上限（`too_many_invites`）のときも
+ * 読み直す**: 別の端末で発行した招待は、読み直すまで一覧に出ないので、「不要な招待を取り消して」と案内しても、取り消すものが画面に
+ * 無いことがある。競合（`conflict`）は、読み直しても画面の状態は変わらない。**取り消しの失敗のあとは、もう無いなど一覧が古いことが
+ * 多いので、断られたら読み直す**（競合を除く）。
  */
 export function shouldReloadAfter(error: unknown, action: InviteAction): boolean {
   if (!(error instanceof InviteRejectedError)) return false;
   if (action === 'revoke') return error.reason !== 'conflict';
-  return error.reason === 'group_full' || error.reason === 'forbidden' || error.reason === 'not_found';
+  return (
+    error.reason === 'group_full' ||
+    error.reason === 'forbidden' ||
+    error.reason === 'not_found' ||
+    error.reason === 'too_many_invites'
+  );
 }
 
 /**
@@ -92,7 +99,9 @@ export function revokeInviteErrorMessage(error: unknown): string {
       case 'invite_already_used':
         return `${failed}この招待は、すでに使われています。`;
       case 'not_found':
-        return `${failed}この招待が見つかりませんでした。すでに取り消されたか、期限が切れたかもしれません。`;
+        // サーバーが404にするのは、自分がもうメンバーでない・グループが無い・自分が発行した招待でない、のいずれか。取り消し済みと
+        // 期限切れは、404ではなく成功にする（`worker/src/invites.ts`）ので、その理由は書かない
+        return `${failed}この招待を開けませんでした。グループの状態が変わったかもしれません。`;
       case 'conflict':
         return `${failed}他の操作と重なりました。もう一度お試しください。`;
       default:

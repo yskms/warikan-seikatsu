@@ -9,9 +9,14 @@
 //   表示中の内容を残して知らせる。新しく始めた読み込みが古いものを追い越し、古い応答は捨てる。
 // - **招待のトークンは、発行した応答でしか分からない**（サーバーはハッシュだけを持つ）。この画面を開いているあいだだけ、発行した招待の
 //   トークンをメモリに持ち、一覧の「共有」でURLを出し直せるようにする。画面を閉じると失われる（取り消して、新しく発行する）。
-// - 操作（発行・共有・取り消し）は、同時に1つだけ。失敗の文言は、「招待URLを作って共有する」ボタンの**すぐ下**に出す。この画面は
-//   上から並ぶスクロールなので、上に出すと、文言の高さの分だけボタンが下がり、続けて押したタップが外れる（下端に固定した
-//   ボタンの画面〔ログイン・グループ作成〕は、逆に、上に出す）。
+// - 操作（発行・共有・取り消し）は、同時に1つだけ。失敗の文言の出し方は、操作の場所で分ける。**発行（と、そのあとの共有）の失敗は、
+//   「招待URLを作って共有する」ボタンの*すぐ下*に出す**。この画面は上から並ぶスクロールなので、上に出すと、文言の高さの分だけボタンが
+//   下がり、続けて押したタップが外れる（下端に固定したボタンの画面〔ログイン・グループ作成〕は、逆に、上に出す）。**一覧の行の操作
+//   （取り消し・共有）の失敗は、ダイアログ（`Alert`）で出す**。一覧は最大10件で、メンバーの欄の下にあり、下のほうの行を操作したとき、
+//   ボタンの下の文言は画面の外になりうる。行の上に文言を足すと、続けて押したタップが別の行に当たる。ダイアログなら、位置によらず見え、
+//   読み上げ（iOSの `accessibilityLiveRegion` は効かない）にも乗る。
+// - **期限の表示は、30秒ごとに更新する**（画面を開いたままでも、「あと…」が古くならない）。端末の時計で期限が切れた招待は、一覧から
+//   外す（`visibleInvites`）。使えないURLを、「共有」で送ってしまわないため。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
@@ -33,7 +38,7 @@ import {
   buildInviteSection,
   buildMemberList,
   formatInviteExpiry,
-  sortInvites,
+  visibleInvites,
   type MemberRow,
 } from '../../src/services/memberView.ts';
 import { Avatar } from '../home/Avatar.tsx';
@@ -46,6 +51,9 @@ type LoadState =
   | { status: 'ready'; data: MembersData };
 
 type Busy = { kind: 'issue' } | { kind: 'share' } | { kind: 'revoke'; inviteId: string } | null;
+
+// 期限の表示を更新する間隔（`formatInviteExpiry` は分の単位。30秒なら、表示は、実際の残りから1分以上ずれない）
+const EXPIRY_TICK_MS = 30_000;
 
 export function MembersScreen({ groupId }: { groupId: string }) {
   const colors = useColors();
@@ -63,6 +71,8 @@ export function MembersScreen({ groupId }: { groupId: string }) {
   // 古い応答を捨てる印。表示できる内容があるか（読み直しの失敗の出し方を分ける）
   const requestSeq = useRef(0);
   const hasData = useRef(false);
+  // 期限の表示に使う「いま」。画面が前面にあるあいだ、一定の間隔で進める
+  const [now, setNow] = useState(() => Date.now());
 
   const reload = useCallback(async () => {
     const seq = (requestSeq.current += 1);
@@ -91,6 +101,14 @@ export function MembersScreen({ groupId }: { groupId: string }) {
     }, [reload]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      setNow(Date.now());
+      const timer = setInterval(() => setNow(Date.now()), EXPIRY_TICK_MS);
+      return () => clearInterval(timer);
+    }, []),
+  );
+
   async function pullToRefresh() {
     setRefreshing(true);
     try {
@@ -114,12 +132,15 @@ export function MembersScreen({ groupId }: { groupId: string }) {
     }
   }
 
-  /** 共有シートを開く。開けなかったときは、文言を出す（招待は、できている）。 */
-  async function openShare(token: string) {
+  /**
+   * 共有シートを開く。開けなかったときは、文言を出す（招待は、できている）。出し方は、操作の場所による（ファイル先頭のコメント）:
+   * 発行のあとの共有は、ボタンの下。一覧の行の「共有」は、ダイアログ。
+   */
+  async function openShare(token: string, onError: (message: string) => void) {
     try {
       await Share.share({ message: inviteShareMessage(inviteUrl(token)) });
     } catch {
-      setActionError(SHARE_FAILED_MESSAGE);
+      onError(SHARE_FAILED_MESSAGE);
     }
   }
 
@@ -137,14 +158,19 @@ export function MembersScreen({ groupId }: { groupId: string }) {
       setTokens((current) => ({ ...current, [issued.id]: issued.token }));
       void reload();
       setBusy({ kind: 'share' });
-      await openShare(issued.token);
+      await openShare(issued.token, setActionError);
     });
   }
 
   function share(inviteId: string) {
     const token = tokens[inviteId];
     if (token === undefined) return;
-    void exclusive({ kind: 'share' }, () => openShare(token));
+    void exclusive({ kind: 'share' }, () => openShare(token, reportRowError));
+  }
+
+  /** 一覧の行の操作の失敗を、ダイアログで出す（ファイル先頭のコメント）。 */
+  function reportRowError(message: string) {
+    Alert.alert('招待', message);
   }
 
   function confirmRevoke(inviteId: string) {
@@ -160,7 +186,7 @@ export function MembersScreen({ groupId }: { groupId: string }) {
       try {
         await inviteService.revoke(inviteId);
       } catch (e) {
-        setActionError(revokeInviteErrorMessage(e));
+        reportRowError(revokeInviteErrorMessage(e));
         if (shouldReloadAfter(e, 'revoke')) void reload();
         return;
       }
@@ -175,16 +201,13 @@ export function MembersScreen({ groupId }: { groupId: string }) {
 
   const view = useMemo(() => {
     if (load.status !== 'ready') return null;
-    const { group, invites } = load.data;
-    return {
-      members: buildMemberList(group.members),
-      invite: buildInviteSection(group),
-      invites: sortInvites(invites),
-    };
+    const { group } = load.data;
+    return { members: buildMemberList(group.members), invite: buildInviteSection(group) };
   }, [load]);
 
-  const now = Date.now();
-  const hasUnshareable = view !== null && view.invites.some((invite) => tokens[invite.id] === undefined);
+  // 期限が切れた招待は出さない（端末の時計。`now` が進むたびに絞り直す）
+  const invites = useMemo(() => (load.status === 'ready' ? visibleInvites(load.data.invites, now) : []), [load, now]);
+  const hasUnshareable = invites.some((invite) => tokens[invite.id] === undefined);
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -266,13 +289,13 @@ export function MembersScreen({ groupId }: { groupId: string }) {
                 招待URLは、発行から3日間有効です。1人が参加すると、そのURLは使えなくなります。
               </Text>
 
-              {view.invites.length > 0 ? (
+              {invites.length > 0 ? (
                 <View style={styles.block}>
                   <Text style={[styles.sectionLabel, { color: colors.textSecondary }]} accessibilityRole="header">
                     使っていない招待
                   </Text>
                   <View>
-                    {view.invites.map((invite) => (
+                    {invites.map((invite) => (
                       <View key={invite.id} style={[styles.inviteRow, { borderBottomColor: colors.border }]}>
                         <MaterialCommunityIcons name="link-variant" size={22} color={colors.textSecondary} />
                         <Text style={[styles.inviteExpiry, { color: colors.textPrimary }]} numberOfLines={1}>

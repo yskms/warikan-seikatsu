@@ -71,19 +71,23 @@ describe('revokeInviteErrorMessage', () => {
 
   it('使われた招待・もう無い招待は、理由を伝える', () => {
     assert.match(revokeInviteErrorMessage(rejected(409, 'invite_already_used')), /すでに使われて/);
-    assert.match(revokeInviteErrorMessage(rejected(404, 'not_found')), /見つかりませんでした/);
+    // 404 は、メンバーでない・グループが無い・自分の招待でない、のとき。取り消し済み・期限切れは、サーバーが成功にする
+    const notFound = revokeInviteErrorMessage(rejected(404, 'not_found'));
+    assert.match(notFound, /グループの状態が変わった/);
+    assert.doesNotMatch(notFound, /取り消された|期限/);
   });
 });
 
 describe('shouldReloadAfter', () => {
-  it('発行: 満員・脱退の確定・グループが見つからないときは、読み直す', () => {
+  it('発行: 満員・脱退の確定・グループが見つからない・未使用の招待が上限のときは、読み直す', () => {
     assert.equal(shouldReloadAfter(rejected(409, 'group_full'), 'issue'), true);
     assert.equal(shouldReloadAfter(rejected(403, 'forbidden'), 'issue'), true);
     assert.equal(shouldReloadAfter(rejected(404, 'not_found'), 'issue'), true);
+    // 別の端末で発行した招待は、読み直すまで一覧に出ない。取り消すものが画面に出るようにする
+    assert.equal(shouldReloadAfter(rejected(409, 'too_many_invites'), 'issue'), true);
   });
 
-  it('発行: 上限・競合・知らない理由・通信の失敗は、読み直さない（画面の状態は変わらない）', () => {
-    assert.equal(shouldReloadAfter(rejected(409, 'too_many_invites'), 'issue'), false);
+  it('発行: 競合・知らない理由・通信の失敗は、読み直さない（画面の状態は変わらない）', () => {
     assert.equal(shouldReloadAfter(rejected(409, 'conflict'), 'issue'), false);
     assert.equal(shouldReloadAfter(rejected(409, null), 'issue'), false);
     assert.equal(shouldReloadAfter(new AuthError('network'), 'issue'), false);

@@ -24,15 +24,20 @@ export interface MemberList {
 }
 
 /**
- * 状態の文言。`active` で脱退月がある人は、脱退を選んだだけ（月を締めるか翌月1日に確定する。取り消せる）。`leaving` は、脱退が確定
- * したが、関わる送金が未処理のため、メンバーに残っている（docs/backend-design.md 5章）。**知らない状態（`unknown`）は、
- * 何も添えず、いるメンバーとして出す**（いまの画面は、メンバーの状態で操作の可否を決めない。招待できるかは、サーバーの `canInvite`）。
+ * 状態の文言。`active` で脱退月がある人は、脱退を選んだだけ（月を締めるか翌月1日に確定する。取り消せる）。ただし、脱退月が終わった
+ * 人（`leaveEffective`。翌月1日のCronが `status` を書くまでの間）は、すでに確定したものとして扱われている（サーバーの判定。
+ * 月の判定をアプリで書き写さない）ので、「脱退予定」と出さず、「脱退が確定」と出す。`leaving` は、脱退が確定したが、関わる送金が
+ * 未処理のため、メンバーに残っている（docs/backend-design.md 5章）。**知らない状態（`unknown`）は、何も添えず、いるメンバーとして
+ * 出す**（この画面は、メンバーの状態で操作の可否を決めない。招待できるかは、サーバーの `canInvite`）。
  */
-export function memberStatusLabel(member: Pick<GroupMember, 'status' | 'leaveRequestedMonth'>): string | null {
+export function memberStatusLabel(
+  member: Pick<GroupMember, 'status' | 'leaveRequestedMonth' | 'leaveEffective'>,
+): string | null {
   switch (member.status) {
     case 'active': {
       if (member.leaveRequestedMonth === null) return null;
       const month = formatMonthShort(member.leaveRequestedMonth);
+      if (member.leaveEffective) return `${month}で脱退が確定`;
       const next = nextMonth(member.leaveRequestedMonth);
       const confirmDay = next === null ? '翌月1日' : `${formatMonthShort(next)}1日`;
       return `${month}で脱退予定（${month}を締めるか、${confirmDay}に確定）`;
@@ -82,13 +87,15 @@ export interface InviteSection {
   note: string | null;
 }
 
-/** 招待の欄の出し分け。人数の判定は書き写さず、サーバーの `canInvite` と、人数の値（満員の説明にだけ使う）を使う。 */
+/**
+ * 招待の欄の出し分け。人数の判定は書き写さず、サーバーの `canInvite` と、人数の値（満員の説明にだけ使う）を使う。自分の脱退が
+ * 確定したものとして扱われているか（`leaveEffective`。`status` が `leaving` 以降のほか、`active` のまま脱退月が終わった人を含む）も、
+ * サーバーの値で決める（月の判定を書き写さない）。
+ */
 export function buildInviteSection(group: Pick<GroupDetail, 'memberId' | 'members' | 'canInvite' | 'seatedMembers' | 'maxMembers'>): InviteSection {
   const me = group.members.find((member) => member.id === group.memberId);
-  // 自分の脱退が確定している（`leaving` 以降）と、招待できない。そもそも欄を出さない
-  if (me !== undefined && (me.status === 'leaving' || me.status === 'left' || me.status === 'deleted')) {
-    return { visible: false, canInvite: false, note: null };
-  }
+  // 自分の脱退が確定したものとして扱われると、招待できない（発行も、すでに発行した招待を使うことも）。そもそも欄を出さない
+  if (me !== undefined && me.leaveEffective) return { visible: false, canInvite: false, note: null };
   if (group.canInvite) return { visible: true, canInvite: true, note: null };
   const full = group.seatedMembers >= group.maxMembers;
   return {
@@ -121,4 +128,13 @@ export function formatInviteExpiry(expiresAt: number, now: number): string {
 /** 招待の一覧の並び（新しく発行したものが上）。 */
 export function sortInvites(invites: readonly Invite[]): Invite[] {
   return [...invites].sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? -1 : 1));
+}
+
+/**
+ * 一覧に出す招待。新しく発行したものが上。**端末の時計で、期限が切れたものは出さない**（サーバーの一覧も、期限内のものだけ。
+ * 画面を開いたままで期限が来たものを、「共有」で、使えないURLとして送れてしまわないように）。端末の時計がずれていても、一覧を
+ * 読み直せば、サーバーの判定に戻る。
+ */
+export function visibleInvites(invites: readonly Invite[], now: number): Invite[] {
+  return sortInvites(invites.filter((invite) => invite.expiresAt > now));
 }

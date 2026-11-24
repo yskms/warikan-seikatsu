@@ -70,6 +70,7 @@ const member = (id: string, displayName: string, isMe = false): GroupMember => (
   historyFromMonth: '2026-10',
   leaveRequestedMonth: null,
   expenseEndMonth: null,
+  leaveEffective: false,
   isMe,
 });
 

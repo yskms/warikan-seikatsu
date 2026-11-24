@@ -10,6 +10,7 @@ import {
   formatInviteExpiry,
   memberStatusLabel,
   sortInvites,
+  visibleInvites,
 } from './memberView.ts';
 
 function member(overrides: Partial<GroupMember> & { id: string }): GroupMember {
@@ -20,38 +21,43 @@ function member(overrides: Partial<GroupMember> & { id: string }): GroupMember {
     historyFromMonth: '2026-11',
     leaveRequestedMonth: null,
     expenseEndMonth: null,
+    leaveEffective: false,
     isMe: false,
     ...overrides,
   };
 }
 
 describe('memberStatusLabel', () => {
+  const label = (status: GroupMember['status'], leaveRequestedMonth: string | null, leaveEffective = false) =>
+    memberStatusLabel({ status, leaveRequestedMonth, leaveEffective });
+
   it('参加中（脱退を選んでいない）は、何も添えない', () => {
-    assert.equal(memberStatusLabel({ status: 'active', leaveRequestedMonth: null }), null);
+    assert.equal(label('active', null), null);
   });
 
   it('脱退を選んだだけの人は、月と、確定する日を添える', () => {
-    assert.equal(
-      memberStatusLabel({ status: 'active', leaveRequestedMonth: '2026-06' }),
-      '6月で脱退予定（6月を締めるか、7月1日に確定）',
-    );
-    assert.equal(
-      memberStatusLabel({ status: 'active', leaveRequestedMonth: '2026-12' }),
-      '12月で脱退予定（12月を締めるか、1月1日に確定）',
-    );
+    assert.equal(label('active', '2026-06'), '6月で脱退予定（6月を締めるか、7月1日に確定）');
+    assert.equal(label('active', '2026-12'), '12月で脱退予定（12月を締めるか、1月1日に確定）');
+  });
+
+  it('脱退月が終わった人（サーバーが確定したものとして扱う。Cronの確定の前）は、「脱退予定」と出さない', () => {
+    assert.equal(label('active', '2026-06', true), '6月で脱退が確定');
+    // 確定の日付は、すでに過ぎているので出さない
+    assert.doesNotMatch(label('active', '2026-06', true) ?? '', /1日/);
   });
 
   it('脱退が確定した人・脱退済みの人', () => {
-    assert.equal(memberStatusLabel({ status: 'leaving', leaveRequestedMonth: '2026-06' }), '脱退が確定（精算が残っています）');
-    assert.equal(memberStatusLabel({ status: 'left', leaveRequestedMonth: '2026-06' }), '脱退済み');
+    assert.equal(label('leaving', '2026-06', true), '脱退が確定（精算が残っています）');
+    assert.equal(label('left', '2026-06', true), '脱退済み');
   });
 
   it('削除したユーザーは、名前（サーバーが匿名にしている）に任せて、何も添えない', () => {
-    assert.equal(memberStatusLabel({ status: 'deleted', leaveRequestedMonth: null }), null);
+    assert.equal(label('deleted', null, true), null);
   });
 
   it('知らない状態は、何も添えない', () => {
-    assert.equal(memberStatusLabel({ status: 'unknown', leaveRequestedMonth: null }), null);
+    assert.equal(label('unknown', null), null);
+    assert.equal(label('unknown', null, true), null);
   });
 });
 
@@ -86,7 +92,7 @@ describe('buildMemberList', () => {
 
 describe('buildInviteSection', () => {
   const base = { memberId: 'me', canInvite: true, seatedMembers: 2, maxMembers: 5 };
-  const members = (status: GroupMember['status']) => [member({ id: 'me', isMe: true, status })];
+  const members = (status: GroupMember['status'], leaveEffective = false) => [member({ id: 'me', isMe: true, status, leaveEffective })];
 
   it('招待できるとき（サーバーの canInvite）は、理由を添えない', () => {
     assert.deepEqual(buildInviteSection({ ...base, members: members('active') }), { visible: true, canInvite: true, note: null });
@@ -110,14 +116,28 @@ describe('buildInviteSection', () => {
     assert.equal(buildInviteSection({ ...base, members: members('active'), seatedMembers: 5 }).canInvite, true);
   });
 
-  it('自分の脱退が確定しているときは、欄を出さない', () => {
+  it('自分の脱退が確定したものとして扱われているときは、欄を出さない（status が leaving 以降の人）', () => {
     for (const status of ['leaving', 'left', 'deleted'] as const) {
-      assert.deepEqual(buildInviteSection({ ...base, members: members(status), canInvite: false }), {
+      assert.deepEqual(buildInviteSection({ ...base, members: members(status, true), canInvite: false }), {
         visible: false,
         canInvite: false,
         note: null,
       });
     }
+  });
+
+  it('脱退月が終わった（Cronの確定の前。status は active のまま）自分も、欄を出さない。「いまは、招待できません。」とは出さない', () => {
+    const me = member({ id: 'me', isMe: true, leaveRequestedMonth: '2026-10', leaveEffective: true });
+    assert.deepEqual(buildInviteSection({ ...base, members: [me], canInvite: false }), {
+      visible: false,
+      canInvite: false,
+      note: null,
+    });
+  });
+
+  it('他の人の脱退が確定していても、自分の欄には関係しない', () => {
+    const other = member({ id: 'other', status: 'leaving', leaveEffective: true });
+    assert.equal(buildInviteSection({ ...base, members: [member({ id: 'me', isMe: true }), other] }).visible, true);
   });
 
   it('自分を見つけられない・自分の状態が分からないときも、サーバーの canInvite に従って欄を出す', () => {
@@ -178,5 +198,22 @@ describe('sortInvites', () => {
       { id: 'a', expiresAt: 3, createdAt: 1 },
     ];
     assert.deepEqual(sortInvites(invites).map((invite) => invite.id), ['a', 'b']);
+  });
+});
+
+describe('visibleInvites', () => {
+  const now = 1_000;
+  it('期限が切れた招待（端末の時計で）は出さない。期限ちょうども出さない。新しいものが上', () => {
+    const invites = [
+      { id: 'a', expiresAt: now + 1, createdAt: 1 },
+      { id: 'b', expiresAt: now, createdAt: 2 },
+      { id: 'c', expiresAt: now - 1, createdAt: 3 },
+      { id: 'd', expiresAt: now + 5000, createdAt: 4 },
+    ];
+    assert.deepEqual(visibleInvites(invites, now).map((invite) => invite.id), ['d', 'a']);
+  });
+
+  it('全部切れていれば空', () => {
+    assert.deepEqual(visibleInvites([{ id: 'a', expiresAt: now - 1, createdAt: 1 }], now), []);
   });
 });

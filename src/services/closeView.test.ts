@@ -16,6 +16,7 @@ const member = (id: string, displayName: string, patch: Partial<GroupMember> = {
   historyFromMonth: '2026-10',
   leaveRequestedMonth: null,
   expenseEndMonth: null,
+  leaveEffective: false,
   isMe: id === 'm1',
   ...patch,
 });

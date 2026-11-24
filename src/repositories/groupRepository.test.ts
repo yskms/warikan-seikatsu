@@ -38,6 +38,7 @@ const member = {
   historyFromMonth: '2026-11',
   leaveRequestedMonth: null,
   expenseEndMonth: null,
+  leaveEffective: false,
   isMe: true,
 };
 
@@ -156,6 +157,8 @@ describe('get', () => {
       { group: { ...group, members: [null] } },
       { group: { ...group, members: [{ ...member, status: 1 }] } },
       { group: { ...group, members: [{ ...member, isMe: 'yes' }] } },
+      { group: { ...group, members: [{ ...member, leaveEffective: 'no' }] } },
+      { group: { ...group, members: [{ ...member, leaveEffective: undefined }] } },
       { group: { ...group, currencyLocked: 'no' } },
       { group: { ...group, maxMembers: 5.5 } },
       { group: { ...group, name: 1 } },

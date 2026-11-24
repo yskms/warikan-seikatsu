@@ -41,6 +41,7 @@ function member(id: string, extra: Partial<GroupMember> = {}): GroupMember {
     historyFromMonth: '2026-01',
     leaveRequestedMonth: null,
     expenseEndMonth: null,
+    leaveEffective: false,
     isMe: id === 'm1',
     ...extra,
   };

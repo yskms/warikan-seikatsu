@@ -68,6 +68,7 @@ function parseMember(value: unknown): GroupMember {
     historyFromMonth: str(data.historyFromMonth),
     leaveRequestedMonth: nullableStr(data.leaveRequestedMonth),
     expenseEndMonth: nullableStr(data.expenseEndMonth),
+    leaveEffective: bool(data.leaveEffective),
     isMe: bool(data.isMe),
   };
 }
