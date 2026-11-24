@@ -9,11 +9,17 @@ import { AuthError } from '../repositories/authError.ts';
 import { CategoryRejectedError } from '../repositories/categoryRepository.ts';
 import { formatMonth } from './dateFormat.ts';
 
-export type CategoryAction = 'save-share' | 'create' | 'update' | 'reorder';
+/**
+ * `create-update` は、追加で、作成は済んだあとの、入力の反映（`PATCH`）。結果が分からない失敗のあとに送り直したとき、サーバーは
+ * 保存済みの費目をそのまま返すので、直した内容をあとから送る（`CategoryEditSheet.tsx`）。作成と失敗の扱いを分ける（作成は
+ * 済んでいるので、新しい `id` にしてはいけない）。
+ */
+export type CategoryAction = 'save-share' | 'create' | 'create-update' | 'update' | 'reorder';
 
 const FAILED: Record<CategoryAction, string> = {
   'save-share': '割合を保存できませんでした。',
   create: 'カテゴリを追加できませんでした。',
+  'create-update': 'カテゴリは追加できましたが、入力した内容を反映できませんでした。',
   update: 'カテゴリを変更できませんでした。',
   reorder: '並べ替えを保存できませんでした。',
 };
@@ -25,11 +31,11 @@ function codeOf(error: unknown): string {
 /**
  * サーバーが断ったあとに、画面の内容を読み直すか。他のメンバーの操作で古くなったとき（競合・メンバーや費目の増減・月が
  * 締まった）は読み直して、もう一度操作してもらう。入力の形・権限・範囲外などは、読み直しても同じなので読み直さない。
- * **追加（`create`）は読み直さない**: 追加の入力（名前・アイコン・色）に、サーバーの内容に合わせて作り直すものが無く、読み直すと
- * 入力した内容が消える。追加の 409 `conflict` は、この `id` を他のグループが使っているとき（`isCreateIdConflict`）。
+ * **追加（`create`・`create-update`）は読み直さない**: 追加の入力（名前・アイコン・色）に、サーバーの内容に合わせて作り直すものが
+ * 無く、読み直すと入力した内容が消える。
  */
 export function shouldReloadAfter(error: unknown, action: CategoryAction): boolean {
-  if (action === 'create') return false;
+  if (action === 'create' || action === 'create-update') return false;
   if (!(error instanceof CategoryRejectedError)) return false;
   return (
     error.reason === 'conflict' ||
@@ -40,10 +46,12 @@ export function shouldReloadAfter(error: unknown, action: CategoryAction): boole
 }
 
 /**
- * 追加の 409 `conflict`（この作成の `id` を、他のグループが使っている）。同じ `id` で送り直しても、同じ失敗になるので、
- * 画面は新しい `id` を作る。
+ * 追加（作成の呼び出し）の 409 `conflict`。理由は2つあり、どちらも**作られていない**: この `id` を他のグループが使っている、
+ * 書き込みの競合が2回続いた（Workerの `writeFailure`）。前者は、同じ `id` で送り直しても同じ失敗になるので、画面は新しい `id` に
+ * する（後者でも、作られていないので、新しい `id` にして安全）。**作成が済んだあとの `PATCH` の 409 には使わない**（作成は
+ * 済んでいるので、新しい `id` にすると、同じカテゴリが2つできる。`create-update`）。
  */
-export function isCreateIdConflict(error: unknown): boolean {
+export function isCreateConflict(error: unknown): boolean {
   return error instanceof CategoryRejectedError && error.reason === 'conflict';
 }
 
@@ -60,8 +68,8 @@ export function categoryErrorMessage(error: unknown, action: CategoryAction): st
   if (error instanceof CategoryRejectedError) {
     switch (error.reason) {
       case 'conflict':
-        // 追加の 409 は、他のメンバーの操作との競合ではない（`isCreateIdConflict`）。入力は残っているので、もう一度押してもらう
-        if (action === 'create') return 'カテゴリを追加できませんでした。もう一度お試しください。';
+        // 追加の 409 は、他のメンバーの操作との競合ではない（`isCreateConflict`）。入力は残っているので、もう一度押してもらう
+        if (action === 'create' || action === 'create-update') return `${FAILED[action]}もう一度お試しください。`;
         return '他の操作と重なりました。画面を読み直しました。確認して、もう一度お試しください。';
       case 'month_closed':
         return 'この月は、すでに締められています。締めた月の割合は変えられません。';

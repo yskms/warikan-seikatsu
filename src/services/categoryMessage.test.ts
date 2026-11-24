@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import { AuthError } from '../repositories/authError.ts';
 import { CategoryRejectedError } from '../repositories/categoryRepository.ts';
-import { categoryErrorMessage, isCreateIdConflict, resultUnknown, shouldReloadAfter } from './categoryMessage.ts';
+import { categoryErrorMessage, isCreateConflict, resultUnknown, shouldReloadAfter } from './categoryMessage.ts';
 
 const rejected = (reason: string | null, detail: ConstructorParameters<typeof CategoryRejectedError>[1] = {}, status = 409) =>
   new CategoryRejectedError(status, { reason, ...detail });
@@ -30,16 +30,18 @@ describe('shouldReloadAfter', () => {
   it('追加は、どの理由でも読み直さない（読み直すと、入力した名前・アイコン・色が消える）', () => {
     for (const reason of ['conflict', 'members_changed', 'categories_changed', 'month_closed', 'too_many_categories']) {
       assert.equal(shouldReloadAfter(rejected(reason), 'create'), false, reason);
+      // 作成が済んだあとの反映も、同じ（読み直すと、追加のシートの入力が消える）
+      assert.equal(shouldReloadAfter(rejected(reason), 'create-update'), false, reason);
     }
   });
 });
 
-describe('isCreateIdConflict', () => {
-  it('409 conflict だけ（この id を他のグループが使っている。同じ id では直らない）', () => {
-    assert.equal(isCreateIdConflict(rejected('conflict')), true);
-    assert.equal(isCreateIdConflict(rejected('too_many_categories')), false);
-    assert.equal(isCreateIdConflict(rejected(null, {}, 400)), false);
-    assert.equal(isCreateIdConflict(new AuthError('network')), false);
+describe('isCreateConflict', () => {
+  it('409 conflict だけ（この id を他のグループが使っている、または書き込みの競合が続いた。どちらも作られていない）', () => {
+    assert.equal(isCreateConflict(rejected('conflict')), true);
+    assert.equal(isCreateConflict(rejected('too_many_categories')), false);
+    assert.equal(isCreateConflict(rejected(null, {}, 400)), false);
+    assert.equal(isCreateConflict(new AuthError('network')), false);
   });
 });
 
@@ -68,6 +70,17 @@ describe('categoryErrorMessage（断られたとき）', () => {
 
   it('追加の競合は、他の操作との競合ではないので、重なったとは言わない（入力は残っていて、もう一度押せばよい）', () => {
     assert.equal(categoryErrorMessage(rejected('conflict'), 'create'), 'カテゴリを追加できませんでした。もう一度お試しください。');
+  });
+
+  it('追加で、作成は済んだあとの反映の失敗は、「追加できませんでした」と言わない（カテゴリは作られている）', () => {
+    assert.equal(
+      categoryErrorMessage(rejected('conflict'), 'create-update'),
+      'カテゴリは追加できましたが、入力した内容を反映できませんでした。もう一度お試しください。',
+    );
+    assert.match(categoryErrorMessage(new AuthError('network'), 'create-update'), /通信できませんでした/);
+    assert.match(categoryErrorMessage(rejected('not_found', {}, 404), 'create-update'), /確認できませんでした/);
+    assert.match(categoryErrorMessage(rejected('invalid_request', {}, 400), 'create-update'), /^カテゴリは追加できましたが/);
+    assert.doesNotMatch(categoryErrorMessage(new AuthError('network'), 'create-update'), /追加できませんでした/);
   });
 
   it('直せる月の範囲が分かれば、範囲を案内する。分からなければ範囲なしの文言', () => {

@@ -9,10 +9,9 @@
 // - 追加は、名前・アイコン・色だけ（割合は、サーバーが均等で作る。直すのは、追加したあとに一覧から）。
 // - 編集の保存は、変えたものだけを送る（名前・アイコン・色は `PATCH`、割合・上限額は `PUT`。2つの呼び出し）。名前などが
 //   済んで割合が断られたら、名前などは済んだこととして残し、やり直すときは割合だけを送る。
-// - 追加の `id` は、最初に保存を押したときに1回だけ作り、やり直しでも使い回す（結果が分からない失敗のあとで、同じカテゴリが
-//   2つにならない）。**サーバーは、同じ `id` の再送に、保存済みの費目をそのまま返す**（内容は見比べない）ので、結果が分からない
-//   失敗のあとに入力を直して送り直すと、直した内容が反映されない。そのため、その送り直しのあとに、直した内容を `PATCH` で送る。
-//   追加の 409 `conflict` は、この `id` を他のグループが使っているとき（同じ `id` では直らない）なので、新しい `id` にする。
+// - 追加の手順（作成の `id` の使い回し、結果が分からない失敗のあとの `PATCH`、作成が済んだあとの失敗の扱い）は、画面の外の
+//   `src/services/categoryCreate.ts`（`npm test` で守る。理由はそちらの先頭）。この画面は、失敗した段階（`create`・`create-update`）の
+//   文言を出すだけ。追加が断られても、読み直さず、入力を残す。
 // - 他のメンバーの操作で古くなった（競合・メンバーの増減・月が締まった）と断られたら、読み直して、入力を新しい内容から作り直す
 //   （編集だけ。追加は、入力を残す）。
 // - 通信の最中は、✕も、戻る操作も効かない。変えた入力があるときの✕・戻る操作は、破棄の確認を出す。止めているのは `beforeRemove`
@@ -58,12 +57,8 @@ import {
   type CategoryDraft,
   type CategoryFormContext,
 } from '../../src/services/categoryForm.ts';
-import {
-  categoryErrorMessage,
-  isCreateIdConflict,
-  resultUnknown,
-  shouldReloadAfter,
-} from '../../src/services/categoryMessage.ts';
+import { categoryErrorMessage, shouldReloadAfter, type CategoryAction } from '../../src/services/categoryMessage.ts';
+import { createCategoryAdder } from '../../src/services/categoryCreate.ts';
 import type { CategorySettingsData } from '../../src/services/categoryService.ts';
 import { orderShareMembers } from '../../src/services/categoryView.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
@@ -120,9 +115,14 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);
-  // 追加の識別子と、結果が分からない失敗があったか（上のコメント）
-  const createId = useRef<string | null>(null);
-  const createUncertain = useRef(false);
+  // 追加の手順（`id`・結果が分からない失敗・作成が済んだか、を持つ。読み込みの状態を持つ入れ物なので、`useState` で持つ）
+  const [adder] = useState(() =>
+    createCategoryAdder({
+      createCategory: (id, input) => categoryService.createCategory(id, input),
+      updateCategory: (id, input) => categoryService.updateCategory(id, input),
+      newId,
+    }),
+  );
   // 名前・アイコン・色の保存が済んだか（そのあとの破棄の確認の文言が、事実と合うように）
   const profileSaved = useRef(false);
   // 読み込んだときの入力（変えたかの判定。保存で名前などが済んだら、その内容に更新する）
@@ -219,20 +219,22 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
     }
   }
 
-  async function run(task: () => Promise<void>, action: 'save-share' | 'create' | 'update') {
+  async function run(
+    task: (setAction: (next: CategoryAction) => void) => Promise<void>,
+    initialAction: CategoryAction,
+  ) {
     if (running.current) return;
     running.current = true;
     setBusy(true);
     setError(null);
+    // 1回の操作の中で、失敗の扱いが変わる段階がある（追加の、作成と、そのあとの反映）。失敗した段階の種類で、文言と扱いを決める
+    let action = initialAction;
     try {
-      await task();
+      await task((next) => {
+        action = next;
+      });
     } catch (e) {
       const message = categoryErrorMessage(e, action);
-      if (action === 'create' && isCreateIdConflict(e)) {
-        // この `id` を他のグループが使っている。同じ `id` では直らないので、次に押したときは、新しい `id` にする
-        createId.current = null;
-        createUncertain.current = false;
-      }
       if (shouldReloadAfter(e, action)) await reloadAfterRejection(message);
       else setError(message);
     } finally {
@@ -251,18 +253,12 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
       return;
     }
     if (ctx.editing === null) {
-      void run(async () => {
-        createId.current ??= newId();
-        const body = buildCreateInput(check, current);
-        // 前の送信の結果が分からないまま送り直すとき、サーバーは保存済みの費目をそのまま返す（上のコメント）。入力が変わって
-        // いても、直した内容が反映されるよう、送り直したあとに `PATCH` で確かめる（同じ内容なら、何も変わらない）
-        const retry = createUncertain.current;
-        try {
-          const created = await categoryService.createCategory(groupId, { id: createId.current, ...body });
-          if (retry) await categoryService.updateCategory(created.id, body);
-        } catch (e) {
-          if (resultUnknown(e)) createUncertain.current = true;
-          throw e;
+      void run(async (setAction) => {
+        const result = await adder.submit(groupId, buildCreateInput(check, current));
+        if (!result.ok) {
+          // 失敗した段階で、文言と扱いが変わる（作成が済んだあとの失敗は、「追加できませんでした」と言わない）
+          setAction(result.step);
+          throw result.error;
         }
         leave();
       }, 'create');
