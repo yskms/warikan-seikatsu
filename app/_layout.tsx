@@ -59,8 +59,8 @@ function RootNavigator() {
       <Stack.Protected guard={state.status === 'signed-in' && !showJoin}>
         <Stack.Screen name="(main)" />
         <Stack.Screen name="create-group" />
-        {/* カテゴリと負担割合も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。素早く2回押すと、`router.push` が
-            2回通り、同じ一覧が2枚重なる。 */}
+        {/* カテゴリと負担割合も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。下の `members` と同じ仕組みで、
+            素早く2回押すと重なるはず（エミュレータでは、付ける前も付けたあとも未確認。docs/screens.md 5章） */}
         <Stack.Screen name="categories" dangerouslySingular />
         {/* メンバーと招待は、`dangerouslySingular` で、2枚重ねない。入口は、設定の行と、ホームの「相手を招待する」カード。素早く2回
             押すと、`router.push` が2回通り、画面が2枚重なる（エミュレータで確かめた）。この画面は、発行した招待のトークンを画面の
