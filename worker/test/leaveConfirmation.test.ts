@@ -4,7 +4,7 @@
 // ローカルD1（miniflare）での検査なので、確かめるのはロジック。
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { dueLeaves, firstResettableMonth, isLastMember, monthsToReset } from '../src/membership.ts';
+import { closeDeletesGroup, dueLeaves, firstResettableMonth, isLastMember, monthsToReset } from '../src/membership.ts';
 import type { MemberInfo } from '../src/monthState.ts';
 import {
   createFixtureFactory,
@@ -58,6 +58,16 @@ describe('脱退の確定の対象と、最後の1人の判定（純粋な関数
     const second = member('b', { leaveRequestedMonth: '2026-10' });
     assert.equal(isLastMember([alone, second], [alone, second]), false, '2人が同時に抜けるときは、精算が残るので消さない');
     assert.equal(isLastMember([alone], []), false, '抜ける人がいなければ false');
+  });
+
+  it('closeDeletesGroup: その月を脱退月に選んでいる、最後の1人のときだけ true', () => {
+    const alone = (month: string) => [member('a', { leaveRequestedMonth: month })];
+    assert.equal(closeDeletesGroup(alone('2026-11'), '2026-11'), true, 'この月を脱退月に選んだ最後の1人');
+    assert.equal(closeDeletesGroup(alone('2026-12'), '2026-11'), false, '別の月を選んでいるなら、消えない');
+    assert.equal(closeDeletesGroup([member('a')], '2026-11'), false, '脱退を選んでいない');
+    assert.equal(closeDeletesGroup([...alone('2026-11'), member('b')], '2026-11'), false, '残る人がいる');
+    const leaving = member('c', { status: 'leaving', expenseEndMonth: '2026-10' });
+    assert.equal(closeDeletesGroup([...alone('2026-11'), leaving], '2026-11'), false, '精算を待つ人も、メンバーとして残っている');
   });
 });
 
@@ -446,6 +456,48 @@ describe('月締めでの脱退の確定', () => {
       const g = await setup(['alice']);
       assert.equal((await api.close(g.people.alice, g.groupId, '2026-10')).status, 201);
       assert.equal((await countRows(g.groupId)).expense_groups, 1);
+    });
+
+    it('締める前の集計（summary）の close.deletesGroup で、締めるとグループが消えることが分かる', async () => {
+      const g = await setup(['alice'], { alice: { leaveRequestedMonth: '2026-10' } });
+      const summary = await api.summary(g.people.alice, g.groupId, '2026-10');
+      assert.deepEqual(summary.body.close, { closable: true, deletesGroup: true });
+      // 見ただけでは、何も消えない。
+      assert.equal((await countRows(g.groupId)).expense_groups, 1);
+    });
+
+    it('close.deletesGroup は、脱退を選んでいない・残る人がいるときは false', async () => {
+      const none = await setup(['alice']);
+      assert.deepEqual((await api.summary(none.people.alice, none.groupId, '2026-10')).body.close, {
+        closable: true,
+        deletesGroup: false,
+      });
+      const two = await setup(['alice', 'bob'], { alice: { leaveRequestedMonth: '2026-10' } });
+      assert.deepEqual((await api.summary(two.people.bob, two.groupId, '2026-10')).body.close, {
+        closable: true,
+        deletesGroup: false,
+      });
+    });
+
+    it('脱退月が飛ばされた月でも、本人は締められず（forbidden）、残る人が締める summary は deletesGroup: false', async () => {
+      const g = await setup(['alice', 'bob'], { alice: { leaveRequestedMonth: '2026-10' } });
+      await insertExpenseRow(db, {
+        groupId: g.groupId,
+        categoryId: g.categoryId,
+        payerMemberId: g.people.bob.memberId,
+        amountMinor: 6000,
+        targetMonth: '2026-11',
+      });
+      // 脱退月（2026-10）が終わった本人は、2026-11 の集計に入らない。締められる人は、ほかの参加中のメンバー（残る人）だけなので、
+      // 飛ばされた月の脱退の確定が、最後の1人を消すことは無い。
+      assert.deepEqual((await api.summary(g.people.alice, g.groupId, '2026-11')).body.close, {
+        closable: false,
+        reason: 'forbidden',
+      });
+      assert.deepEqual((await api.summary(g.people.bob, g.groupId, '2026-11')).body.close, {
+        closable: true,
+        deletesGroup: false,
+      });
     });
 
     it('脱退済み・削除済みのメンバーがいても、参加中の1人だけなら、最後の1人', async () => {

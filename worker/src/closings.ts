@@ -13,11 +13,11 @@ import { loadClosedMonth, markLeftStatement } from './closedMonth.ts';
 import { insertRowsGuarded, readDataVersion, writeToGroup } from './groupWrite.ts';
 import { conflict, forbidden, json, notFound, unauthorized } from './http.ts';
 import {
+  closeDeletesGroup,
   confirmEndedLeaves,
   confirmLeaveStatements,
   deleteGroupStatements,
   dueLeaves,
-  isLastMember,
   loadCategoryIds,
   loadRuleMonthsAfter,
 } from './membership.ts';
@@ -78,7 +78,15 @@ export async function handleMonthSummary(
     })),
     // 見込み。締めるまで確定しないので、IDも状態も無い。
     transfers: result.transfers,
-    close: block === null ? { closable: true } : { closable: false, ...block },
+    // `deletesGroup`: 締めると、締めずにグループのデータがすべて消える（最後の1人の脱退が確定する）。アプリが、締める前の
+    // 確認で警告を出すための値で、最後の1人かの規則をアプリに書き写さないために返す（`closeDeletesGroup`）。
+    close:
+      block === null
+        ? {
+            closable: true,
+            deletesGroup: closeDeletesGroup([...state.members.values()], month),
+          }
+        : { closable: false, ...block },
   });
 }
 
@@ -139,11 +147,12 @@ export async function handleCloseMonth(
     // 脱退月が、この月より前なのに、確定していない。脱退月が、最初の締めで飛ばされた月のときに起きる（飛ばした月は、
     // 締められないので、締めで確定する機会が無い）。このまま締めると、確定の前の割合で計算し、脱退した人に負担が付く。
     // 先に、Cronと同じ処理で確定させる（この月の割合から、脱退した人が外れる）。確定のあとは、集計が変わるので、
-    // 締めずに409を返し、読み直してもらう。
+    // 締めずに409を返し、読み直してもらう。この確定が、グループを消すことは無い（その脱退者は、最後の1人にならない。
+    // `closeDeletesGroup` の説明）ので、読み直しが404になることは無い。
     await confirmEndedLeaves(db, groupId, now);
     return conflict('conflict');
   }
-  if (isLastMember(members, due)) {
+  if (closeDeletesGroup(members, month)) {
     // 最後の1人が抜けるときは、締めずに、グループのデータをすべて消す（5章「グループの削除」）。
     const deleted = await writeToGroup(db, groupId, version, (token) => deleteGroupStatements(db, token, groupId));
     if (!deleted.ok) return conflict('conflict');

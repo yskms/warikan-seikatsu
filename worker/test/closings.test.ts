@@ -108,7 +108,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
           },
         ],
         transfers: [{ fromMemberId: bob.memberId, toMemberId: alice.memberId, amountMinor: 3000 }],
-        close: { closable: true },
+        close: { closable: true, deletesGroup: false },
       });
     });
 
@@ -245,7 +245,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
     it('その月のメンバーでない人には、締められないと添える（脱退月が終わったメンバー）', async () => {
       const g = await setup(['alice', 'bob'], { bob: { leaveRequestedMonth: '2026-10' } });
       const { body } = await api.summary(g.people.alice, g.groupId, '2026-10');
-      assert.deepEqual(body.close, { closable: true });
+      assert.deepEqual(body.close, { closable: true, deletesGroup: false });
       const december = await api.summary(g.people.bob, g.groupId, '2026-12', { now: NOW_DECEMBER });
       assert.equal(december.status, 200);
       assert.deepEqual(december.body.close, { closable: false, reason: 'forbidden' });
@@ -508,7 +508,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
         const g = await setup(['alice', 'bob']);
         await pay(g, g.people.alice, 1000, '2026-11');
         const summary = await api.summary(g.people.alice, g.groupId, '2026-11');
-        assert.deepEqual(summary.body.close, { closable: true });
+        assert.deepEqual(summary.body.close, { closable: true, deletesGroup: false });
         assert.equal((await api.close(g.people.alice, g.groupId, '2026-11')).status, 201);
       });
 
@@ -541,7 +541,7 @@ describe('月次集計・月締め・締め結果のAPI', () => {
 
         // 締める前の見込みにも、繰越が入る。
         const preview = (await api.summary(bob, g.groupId, '2026-11')).body;
-        assert.deepEqual(preview.close, { closable: true });
+        assert.deepEqual(preview.close, { closable: true, deletesGroup: false });
         assert.equal(preview.totalMinor, 4000);
         assert.deepEqual(
           preview.members.map((m: { burdenMinor: number; differenceMinor: number; carriedInMinor: number; netMinor: number }) => [

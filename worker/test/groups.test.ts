@@ -331,6 +331,26 @@ describe('グループのAPI', () => {
       assert.deepEqual([carol.seatedMembers, carol.canInvite], [3, false]);
     });
 
+    it('leaveDeletesGroup: 自分が脱退を選んで確定したら、グループが消えるか（最後の1人）。残る人・精算を待つ人がいれば false', async () => {
+      const solo = await factory.createGroup(['alice']);
+      const aloneGroup = (await api.getGroup(solo.people.alice, solo.groupId)).body.group;
+      assert.equal(aloneGroup.leaveDeletesGroup, true);
+      // 脱退済み・削除済みの人は、残る人に数えない。
+      await factory.addMember(solo.groupId, 'erin', null, { status: 'left', expenseEndMonth: '2026-09' });
+      await factory.addMember(solo.groupId, 'dave', null, { status: 'deleted', expenseEndMonth: '2026-09' });
+      assert.equal((await api.getGroup(solo.people.alice, solo.groupId)).body.group.leaveDeletesGroup, true);
+
+      const pair = await factory.createGroup(['alice', 'bob']);
+      assert.equal((await api.getGroup(pair.people.alice, pair.groupId)).body.group.leaveDeletesGroup, false);
+
+      // 脱退が確定して、精算を待っている人（leaving）も、メンバーとして残っている。
+      const waiting = await factory.createGroup(['alice']);
+      await factory.addMember(waiting.groupId, 'carol', null, { status: 'leaving', expenseEndMonth: '2026-10' });
+      assert.equal((await api.getGroup(waiting.people.alice, waiting.groupId)).body.group.leaveDeletesGroup, false);
+      // 脱退が確定した本人は、もう脱退を選べないので false。
+      assert.equal((await api.getGroup(f.carol, f.groupId)).body.group.leaveDeletesGroup, false);
+    });
+
     it('人数の上限: 満員なら canInvite は false。脱退月が終わった人（Cronの確定の前）は数えず、その人自身も false', async () => {
       const g = await factory.createGroup(['alice', 'bob', 'carol', 'dave', 'erin']);
       const full = (await api.getGroup(g.people.alice, g.groupId)).body.group;

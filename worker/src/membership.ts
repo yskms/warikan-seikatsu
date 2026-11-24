@@ -285,6 +285,19 @@ export function isLastMember(members: readonly MemberInfo[], due: readonly Membe
 }
 
 /**
+ * `month` を締めると、グループのデータがすべて消えるか。この月を脱退月に選んでいるメンバーが、最後の1人のとき、
+ * 月を締めずに、グループを消す（`handleCloseMonth`。closings.ts）。アプリが、締める前の確認で警告を出せるように、
+ * `summary` の `close.deletesGroup` で返す（最後の1人かの規則を、アプリに書き写さない）。
+ *
+ * 脱退月が、この月より前の脱退者（最初の締めで飛ばされた月。`handleCloseMonth` は、先に確定させて409を返す）は、
+ * 最後の1人にならない。脱退月が終わった本人は、その月の集計に入らず、締められない（access.ts の `participatesInMonth`）。
+ * 締められるのは、ほかの参加中・脱退が確定した（`leaving`）メンバーで、その人も「残る人」に数えるため。
+ */
+export function closeDeletesGroup(members: readonly MemberInfo[], month: string): boolean {
+  return isLastMember(members, dueLeaves(members, month));
+}
+
+/**
  * 脱退の確定の書き込み（5章「脱退」の2）。`due` は、`dueLeaves` で選んだメンバー。最後の1人のときは使わず、
  * `deleteGroupStatements` で、グループごと消す。
  * - `expense_end_month` に脱退月を入れ、`status` を `leaving` にする。
