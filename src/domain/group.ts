@@ -55,8 +55,48 @@ export interface GroupListItem {
   timezone: string;
   createdAt: number;
   memberId: string;
-  memberStatus: MemberStatus;
+  /** 知らない状態（サーバーが足した値）は `'unknown'`。いまは判断に使わない（`GroupMember.status` と同じ） */
+  memberStatus: MemberStatus | 'unknown';
   historyFromMonth: string;
   leaveRequestedMonth: string | null;
   expenseEndMonth: string | null;
+}
+
+/** `GET /groups/:id` の `members` の1件。脱退済み・削除済みも含む（名前は残る。docs/backend-design.md 5章）。 */
+export interface GroupMember {
+  id: string;
+  displayName: string;
+  /** メンバーの色のキー（`MEMBER_COLORS`）。知らないキーでも読めるよう、文字列で持つ（画面が既定の色にする） */
+  color: string;
+  /**
+   * 知らない状態（サーバーが足した値）は `'unknown'`。いまの画面は、この値で判断していない（名前と色だけを使う）ので、
+   * 一覧全体を失敗にしない（CLAUDE.md）。**この値で出し分ける・操作の可否を決める画面（メンバー一覧、脱退など）を作るときは、
+   * `'unknown'` の扱い（厳密な検査に戻すか、安全側に倒すか）を、その画面で決める**。
+   */
+  status: MemberStatus | 'unknown';
+  historyFromMonth: string;
+  leaveRequestedMonth: string | null;
+  expenseEndMonth: string | null;
+  /** 操作している本人か */
+  isMe: boolean;
+}
+
+/** `GET /groups/:id` の `group`（docs/backend-design.md 9章の「グループAPI」）。 */
+export interface GroupDetail {
+  id: string;
+  name: string;
+  currencyCode: string;
+  currencyMinorUnit: number;
+  timezone: string;
+  createdAt: number;
+  /** 操作している本人のメンバーID */
+  memberId: string;
+  /** 通貨を変えられないか（金額に関わるものがある） */
+  currencyLocked: boolean;
+  /** 人数の上限で数える人数 */
+  seatedMembers: number;
+  maxMembers: number;
+  /** いま招待を発行できるか */
+  canInvite: boolean;
+  members: GroupMember[];
 }

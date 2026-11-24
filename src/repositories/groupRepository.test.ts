@@ -83,6 +83,14 @@ describe('list', () => {
     assert.equal(calls[0].init.credentials, 'omit');
   });
 
+  it('知らない所属の状態（サーバーが足した値）は unknown。一覧全体を失敗にしない', async () => {
+    const { fetchImpl } = fakeFetch(() =>
+      reply(200, { groups: [{ ...listItem, memberStatus: 'suspended' }, listItem] }),
+    );
+    const groups = await createGroupRepository(fetchImpl).list(SESSION);
+    assert.deepEqual(groups.map((g) => g.memberStatus), ['unknown', 'active']);
+  });
+
   it('グループが無ければ空の配列', async () => {
     const { fetchImpl } = fakeFetch(() => reply(200, { groups: [] }));
     assert.deepEqual(await createGroupRepository(fetchImpl).list(SESSION), []);
@@ -94,7 +102,7 @@ describe('list', () => {
       null,
       { groups: {} },
       { groups: [null] },
-      { groups: [{ ...listItem, memberStatus: 'unknown' }] },
+      { groups: [{ ...listItem, memberStatus: 1 }] },
       { groups: [{ ...listItem, createdAt: 1.5 }] },
       { groups: [{ ...listItem, name: 1 }] },
       { groups: [{ ...listItem, leaveRequestedMonth: undefined }] },
@@ -111,6 +119,57 @@ describe('list', () => {
     await rejectsWith(createGroupRepository(fakeFetch(() => reply(503)).fetchImpl).list(SESSION), 'unavailable');
     await rejectsWith(createGroupRepository(fakeFetch(() => reply(429)).fetchImpl).list(SESSION), 'unavailable');
     await rejectsWith(createGroupRepository(fakeFetch(() => new Error('offline')).fetchImpl).list(SESSION), 'network');
+  });
+});
+
+describe('get', () => {
+  it('GET /groups/:id を、セッションつきで呼び、メンバーを含むグループを返す', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { group }));
+    const detail = await createGroupRepository(fetchImpl).get(SESSION, 'g1');
+    assert.deepEqual(detail, group);
+    assert.equal(calls[0].url, `${API_ORIGIN}/groups/g1`);
+    assert.equal(calls[0].init.method, 'GET');
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
+    assert.equal(calls[0].init.body, undefined);
+  });
+
+  it('知らないメンバーの状態（サーバーが足した値）は unknown。グループ全体を失敗にしない', async () => {
+    const { fetchImpl } = fakeFetch(() =>
+      reply(200, { group: { ...group, members: [{ ...member, status: 'suspended' }, member] } }),
+    );
+    const detail = await createGroupRepository(fetchImpl).get(SESSION, 'g1');
+    assert.deepEqual(detail.members.map((m) => m.status), ['unknown', 'active']);
+  });
+
+  it('IDは、パスに入れる前に符号化する', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { group }));
+    await createGroupRepository(fetchImpl).get(SESSION, 'a/b?c');
+    assert.equal(calls[0].url, `${API_ORIGIN}/groups/a%2Fb%3Fc`);
+  });
+
+  it('形の違う応答は invalid-response（読み込みなので、全項目を検べる）', async () => {
+    const bodies = [
+      {},
+      null,
+      { group: null },
+      { group: { ...group, members: undefined } },
+      { group: { ...group, members: [null] } },
+      { group: { ...group, members: [{ ...member, status: 1 }] } },
+      { group: { ...group, members: [{ ...member, isMe: 'yes' }] } },
+      { group: { ...group, currencyLocked: 'no' } },
+      { group: { ...group, maxMembers: 5.5 } },
+      { group: { ...group, name: 1 } },
+    ];
+    for (const body of bodies) {
+      const { fetchImpl } = fakeFetch(() => reply(200, body));
+      await rejectsWith(createGroupRepository(fetchImpl).get(SESSION, 'g1'), 'invalid-response');
+    }
+  });
+
+  it('404 は invalid-request（メンバーでない・抜けた・削除された。区別しない）、401 は unauthorized', async () => {
+    await rejectsWith(createGroupRepository(fakeFetch(() => reply(404)).fetchImpl).get(SESSION, 'g1'), 'invalid-request');
+    await rejectsWith(createGroupRepository(fakeFetch(() => reply(401)).fetchImpl).get(SESSION, 'g1'), 'unauthorized');
+    await rejectsWith(createGroupRepository(fakeFetch(() => reply(500)).fetchImpl).get(SESSION, 'g1'), 'unavailable');
   });
 });
 
