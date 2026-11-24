@@ -4,7 +4,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { memberColumns, type Breakdown, type MemberBurden, type Notice, type TotalModel } from '../../src/services/homeView.ts';
+import {
+  memberColumns,
+  type Breakdown,
+  type InviteCard,
+  type MemberBurden,
+  type Notice,
+  type TotalModel,
+} from '../../src/services/homeView.ts';
 import { useColors } from '../useColors.ts';
 import { Avatar } from './Avatar.tsx';
 import { CategoryIcon } from './CategoryIcon.tsx';
@@ -31,6 +38,34 @@ export function NoticeList({ notices, onSelectMonth }: { notices: Notice[]; onSe
         </Pressable>
       ))}
     </View>
+  );
+}
+
+/**
+ * 1人だけのグループの「相手を招待する」カード。タップで、メンバーと招待の画面を開く（ここでは発行しない。`buildInviteCard`）。
+ * お知らせと同じ枠で目立たせる。
+ */
+export function InviteCardView({ card, onPress }: { card: InviteCard; onPress(): void }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${card.title}。${card.message}`}
+      accessibilityHint="タップすると、招待URLを作る画面を開きます"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.notice,
+        { backgroundColor: colors.surface, borderColor: colors.accent },
+        pressed && styles.pressed,
+      ]}
+    >
+      <MaterialCommunityIcons name="account-plus-outline" size={26} color={colors.textPrimary} />
+      <View style={styles.inviteBody}>
+        <Text style={[styles.noticeText, { color: colors.textPrimary }]}>{card.title}</Text>
+        <Text style={[styles.inviteMessage, { color: colors.textSecondary }]}>{card.message}</Text>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+    </Pressable>
   );
 }
 
@@ -157,6 +192,9 @@ const styles = StyleSheet.create({
   notices: { gap: 8 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1.5, borderRadius: 12, padding: 14 },
   noticeText: { flex: 1, fontSize: 15, fontWeight: '600' },
+  inviteBody: { flex: 1, gap: 2 },
+  inviteMessage: { fontSize: 13, lineHeight: 18 },
+  pressed: { opacity: 0.7 },
 
   total: { gap: 4, paddingVertical: 8 },
   totalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

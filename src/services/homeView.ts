@@ -135,6 +135,26 @@ export function buildNotices(selectedMonth: string, months: readonly MonthListIt
 }
 
 // ---------------------------------------------------------------------------
+// 「相手を招待する」のカード
+
+export interface InviteCard {
+  title: string;
+  message: string;
+}
+
+/**
+ * 1人だけのグループに出す「相手を招待する」カード（docs/screens.md 3章）。月に依らない（選んでいる月とは関係なく、グループの状態で決まる）。
+ * 出すのは、サーバーが「いま招待できる」（`canInvite`。満員・自分の脱退の確定を含む）と答え、かつ人数の上限で数える人数
+ * （`seatedMembers`。脱退が確定した人は数えない）が1人のとき。**人数・脱退の判定は書き写さない**: 脱退した人しか残っていない
+ * グループも、この値で「1人だけ」と分かる。押せないとき（満員など）は、そもそも出さない。
+ * カードは、メンバーと招待の画面を開くだけで、自分では発行しない（発行の規則は、その画面だけに置く。CLAUDE.md）。
+ */
+export function buildInviteCard(group: Pick<GroupDetail, 'canInvite' | 'seatedMembers'>): InviteCard | null {
+  if (!group.canInvite || group.seatedMembers !== 1) return null;
+  return { title: '相手を招待する', message: 'URLを送ると、一緒に記録できます' };
+}
+
+// ---------------------------------------------------------------------------
 // 総額・メンバー別の負担額
 
 export interface TotalModel {

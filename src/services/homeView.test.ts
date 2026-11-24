@@ -9,6 +9,7 @@ import type { Category, CloseState, Expense, MonthListItem, MonthMember, MonthVi
 import {
   buildBreakdown,
   buildExpenseRows,
+  buildInviteCard,
   buildMemberBurdens,
   buildMonthOptions,
   buildNotices,
@@ -213,6 +214,34 @@ describe('お知らせ', () => {
     assert.deepEqual(buildNotices('2026-11', [{ month: '2026-11', status: 'open' }], NOT_CLOSED), []);
     assert.deepEqual(buildNotices('2026-11', [], NOT_CLOSED), []);
     assert.deepEqual(buildNotices('bad', [{ month: '2026-10', status: 'open' }], NOT_CLOSED), []);
+  });
+});
+
+describe('「相手を招待する」のカード', () => {
+  it('1人だけで、招待できるときに出す', () => {
+    assert.deepEqual(buildInviteCard({ canInvite: true, seatedMembers: 1 }), {
+      title: '相手を招待する',
+      message: 'URLを送ると、一緒に記録できます',
+    });
+  });
+
+  it('2人以上のときは出さない', () => {
+    for (const seatedMembers of [2, 3, 5]) {
+      assert.equal(buildInviteCard({ canInvite: true, seatedMembers }), null, String(seatedMembers));
+    }
+  });
+
+  it('サーバーが招待できないと答えたときは、1人でも出さない（自分の脱退が確定している）', () => {
+    assert.equal(buildInviteCard({ canInvite: false, seatedMembers: 1 }), null);
+  });
+
+  it('人数が0のとき（本人も数えない状態）は出さない', () => {
+    assert.equal(buildInviteCard({ canInvite: true, seatedMembers: 0 }), null);
+  });
+
+  it('人数はサーバーの値で決め、メンバーの一覧は見ない（脱退済みの人が一覧にいても、2人のグループは出さない）', () => {
+    // `group` の一覧は、いる人2人と脱退した人1人（seatedMembers: 2）
+    assert.equal(buildInviteCard(group), null);
   });
 });
 

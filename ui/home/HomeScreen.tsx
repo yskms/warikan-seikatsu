@@ -3,9 +3,10 @@
 //
 // 支出の行をタップすると、編集のシートを開く（登録は、下のナビの＋。どちらも `app/expense.tsx`）。精算のカードの「この月を
 // 締める」は、締めの確認のシート（`app/close.tsx`）を開き、「精算完了」「繰越」は、確認のあと、その場で実行する
-// （`useTransferActions`。どちらも、終わると、ホームを読み直す）。**まだ作っていない**もの
+// （`useTransferActions`。どちらも、終わると、ホームを読み直す）。1人だけのグループには、「相手を招待する」カードを出す（押すと、
+// メンバーと招待の画面を開くだけ。招待の発行はその画面だけに置く）。**まだ作っていない**もの
 // （それぞれ、作るときにここへ足す）:
-// - お知らせのうち「メンバーが増減した」「固定費が止まった」と、1人だけのグループの「相手を招待する」カード（招待の発行を作るとき）
+// - お知らせのうち「メンバーが増減した」「固定費が止まった」（費目の割合を見直した印・固定費のAPIを読む画面を作るとき）
 // - 複数のグループの切り替えと、最後に開いたグループを覚えること（`ui/GroupGate.tsx`。いまは作成の古い順の先頭を出す）
 //
 // 読み込みの流れ: グループ（メンバー）・月の一覧・費目を読み、選ぶ月を決めてから、その月の集計と支出を読む。
@@ -25,6 +26,7 @@ import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
 import {
   buildBreakdown,
   buildExpenseRows,
+  buildInviteCard,
   buildMemberBurdens,
   buildMonthOptions,
   buildNotices,
@@ -39,7 +41,7 @@ import { useColors } from '../useColors.ts';
 import { ExpenseSection } from './ExpenseSection.tsx';
 import { MonthHeader } from './MonthHeader.tsx';
 import { SettlementCard } from './SettlementCard.tsx';
-import { BreakdownSection, MemberBurdens, NoticeList, TotalCard } from './SummarySections.tsx';
+import { BreakdownSection, InviteCardView, MemberBurdens, NoticeList, TotalCard } from './SummarySections.tsx';
 import { useTransferActions } from './useTransferActions.ts';
 
 interface HomeScreenProps {
@@ -99,6 +101,7 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
     carryMonthLabel: view?.settlement.kind === 'closed' ? view.settlement.carryMonthLabel : '次の月',
   });
 
+  const inviteCard = groupData === null ? null : buildInviteCard(groupData.group);
   const months = groupData?.months.months ?? [];
   const neighbors = selected === null ? { previous: null, next: null } : neighborMonths(months, selected);
 
@@ -146,6 +149,12 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
               notices={buildNotices(selected, months, current.summary.close)}
               onSelectMonth={(month) => void loader.selectMonth(month)}
             />
+            {inviteCard !== null ? (
+              <InviteCardView
+                card={inviteCard}
+                onPress={() => router.push({ pathname: '/members', params: { groupId } })}
+              />
+            ) : null}
             <TotalCard total={view.total} />
             <MemberBurdens items={view.burdens} />
             <BreakdownSection breakdown={view.breakdown} />
