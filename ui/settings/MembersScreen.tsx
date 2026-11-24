@@ -46,6 +46,7 @@ import {
 } from '../../src/services/memberView.ts';
 import { Avatar } from '../home/Avatar.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
+import { useMounted } from '../useMounted.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 
@@ -74,6 +75,9 @@ export function MembersScreen({ groupId }: { groupId: string }) {
   // この画面のメモリにだけ持つ（外れると、招待はできるのに、トークンが失われ、未使用の招待として上限に数えられる）。応答を受けたあとは
   // `busy` が `share` に変わり、共有シートに渡したトークンは、外れても失われないので、遅らせない。
   useHoldInviteSwap(busy?.kind === 'issue');
+  // 外れたあと（セッション切れ・招待URLによる参加確認への切り替え）に、開いたままの確認ダイアログから取り消しを始めたり、見えない画面の
+  // 失敗のダイアログを出したりしない（`ui/useMounted.ts`）
+  const mounted = useMounted();
   // 操作の同時実行を止める（state は次の描画まで変わらないので、続けて押されたときのために、同期して見られる印を持つ）
   const busyRef = useRef(false);
   // 古い応答を捨てる印。表示できる内容があるか（読み直しの失敗の出し方を分ける）
@@ -186,6 +190,7 @@ export function MembersScreen({ groupId }: { groupId: string }) {
 
   /** 一覧の行の操作の失敗を、ダイアログで出す（ファイル先頭のコメント）。 */
   function reportRowError(message: string) {
+    if (!mounted.current) return;
     Alert.alert('招待', message);
   }
 
@@ -198,6 +203,8 @@ export function MembersScreen({ groupId }: { groupId: string }) {
   }
 
   function revoke(inviteId: string) {
+    // 外れたあとに、開いたままの確認ダイアログから呼ばれたときは、何もしない
+    if (!mounted.current) return;
     void exclusive({ kind: 'revoke', inviteId }, async () => {
       try {
         await inviteService.revoke(inviteId);

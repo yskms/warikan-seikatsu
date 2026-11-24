@@ -10,6 +10,7 @@ import { Alert } from 'react-native';
 import { settlementService } from '../../platform/settlementService.ts';
 import { carryConfirmText, settleConfirmText, type TransferLine } from '../../src/services/homeView.ts';
 import { settlementErrorMessage, shouldReloadAfter } from '../../src/services/settlementMessage.ts';
+import { useMounted } from '../useMounted.ts';
 import type { TransferBusy } from './SettlementCard.tsx';
 
 interface UseTransferActionsOptions {
@@ -25,6 +26,9 @@ export function useTransferActions({ reload, month, carryMonthLabel }: UseTransf
   const [busy, setBusy] = useState<TransferBusy | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  // 外れたあと（セッション切れ・招待URLによる参加確認への切り替え）に、開いたままの確認ダイアログから、書き込みを始めない
+  // （繰越は取り消せない。確認したときの状態のまま、見えない画面の送金を処理しない。`ui/useMounted.ts`）
+  const mounted = useMounted();
 
   useEffect(() => {
     setError(null);
@@ -32,7 +36,7 @@ export function useTransferActions({ reload, month, carryMonthLabel }: UseTransf
 
   const run = useCallback(
     async (transferId: string, action: 'settle' | 'carry') => {
-      if (running.current) return;
+      if (running.current || !mounted.current) return;
       running.current = true;
       setBusy({ transferId, action });
       setError(null);
@@ -48,7 +52,7 @@ export function useTransferActions({ reload, month, carryMonthLabel }: UseTransf
         setBusy(null);
       }
     },
-    [reload],
+    [reload, mounted],
   );
 
   const settle = useCallback(
