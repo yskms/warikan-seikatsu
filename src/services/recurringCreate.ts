@@ -8,7 +8,10 @@
 //   送り直しのあとに、いまの入力を `PATCH` で送る（全項目。送ったものと保存されたものが同じでも、害は無い）。
 // - **登録が済んだあとは、登録を送らない**（`createdId`）。そのあとの `PATCH` の失敗は、登録の失敗と別の段階（`create-update`）として
 //   返し、`id` を取り直さない。登録は済んでいるので、新しい `id` にすると、同じ固定費が2件できる。やり直しでは、`PATCH` だけを送る。
-// - 登録の呼び出しの 409 `conflict`（他のグループが同じ `id` を使っている）は、登録されていない。新しい `id` にする。
+// - 登録の呼び出しの 409 `conflict` は、**理由が2つあり、どちらも登録されていない**: この `id` を他のグループが使っている、
+//   書き込みの競合が続いた（Workerの `failureResponse`。書き込み全体が取り消されている）。前者は、同じ `id` で送り直しても同じ
+//   失敗になるので、新しい `id` にする（後者でも、登録されていないので、新しい `id` にして安全）。**登録が済んだあとの `PATCH` の
+//   409 には使わない**（登録は済んでいるので、新しい `id` にすると、同じ固定費が2件できる。`create-update`）。
 import type { NewRecurringRequest, RecurringSaved, UpdateRecurringRequest } from '../domain/recurring.ts';
 import { RecurringRejectedError } from '../repositories/recurringRepository.ts';
 
@@ -47,7 +50,7 @@ function updateOf(body: NewRecurringRequest): UpdateRecurringRequest {
   };
 }
 
-/** 登録の409 `conflict`: 他のグループが同じ `id` を使っている（登録されていない） */
+/** 登録の409 `conflict`。他のグループが同じ `id` を使っている場合も、書き込みの競合の場合も、登録されていない（上のコメント） */
 function isCreateConflict(error: unknown): boolean {
   return error instanceof RecurringRejectedError && error.reason === 'conflict';
 }
@@ -85,7 +88,7 @@ export function createRecurringCreator({ create, update, newId }: RecurringCreat
           createdId = saved.id;
         } catch (error) {
           if (isCreateConflict(error)) {
-            // 登録されていない。次は、新しい `id` にする
+            // 登録されていない（理由は、どちらでも）。次は、新しい `id` にする
             requestId = null;
             uncertain = false;
           } else if (resultUnknown(error)) {

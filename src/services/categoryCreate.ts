@@ -6,7 +6,8 @@
 // - **作成が済んだあとは、作成を送らない**（`createdId`）。そのあとの `PATCH` の失敗（409 `conflict` を含む）は、作成の失敗と別の段階
 //   （`create-update`）として返し、`id` を取り直さない。作成は済んでいるので、新しい `id` にすると、同じカテゴリが2つできる。
 //   やり直しでは、`PATCH` だけを送る。
-// - 作成の呼び出しの 409 `conflict`（`isCreateConflict`）は、作られていない。新しい `id` にする。
+// - 作成の呼び出しの 409 `conflict`（`isCreateConflict`）は、作られていない（この `id` を他のグループが使っている場合も、書き込みの
+//   競合が続いた場合も。理由は `categoryMessage.ts` の `isCreateConflict`）。新しい `id` にする。
 import type { CreateCategoryInput, UpdateCategoryInput } from '../repositories/categoryRepository.ts';
 import { isCreateConflict, resultUnknown } from './categoryMessage.ts';
 
