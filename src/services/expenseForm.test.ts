@@ -23,7 +23,8 @@ import {
   percentText,
   splitLocked,
   splitMembers,
-  syncSplitMembers,
+  syncForMonth,
+  splitMemberIdsOf,
   targetMonthOf,
   toggleCustomSplit,
   type ExpenseDraft,
@@ -350,12 +351,12 @@ describe('負担の入力の切り替え', () => {
       registerableMonths: ['2026-11', '2026-12'],
     });
     const base = draft(ctx, { monthChoice: '2026-12', split: split({ method: 'ratio', percents: { m1: '60', m2: '40' }, equalIds: ['m1', 'm2'], singleId: 'm2' }) });
-    const back = syncSplitMembers({ ...base, monthChoice: '2026-11' }, ctx);
+    const back = syncForMonth({ ...base, monthChoice: '2026-11' }, ctx);
     assert.deepEqual(Object.keys(back.split!.percents), ['m1']);
     assert.equal(back.split!.percents.m1, '60');
     assert.deepEqual(back.split!.equalIds, ['m1']);
     assert.equal(back.split!.singleId, null);
-    assert.equal(syncSplitMembers(draft(ctx), ctx).split, null);
+    assert.equal(syncForMonth(draft(ctx), ctx).split, null);
   });
 });
 
@@ -489,23 +490,14 @@ describe('buildCreateRequest', () => {
         { memberId: 'm2', basisPoints: 3000 },
       ],
     });
-    // 0%・空も、メンバーとして送る
+    // 0%・空のメンバーは送らない（負担額が0の行を作らない。0円の行は、あとの脱退の確定で「負担に関わっている」とみなされうる）
     assert.deepEqual(buildCreateRequest(draft(ctx, { split: split({ method: 'ratio', percents: { m1: '100' } }) }), ctx, ID)?.split, {
       method: 'ratio',
-      shares: [
-        { memberId: 'm1', basisPoints: 10000 },
-        { memberId: 'm2', basisPoints: 0 },
-      ],
+      shares: [{ memberId: 'm1', basisPoints: 10000 }],
     });
     assert.deepEqual(
       buildCreateRequest(draft(ctx, { split: split({ method: 'fixed', amounts: { m1: '1000', m2: '' }, }) , amount: '1000' }), ctx, ID)?.split,
-      {
-        method: 'fixed',
-        amounts: [
-          { memberId: 'm1', amountMinor: 1000 },
-          { memberId: 'm2', amountMinor: 0 },
-        ],
-      },
+      { method: 'fixed', amounts: [{ memberId: 'm1', amountMinor: 1000 }] },
     );
     assert.deepEqual(buildCreateRequest(draft(ctx, { split: split({ method: 'single', singleId: 'm2' }) }), ctx, ID)?.split, {
       method: 'single',
@@ -602,5 +594,212 @@ describe('buildUpdatePlan', () => {
     assert.deepEqual(plan(context({}, detail({ closed: true })), { description: 'x' }), { kind: 'invalid' });
     const fresh = context();
     assert.deepEqual(buildUpdatePlan(draft(fresh), fresh), { kind: 'invalid' });
+  });
+});
+
+
+describe('途中参加のメンバーがいる月の編集（負担の行を増やさない）', () => {
+  // m3 は 2026-11 に参加した。元の支出は、参加前に m1・m2 だけで分けたもの
+  const members3 = [member('m1'), member('m2'), member('m3', { historyFromMonth: '2026-11' })];
+  const ratioDetail = detail({
+    splitMethod: 'ratio',
+    allocations: [
+      { memberId: 'm1', burdenMinor: 2140, shareBasisPoints: 5000 },
+      { memberId: 'm2', burdenMinor: 2140, shareBasisPoints: 5000 },
+    ],
+  });
+  const fixedDetail = detail({
+    splitMethod: 'fixed',
+    allocations: [
+      { memberId: 'm1', burdenMinor: 4000, shareBasisPoints: null },
+      { memberId: 'm2', burdenMinor: 280, shareBasisPoints: null },
+    ],
+  });
+  const plan = (ctx: ExpenseFormContext, change: Partial<ExpenseDraft>) =>
+    buildUpdatePlan({ ...initialDraft(ctx, null), ...change }, ctx);
+
+  it('割合の支出の、内容だけの編集は、split を送らない（m3 の0%の行を足さない）', () => {
+    const ctx = context({ members: members3 }, ratioDetail);
+    assert.deepEqual(plan(ctx, { description: 'コンビニ' }), { kind: 'request', request: { description: 'コンビニ' } });
+    assert.deepEqual(plan(ctx, {}), { kind: 'unchanged' });
+  });
+
+  it('金額指定の支出の、内容だけの編集も、split を送らない', () => {
+    const ctx = context({ members: members3 }, fixedDetail);
+    assert.deepEqual(plan(ctx, { description: 'コンビニ' }), { kind: 'request', request: { description: 'コンビニ' } });
+  });
+
+  it('金額を変えて split を送るときも、元の負担に無い人は、0のままなら入れない', () => {
+    const ratio = context({ members: members3 }, ratioDetail);
+    assert.deepEqual(plan(ratio, { amount: '5000' }), {
+      kind: 'request',
+      request: {
+        amountMinor: 5000,
+        currencyCode: 'JPY',
+        split: {
+          method: 'ratio',
+          shares: [
+            { memberId: 'm1', basisPoints: 5000 },
+            { memberId: 'm2', basisPoints: 5000 },
+          ],
+        },
+      },
+    });
+    const base = initialDraft(context({ members: members3 }, fixedDetail), null);
+    const fixed = context({ members: members3 }, fixedDetail);
+    // 金額を 4280 → 5280 に変え、m2 の負担を 1280 にする
+    const result = buildUpdatePlan(
+      { ...base, amount: '5280', split: { ...base.split!, amounts: { ...base.split!.amounts, m2: '1280' } } },
+      fixed,
+    );
+    assert.deepEqual(result, {
+      kind: 'request',
+      request: {
+        amountMinor: 5280,
+        currencyCode: 'JPY',
+        split: {
+          method: 'fixed',
+          amounts: [
+            { memberId: 'm1', amountMinor: 4000 },
+            { memberId: 'm2', amountMinor: 1280 },
+          ],
+        },
+      },
+    });
+  });
+
+  it('m3 に割合を入れたら、送る。元の負担にいた人を 0% にしても、その行は残す', () => {
+    const ctx = context({ members: members3 }, ratioDetail);
+    const base = initialDraft(ctx, null);
+    const changed = buildUpdatePlan(
+      { ...base, split: { ...base.split!, percents: { m1: '40', m2: '40', m3: '20' } } },
+      ctx,
+    );
+    assert.deepEqual(changed, {
+      kind: 'request',
+      request: {
+        split: {
+          method: 'ratio',
+          shares: [
+            { memberId: 'm1', basisPoints: 4000 },
+            { memberId: 'm2', basisPoints: 4000 },
+            { memberId: 'm3', basisPoints: 2000 },
+          ],
+        },
+      },
+    });
+    const zero = buildUpdatePlan({ ...base, split: { ...base.split!, percents: { m1: '100', m2: '0', m3: '0' } } }, ctx);
+    assert.deepEqual(zero, {
+      kind: 'request',
+      request: {
+        split: {
+          method: 'ratio',
+          shares: [
+            { memberId: 'm1', basisPoints: 10000 },
+            { memberId: 'm2', basisPoints: 0 },
+          ],
+        },
+      },
+    });
+  });
+
+  it('方法を変えたときは、元の方法の行に引きずられない', () => {
+    const ctx = context({ members: members3 }, ratioDetail);
+    const base = initialDraft(ctx, null);
+    const result = buildUpdatePlan(
+      { ...base, split: { ...base.split!, method: 'fixed', amounts: { m1: '4280' } } },
+      ctx,
+    );
+    assert.deepEqual(result, {
+      kind: 'request',
+      request: { split: { method: 'fixed', amounts: [{ memberId: 'm1', amountMinor: 4280 }] } },
+    });
+  });
+});
+
+describe('月・日付を変えたときの支払者', () => {
+  const joined = [member('m1'), member('m2', { historyFromMonth: '2026-11' })];
+  const two: MonthListItem[] = [
+    { month: '2026-10', status: 'open' },
+    { month: '2026-11', status: 'open' },
+  ];
+  const ctx = () => context({ members: joined, months: two, registerableMonths: ['2026-10', '2026-11'] });
+
+  it('新しい月で選べない支払者は、選び直しになる（null にして、保存できなくする）', () => {
+    const c = ctx();
+    const d = draft(c, { payerMemberId: 'm2', date: '2026-11-05' });
+    const moved = syncForMonth({ ...d, date: '2026-10-05' }, c);
+    assert.equal(moved.payerMemberId, null);
+    assert.equal(checkDraft(moved, c).canSave, false);
+    assert.equal(checkDraft(moved, c).blocker, '支払った人を選んでください。');
+    // 月の選択でも同じ
+    assert.equal(syncForMonth({ ...d, monthChoice: '2026-10' }, c).payerMemberId, null);
+  });
+
+  it('選べる支払者は、そのまま', () => {
+    const c = ctx();
+    assert.equal(syncForMonth({ ...draft(c, { payerMemberId: 'm1' }), date: '2026-10-05' }, c).payerMemberId, 'm1');
+  });
+
+  it('検査でも、選べない支払者を保存させない（同期を通らない経路の保険）', () => {
+    const c = ctx();
+    const bad = draft(c, { payerMemberId: 'm2', date: '2026-10-05' });
+    const check = checkDraft(bad, c);
+    assert.equal(check.canSave, false);
+    assert.equal(check.blocker, '支払った人を選び直してください。');
+  });
+
+  it('編集で開いた支出の支払者は、その月で選べなくても、変えなければ保存できる', () => {
+    const left = member('m3', { status: 'left' });
+    const c = context({ members: [member('m1'), member('m2'), left] }, detail({ payerMemberId: 'm3' }));
+    const d = initialDraft(c, null);
+    assert.equal(syncForMonth({ ...d, description: 'x' }, c).payerMemberId, 'm3');
+    assert.equal(checkDraft(d, c).canSave, true);
+  });
+});
+
+describe('編集で「金額を指定する」へ切り替えたときの初期値', () => {
+  it('保存された負担額が入る（割合・均等の支出から切り替えても）', () => {
+    const ctx = context(
+      {},
+      detail({
+        splitMethod: 'ratio',
+        allocations: [
+          { memberId: 'm1', burdenMinor: 2996, shareBasisPoints: 7000 },
+          { memberId: 'm2', burdenMinor: 1284, shareBasisPoints: 3000 },
+        ],
+      }),
+    );
+    const base = initialDraft(ctx, null);
+    assert.deepEqual(base.split?.amounts, { m1: '2996', m2: '1284' });
+    // そのまま切り替えると、合計が金額と一致して、保存の検査に通る（案内した回避策が使える）
+    const switched = { ...base, split: { ...base.split!, method: 'fixed' as const } };
+    assert.equal(checkDraft(switched, ctx).split?.ok, true);
+  });
+
+  it('負担額が0の行は、空欄', () => {
+    const ctx = context(
+      {},
+      detail({
+        splitMethod: 'equal',
+        allocations: [
+          { memberId: 'm1', burdenMinor: 4280, shareBasisPoints: null },
+          { memberId: 'm2', burdenMinor: 0, shareBasisPoints: null },
+        ],
+      }),
+    );
+    assert.deepEqual(initialDraft(ctx, null).split?.amounts, { m1: '4280', m2: '' });
+  });
+});
+
+describe('splitMemberIdsOf', () => {
+  it('送る負担に入るメンバー（費目の割合なら空）', () => {
+    const ctx = context();
+    assert.deepEqual(splitMemberIdsOf(draft(ctx), ctx), []);
+    assert.deepEqual(splitMemberIdsOf(draft(ctx, { split: split({ method: 'single', singleId: 'm2' }) }), ctx), ['m2']);
+    assert.deepEqual(
+      splitMemberIdsOf(draft(ctx, { split: split({ method: 'ratio', percents: { m1: '100', m2: '0' } }) }), ctx),
+      ['m1'],
+    );
   });
 });

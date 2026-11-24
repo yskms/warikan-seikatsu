@@ -45,7 +45,8 @@ import {
   payerOptions,
   splitLocked,
   splitMembers,
-  syncSplitMembers,
+  splitMemberIdsOf,
+  syncForMonth,
   targetMonthOf,
   toggleCustomSplit,
   type ExpenseDraft,
@@ -146,7 +147,8 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   const editing = ctx.editing;
   const [baseline] = useState(() => initialDraft(ctx, lastCategoryId));
   const [draft, setDraft] = useState<ExpenseDraft>(baseline);
-  const [keypad, setKeypad] = useState<KeypadTarget>(ctx.readOnly ? null : { kind: 'amount' });
+  // 金額を変えられない（締めた月、負担の方法をアプリが変えられない支出）ときは、キーパッドを出さない
+  const [keypad, setKeypad] = useState<KeypadTarget>(ctx.readOnly || splitLocked(ctx) ? null : { kind: 'amount' });
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +162,14 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   // 入力が変わっているときに閉じようとしたら、破棄の確認を出す（✕・戻る操作のどちらも）
   useEffect(() => {
     return navigation.addListener('beforeRemove', (event) => {
-      if (leaving.current || !dirtyRef.current || running.current) return;
+      if (leaving.current) return;
+      // 保存・削除の通信の最中は、閉じない（閉じると、あとで完了したときに、閉じたシートから画面を戻してしまい、
+      // 失敗したときは、何も表示されないまま、シートが消える）。✕は、最中は押せない
+      if (running.current) {
+        event.preventDefault();
+        return;
+      }
+      if (!dirtyRef.current) return;
       event.preventDefault();
       Alert.alert('入力内容を破棄しますか？', undefined, [
         { text: '続ける', style: 'cancel' },
@@ -187,7 +196,7 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   }
 
   function pressKeypad(key: ExpressionKey) {
-    if (keypad === null) return;
+    if (keypad === null || ctx.readOnly || lockedSplit) return;
     update((current) => {
       if (keypad.kind === 'amount') return { ...current, amount: pressKey(current.amount, key, ctx.minorUnit) };
       if (current.split === null) return current;
@@ -208,7 +217,7 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   /** 保存の実行。`monthOverride` は、「締められました。次の月に登録しますか？」に応じたときの登録先。 */
   async function save(monthOverride?: string) {
     if (running.current || ctx.readOnly) return;
-    const target = monthOverride === undefined ? draft : { ...draft, monthChoice: monthOverride };
+    const target = monthOverride === undefined ? draft : syncForMonth({ ...draft, monthChoice: monthOverride }, ctx);
     const targetMonth = targetMonthOf(target, ctx);
     running.current = true;
     setBusy('save');
@@ -218,13 +227,19 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
       let savedMonth: string | null = null;
       if (editing === null) {
         const request = buildCreateRequest(target, ctx, (requestId.current ??= newId()));
-        if (request === null) return;
+        if (request === null) {
+          setError(checkDraft(target, ctx).blocker);
+          return;
+        }
         await expenseService.create(groupId, request);
         savedMonth = request.targetMonth;
         if (target.categoryId !== null) void saveLastCategory(groupId, target.categoryId);
       } else {
         const plan = buildUpdatePlan(target, ctx);
-        if (plan.kind === 'invalid') return;
+        if (plan.kind === 'invalid') {
+          setError(checkDraft(target, ctx).blocker);
+          return;
+        }
         // 何も変えていなければ、送らずに閉じる
         if (plan.kind === 'request') {
           await expenseService.update(editing.id, plan.request);
@@ -234,26 +249,33 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
       if (savedMonth !== null) expenseNotice.post(savedMonth);
       leave();
     } catch (e) {
-      if (editing === null && e instanceof ExpenseRejectedError && e.reason === 'month_not_registerable' && e.to !== null && e.to !== targetMonth) {
-        // 開いているあいだに、登録先の月が締められた。次の月に登録するか聞く（入力は消さない）
-        const to = e.to;
+      // 開いているあいだに、登録先の月が締められた（月の選択肢は、開いたときに読んだ月の一覧から出しているので、締め以外で、
+      // 登録できなくなることは無い）。登録できる範囲（`from`〜`to`）のうち、選んでいた月に近いほうへ登録するか聞く。
+      // 範囲より前の月（締められた月）なら、範囲の先頭（`from`）。入力は消さない
+      const proposal = e instanceof ExpenseRejectedError ? proposedMonth(e, targetMonth) : null;
+      if (editing === null && e instanceof ExpenseRejectedError && e.reason === 'month_not_registerable' && proposal !== null) {
         Alert.alert(
           `${targetMonth === null ? 'この月' : formatMonthShort(targetMonth)}は締められました。`,
-          `${formatMonthShort(to)}分として登録しますか？`,
+          `${formatMonthShort(proposal)}分として登録しますか？`,
           [
             { text: 'キャンセル', style: 'cancel' },
             {
               text: '登録する',
               onPress: () => {
                 // 画面の選択にも反映する（再送が失敗しても、選んだ月と送った月がずれない）
-                update((current) => syncSplitMembers({ ...current, monthChoice: to }, ctx));
-                void save(to);
+                update((current) => syncForMonth({ ...current, monthChoice: proposal }, ctx));
+                void save(proposal);
               },
             },
           ],
         );
       } else {
-        setError(saveExpenseErrorMessage(e, editing === null ? 'create' : 'update', memberName));
+        setError(
+          saveExpenseErrorMessage(e, editing === null ? 'create' : 'update', memberName, {
+            payerMemberId: target.payerMemberId,
+            splitMemberIds: splitMemberIdsOf(target, ctx),
+          }),
+        );
       }
     } finally {
       running.current = false;
@@ -411,7 +433,7 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
                     disabled={busyNow}
                     options={choices.map((choice) => ({ key: choice, label: `${formatMonthShort(choice)}分`, note: formatMonth(choice) }))}
                     selected={month}
-                    onSelect={(choice) => update((current) => syncSplitMembers({ ...current, monthChoice: choice }, ctx))}
+                    onSelect={(choice) => update((current) => syncForMonth({ ...current, monthChoice: choice }, ctx))}
                   />
                 </Section>
               ) : null}
@@ -484,7 +506,7 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
         visible={calendarOpen}
         value={draft.date}
         today={ctx.today}
-        onSelect={(date) => update((current) => syncSplitMembers({ ...current, date }, ctx))}
+        onSelect={(date) => update((current) => syncForMonth({ ...current, date }, ctx))}
         onClose={() => setCalendarOpen(false)}
       />
     </SafeAreaView>
@@ -495,6 +517,15 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
 function Ring({ children }: { children: React.ReactNode }) {
   const colors = useColors();
   return <View style={[styles.ring, { backgroundColor: colors.background }]}>{children}</View>;
+}
+
+/**
+ * 「登録先の月が登録できなくなった」とき、聞く先の月。登録できる範囲（`from`〜`to`）のうち、選んでいた月より後なら範囲の先頭
+ * （`from`。選んでいた月がちょうど締められたとき、その次の月）、そうでなければ範囲の末尾（`to`）。選んでいた月と同じなら提案しない。
+ */
+function proposedMonth(error: ExpenseRejectedError, target: string | null): string | null {
+  const proposal = target !== null && error.from !== null && target < error.from ? error.from : error.to;
+  return proposal !== null && proposal !== target ? proposal : null;
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {

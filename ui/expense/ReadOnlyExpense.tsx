@@ -28,7 +28,8 @@ export function ReadOnlyExpense({ ctx }: { ctx: ExpenseFormContext }) {
     ['日付', formatExpenseDate(expense.expenseDate)],
     ['登録した月', formatMonth(expense.targetMonth)],
     ['内容', expense.description ?? 'なし'],
-    ['負担の分け方', SPLIT_LABELS[expense.splitMethod] ?? 'この支出だけ、負担を変えています'],
+    // 自分のキーだけを引く（サーバー由来の値で、`constructor` のような継承された名前から、関数を引かない）
+    ['負担の分け方', Object.hasOwn(SPLIT_LABELS, expense.splitMethod) ? SPLIT_LABELS[expense.splitMethod]! : 'この支出だけ、負担を変えています'],
   ];
   return (
     <View style={styles.box}>

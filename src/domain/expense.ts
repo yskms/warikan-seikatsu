@@ -13,7 +13,8 @@ export type SplitRequest =
 export interface CreateExpenseRequest {
   /**
    * この登録の識別子（UUID。小文字）。通信が切れて結果が分からないとき、**同じ値で**やり直す（支出が2件にならない）。
-   * 登録の画面を開くたびに1回作る。成功したあとの新しい登録には、新しい値を使う（docs/backend-design.md 9章の「二重送信」）。
+   * シートごとに1回作る（最初の保存で作り、そのシートのあいだ使い回す。シートを開き直せば、新しい値）。成功したあとの新しい登録には、
+   * 新しい値を使う（docs/backend-design.md 9章の「二重送信」）。
    */
   id: string;
   /** `YYYY-MM-DD` */

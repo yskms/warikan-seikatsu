@@ -6,7 +6,16 @@ import type { ExpenseRow } from '../../src/services/homeView.ts';
 import { useColors } from '../useColors.ts';
 import { CategoryIcon } from './CategoryIcon.tsx';
 
-export function ExpenseSection({ rows, onOpen }: { rows: ExpenseRow[]; onOpen(expenseId: string): void }) {
+export function ExpenseSection({
+  rows,
+  registerable,
+  onOpen,
+}: {
+  rows: ExpenseRow[];
+  /** この月が、支出を登録できる月か（月の一覧の `open`）。締めた月・飛ばした月では、＋の案内を出さない */
+  registerable: boolean;
+  onOpen(expenseId: string): void;
+}) {
   const colors = useColors();
   return (
     <View style={styles.section}>
@@ -14,7 +23,9 @@ export function ExpenseSection({ rows, onOpen }: { rows: ExpenseRow[]; onOpen(ex
         支出
       </Text>
       {rows.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textSecondary }]}>＋から支出を登録できます。</Text>
+        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+          {registerable ? '＋から支出を登録できます。' : 'この月の支出は、ありません。'}
+        </Text>
       ) : (
         rows.map((row) => (
           <Pressable

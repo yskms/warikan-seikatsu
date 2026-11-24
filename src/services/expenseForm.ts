@@ -259,6 +259,9 @@ function blankSplitDraft(ctx: ExpenseFormContext, month: string | null, method: 
 function splitDraftFromRequest(split: SplitRequest, ctx: ExpenseFormContext, month: string | null): SplitDraft | null {
   if (split.method === 'category') return null;
   const draft = blankSplitDraft(ctx, month, split.method);
+  // 保存された負担額を、「金額を指定する」の初期値にも入れる（割合・均等の支出から切り替えても、「いまの負担額のまま」
+  // 金額を上げられる。使えないメンバーを含む支出の金額を上げる回避策。docs/screens.md 4章）。保存値の表示で、計算ではない。
+  for (const row of ctx.editing?.allocations ?? []) draft.amounts[row.memberId] = expressionFromAmount(row.burdenMinor, ctx.minorUnit);
   switch (split.method) {
     case 'equal':
       draft.equalIds = [...split.memberIds];
@@ -319,13 +322,19 @@ export function toggleCustomSplit(draft: ExpenseDraft, ctx: ExpenseFormContext):
 }
 
 /**
- * 登録先の月を変えたとき、負担の入力に出るメンバーを合わせる（その月に選べないメンバーを外し、選べるようになったメンバーを足す）。
- * 入力済みの値は、残るメンバーでは保つ。
+ * 登録先の月（日付・月の選択）を変えたとき、その月で選べないものを外す。
+ * - 支払った人: 新しい月で選べないメンバーは、選び直しにする（`null`。保存の検査が「支払った人を選んでください」と止める）。
+ *   編集で開いた支出の支払者は、選べない月でも、いまの値として残る（`payerOptions`）。
+ * - 負担の入力: その月に選べないメンバーを外し、選べるようになったメンバーを足す。入力済みの値は、残るメンバーでは保つ。
  */
-export function syncSplitMembers(draft: ExpenseDraft, ctx: ExpenseFormContext): ExpenseDraft {
-  if (draft.split === null) return draft;
-  const ids = new Set(splitMembers(ctx, targetMonthOf(draft, ctx)).map((member) => member.id));
-  const { split } = draft;
+export function syncForMonth(draft: ExpenseDraft, ctx: ExpenseFormContext): ExpenseDraft {
+  const month = targetMonthOf(draft, ctx);
+  const payerStays =
+    draft.payerMemberId === null || payerOptions(ctx, month).some((member) => member.id === draft.payerMemberId);
+  const base = payerStays ? draft : { ...draft, payerMemberId: null };
+  if (base.split === null) return base;
+  const ids = new Set(splitMembers(ctx, month).map((member) => member.id));
+  const { split } = base;
   const percents: Record<string, string> = {};
   const amounts: Record<string, string> = {};
   for (const id of ids) {
@@ -333,7 +342,7 @@ export function syncSplitMembers(draft: ExpenseDraft, ctx: ExpenseFormContext): 
     amounts[id] = split.amounts[id] ?? '';
   }
   return {
-    ...draft,
+    ...base,
     split: {
       ...split,
       percents,
@@ -445,6 +454,10 @@ export function checkDraft(draft: ExpenseDraft, ctx: ExpenseFormContext): FormCh
   if (blocker === null && draft.payerMemberId === null) blocker = '支払った人を選んでください。';
   if (blocker === null && !isRealDate(draft.date)) blocker = '日付を選んでください。';
   if (blocker === null && month === null) blocker = '登録できる月がありません。';
+  // 登録先の月で選べない支払者（月・日付の変更で `syncForMonth` が外すので、通常は通らない。通らない経路の保険）
+  if (blocker === null && !payerOptions(ctx, month).some((member) => member.id === draft.payerMemberId)) {
+    blocker = '支払った人を選び直してください。';
+  }
   if (blocker === null && codePointLength(draft.description.trim()) > MAX_DESCRIPTION_LENGTH) {
     blocker = `内容は、${MAX_DESCRIPTION_LENGTH}文字までにしてください。`;
   }
@@ -456,11 +469,29 @@ export function checkDraft(draft: ExpenseDraft, ctx: ExpenseFormContext): FormCh
 
 // --- リクエストの組み立て ---
 
-/** 負担の指定。`category`（`draft.split` が `null`）か、「この支出だけ負担を変える」の入力。検査に通らなければ `null`。 */
+/**
+ * 編集で開いた支出の負担に、もともと入っていた人（いまの方法と同じ方法だったときだけ。方法を変えたら、元の行には引きずられない）。
+ * 0%・0円の入力でも、この人の行は残す（変えていない負担を、変えたことにしない）。
+ */
+function originalSplitMemberIds(draft: ExpenseDraft, ctx: ExpenseFormContext): ReadonlySet<string> {
+  const editing = ctx.editing;
+  if (editing === null || draft.split === null) return new Set();
+  const original = originalSplit(editing);
+  return original.kind === 'known' && original.split.method === draft.split.method
+    ? new Set(editing.allocations.map((row) => row.memberId))
+    : new Set();
+}
+
+/**
+ * 負担の指定。`category`（`draft.split` が `null`）か、「この支出だけ負担を変える」の入力。検査に通らなければ `null`。
+ * 割合・金額指定で、0%・0円のメンバーは送らない（元の負担にいた人を除く）: 0の行は、負担額が無いのに行が増え、あとで
+ * 脱退の確定が、負担に関わっているとみなす（`worker/src/closedMonth.ts` の `markLeftStatement`）。送らなくても、負担は同じ。
+ */
 function buildSplit(draft: ExpenseDraft, ctx: ExpenseFormContext, month: string | null): SplitRequest | null {
   const split = draft.split;
   if (split === null) return { method: 'category' };
   const members = splitMembers(ctx, month).map((member) => member.id);
+  const kept = originalSplitMemberIds(draft, ctx);
   switch (split.method) {
     case 'equal': {
       const memberIds = members.filter((id) => split.equalIds.includes(id));
@@ -470,12 +501,14 @@ function buildSplit(draft: ExpenseDraft, ctx: ExpenseFormContext, month: string 
       return split.singleId !== null && members.includes(split.singleId) ? { method: 'single', memberId: split.singleId } : null;
     case 'ratio': {
       const shares: { memberId: string; basisPoints: number }[] = [];
+      let total = 0;
       for (const memberId of members) {
         const basisPoints = parsePercent(split.percents[memberId] ?? '');
         if (basisPoints === null) return null;
-        shares.push({ memberId, basisPoints });
+        total += basisPoints;
+        if (basisPoints > 0 || kept.has(memberId)) shares.push({ memberId, basisPoints });
       }
-      return shares.reduce((sum, share) => sum + share.basisPoints, 0) === BASIS_POINTS_TOTAL ? { method: 'ratio', shares } : null;
+      return total === BASIS_POINTS_TOTAL ? { method: 'ratio', shares } : null;
     }
     case 'fixed': {
       const amounts: { memberId: string; amountMinor: number }[] = [];
@@ -484,14 +517,31 @@ function buildSplit(draft: ExpenseDraft, ctx: ExpenseFormContext, month: string 
         if (result.kind === 'invalid') return null;
         const minor = result.kind === 'value' ? result.minor : 0;
         if (minor < 0) return null;
-        amounts.push({ memberId, amountMinor: minor });
+        if (minor > 0 || kept.has(memberId)) amounts.push({ memberId, amountMinor: minor });
       }
       return { method: 'fixed', amounts };
     }
   }
 }
 
-/** 登録のリクエスト。保存できないときは `null`。`id` は、シートを開いたときに1回だけ作った識別子（`CreateExpenseRequest.id`）。 */
+/** 送る負担に入るメンバーのID（費目の割合・検査に通らない入力は空）。保存が断られたとき、文言を決めるために使う。 */
+export function splitMemberIdsOf(draft: ExpenseDraft, ctx: ExpenseFormContext): string[] {
+  const split = buildSplit(draft, ctx, targetMonthOf(draft, ctx));
+  switch (split?.method) {
+    case 'equal':
+      return split.memberIds;
+    case 'single':
+      return [split.memberId];
+    case 'ratio':
+      return split.shares.map((share) => share.memberId);
+    case 'fixed':
+      return split.amounts.map((row) => row.memberId);
+    default:
+      return [];
+  }
+}
+
+/** 登録のリクエスト。保存できないときは `null`。`id` は、シートごとに1回だけ作った識別子（最初の保存で作り、そのシートのあいだ使い回す。`CreateExpenseRequest.id`）。 */
 export function buildCreateRequest(draft: ExpenseDraft, ctx: ExpenseFormContext, id: string): CreateExpenseRequest | null {
   const check = checkDraft(draft, ctx);
   const month = targetMonthOf(draft, ctx);

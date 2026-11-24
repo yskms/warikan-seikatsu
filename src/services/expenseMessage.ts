@@ -11,8 +11,18 @@ function codeOf(error: unknown): string {
   return error instanceof AuthError ? error.code : 'unexpected';
 }
 
+/** 保存しようとした入力のうち、`member_not_available` の原因を見分けるもの（支払者か、負担の対象か）。 */
+export interface ExpenseSaveContext {
+  /** 支払った人 */
+  payerMemberId?: string | null;
+  /** 負担の指定（この支出だけ負担を変える）に入れているメンバー。費目の割合なら空 */
+  splitMemberIds?: readonly string[];
+}
+
 /**
  * 保存・削除できなかったとき。`memberName` は、`member_not_available` で、使えないメンバーの名前を引く（無ければ名前なしの文言）。
+ * `member_not_available` は、支払者にも負担の対象にも返る（`field` は無く、`memberId` だけ）ので、`context` で、どちらが
+ * 原因かを見分けて、直す場所を案内する（支払者が原因なのに「負担の分け方を変えてください」と言わない）。
  * 通信の失敗は、サーバーで済んでいるかもしれない。登録は同じ `id` で、編集は同じ内容で、削除は2回目が404になるだけなので、
  * どれも「もう一度」でよい。
  */
@@ -20,6 +30,7 @@ export function saveExpenseErrorMessage(
   error: unknown,
   action: ExpenseWriteAction,
   memberName: (memberId: string) => string | undefined = () => undefined,
+  context: ExpenseSaveContext = {},
 ): string {
   const verb = action === 'remove' ? '削除' : '保存';
   if (error instanceof ExpenseRejectedError) {
@@ -32,7 +43,13 @@ export function saveExpenseErrorMessage(
       case 'month_not_registerable':
         return 'この月には登録できなくなりました。登録する月を選び直してください。';
       case 'member_not_available': {
-        const name = error.memberId === null ? undefined : memberName(error.memberId);
+        const memberId = error.memberId;
+        const name = memberId === null ? undefined : memberName(memberId);
+        const asPayer = memberId !== null && memberId === context.payerMemberId;
+        const inSplit = memberId !== null && (context.splitMemberIds ?? []).includes(memberId);
+        const who = name === undefined ? 'この月の支出に使えないメンバー' : `${name}さん`;
+        if (asPayer && inSplit) return `${who}は、この月の支払った人にも負担の対象にもできません。支払った人と負担の分け方を変えてください。`;
+        if (asPayer) return `${who}は、この月の支払った人にできません。支払った人を選び直してください。`;
         return name === undefined
           ? 'この月の支出に使えないメンバーが含まれています。負担の分け方を変えてください。'
           : `${name}さんは負担の対象にできません。負担の分け方を変えてください。`;

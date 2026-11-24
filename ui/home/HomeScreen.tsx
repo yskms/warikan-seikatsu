@@ -48,7 +48,7 @@ interface HomeScreenProps {
 export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
   const colors = useColors();
   // 読み込みの状態を持つ入れ物なので、`useMemo`（Reactが捨てて作り直すことがある）ではなく `useState` で持つ。
-  // グループが変わるときは、呼び出し側が `key` を変えて、この画面ごと作り直す（`app/index.tsx`）。`groupId` は、作ったあとは変えない。
+  // グループが変わるときは、呼び出し側が `key` を変えて、この画面ごと作り直す（`ui/GroupGate.tsx`）。`groupId` は、作ったあとは変えない。
   const [loader] = useState(() =>
     createHomeLoader({ service: homeService, groupId, errorMessage: loadHomeErrorMessage }),
   );
@@ -142,6 +142,7 @@ export function HomeScreen({ groupId, groupName }: HomeScreenProps) {
             <SettlementCard model={view.settlement} />
             <ExpenseSection
               rows={view.rows}
+              registerable={months.find((item) => item.month === selected)?.status === 'open'}
               onOpen={(expenseId) =>
                 router.push({ pathname: '/expense', params: { groupId, expenseId, month: selected } })
               }

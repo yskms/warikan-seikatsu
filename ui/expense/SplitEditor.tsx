@@ -108,8 +108,11 @@ export function SplitEditor({
                 accessibilityLabel={`${member.displayName}の割合（パーセント）`}
                 value={split.percents[member.id] ?? ''}
                 onChangeText={(text) =>
-                  // 数字と小数点だけ（形の検査は、保存の前に `parsePercent`）
-                  onChange({ ...split, percents: { ...split.percents, [member.id]: text.replace(/[^0-9.]/g, '') } })
+                  // 数字と小数点だけ（形の検査は、保存の前に `parsePercent`）。小数点が「,」のキーボードの `33,5` は、`33.5` にする
+                  onChange({
+                    ...split,
+                    percents: { ...split.percents, [member.id]: text.replace(/,/g, '.').replace(/[^0-9.]/g, '') },
+                  })
                 }
                 onFocus={() => onKeypadTarget(null)}
                 editable={!disabled}

@@ -2,7 +2,7 @@
 // `SessionAccess.withSession` を通す（端末のセッションが無くなったことを画面へ伝えるのは、その包みだけ。CLAUDE.md）。
 // `access` は、`platform/accountService.ts` の `sessionAccess`（通知で包んだもの）を渡す。
 //
-// 登録の識別子（`CreateExpenseRequest.id`）は、呼び出し側（シート）が、開いたときに1回だけ作る。通信が切れて結果が分からない
+// 登録の識別子（`CreateExpenseRequest.id`）は、呼び出し側（シート）が、シートごとに1回だけ作る（最初の保存で作り、そのシートの間は使い回す）。通信が切れて結果が分からない
 // ときは、**同じ `id` で**もう一度 `create` を呼ぶ（支出が2件にならない）。
 import type { CreateExpenseRequest, UpdateExpenseRequest } from '../domain/expense.ts';
 import type { GroupDetail } from '../domain/group.ts';
@@ -54,7 +54,7 @@ export function createExpenseService({ groups, months, expenses, categories, acc
       });
     },
 
-    /** 登録。`request.id` は、シートを開くたびに1回だけ作った値（上のコメント）。 */
+    /** 登録。`request.id` は、シートごとに1回だけ作った値（上のコメント）。 */
     create(groupId: string, request: CreateExpenseRequest): Promise<{ id: string }> {
       return access.withSession((session) => expenses.create(session, groupId, request));
     },

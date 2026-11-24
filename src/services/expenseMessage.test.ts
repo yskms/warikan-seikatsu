@@ -32,6 +32,29 @@ describe('saveExpenseErrorMessage', () => {
     );
   });
 
+  it('使えないメンバーが支払者のときは、支払った人の選び直しを案内する（負担の分け方ではない）', () => {
+    const error = rejected('member_not_available', { memberId: 'm2' });
+    const name = (id: string) => (id === 'm2' ? '彼女' : undefined);
+    assert.equal(
+      saveExpenseErrorMessage(error, 'create', name, { payerMemberId: 'm2', splitMemberIds: [] }),
+      '彼女さんは、この月の支払った人にできません。支払った人を選び直してください。',
+    );
+    assert.equal(
+      saveExpenseErrorMessage(error, 'create', name, { payerMemberId: 'm2', splitMemberIds: ['m1', 'm2'] }),
+      '彼女さんは、この月の支払った人にも負担の対象にもできません。支払った人と負担の分け方を変えてください。',
+    );
+    // 名前が引けないとき
+    assert.equal(
+      saveExpenseErrorMessage(error, 'create', () => undefined, { payerMemberId: 'm2' }),
+      'この月の支出に使えないメンバーは、この月の支払った人にできません。支払った人を選び直してください。',
+    );
+    // 支払者でなければ、これまでどおり
+    assert.equal(
+      saveExpenseErrorMessage(error, 'create', name, { payerMemberId: 'm1', splitMemberIds: ['m2'] }),
+      '彼女さんは負担の対象にできません。負担の分け方を変えてください。',
+    );
+  });
+
   it('理由ごとの案内', () => {
     assert.match(saveExpenseErrorMessage(rejected('month_closed'), 'update'), /締められた/);
     assert.match(saveExpenseErrorMessage(rejected('month_not_registerable'), 'create'), /登録する月を選び直/);
