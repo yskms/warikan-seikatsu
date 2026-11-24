@@ -105,7 +105,10 @@ export function syncSplitDraft(split: SplitDraft, memberIds: readonly string[]):
   const amounts: Record<string, string> = {};
   for (const id of ids) {
     percents[id] = split.percents[id] ?? '0';
-    amounts[id] = split.amounts[id] ?? '';
+    // 入力していない（無い）メンバーの欄は、空の値も足さない（空と「無い」は同じ意味。足すと、月を動かして元に戻しただけで、
+    // 入力が「変わった」ことになり、閉じるときの破棄の確認などが出る）
+    const amount = split.amounts[id];
+    if (amount !== undefined) amounts[id] = amount;
   }
   return {
     ...split,
@@ -252,5 +255,20 @@ export function sameSplit(a: SplitRequest, b: SplitRequest): boolean {
       return b.method === 'ratio' && JSON.stringify(byMember(a.shares)) === JSON.stringify(byMember(b.shares));
     case 'fixed':
       return b.method === 'fixed' && JSON.stringify(byMember(a.amounts)) === JSON.stringify(byMember(b.amounts));
+  }
+}
+
+/**
+ * 0%・0円の行を除いた負担の指定（`ratio`・`fixed`。ほかは、そのまま）。固定費で、「変えていないか」の比較に使う: 保存されている
+ * 負担に0の行（使えなくなったメンバーなど）があっても、送る負担（0の行を送らない）と同じ形にそろえて比べる。
+ */
+export function withoutZeroRows(split: SplitRequest): SplitRequest {
+  switch (split.method) {
+    case 'ratio':
+      return { method: 'ratio', shares: split.shares.filter((share) => share.basisPoints > 0) };
+    case 'fixed':
+      return { method: 'fixed', amounts: split.amounts.filter((row) => row.amountMinor > 0) };
+    default:
+      return split;
   }
 }

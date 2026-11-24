@@ -5,10 +5,11 @@
 // 入力の状態・検査・リクエストの組み立ては、画面の外の `src/services/recurringForm.ts`（`npm test` で守る）にあり、この画面は、
 // それを並べて、押されたものを渡すだけ。**負担額の計算も、プレビューも出さない**（CLAUDE.md）。
 //
-// - 登録の識別子（`requestId`）は、最初に保存を押したときに1回だけ作り、やり直しでも同じ値を送る（通信が切れて結果が分からない
-//   とき、固定費が2件にならない。毎月2件ずつ支出が作られる。docs/backend-design.md 9章の「二重送信」）。副作用として、結果が分からない
-//   失敗のあとで入力を直して送り直すと、最初の登録が済んでいた場合は、直した内容は反映されない（保存済みの固定費が返る）。
-//   二重に登録されるより、よいとした（反映されなかった内容は、一覧から編集できる）。
+// - 登録の手順（`id` の使い回し、結果が分からない失敗のあとの `PATCH`、登録が済んだあとの失敗の扱い）は、画面の外の
+//   `src/services/recurringCreate.ts`（`npm test` で守る。理由はそちらの先頭）。`id` は、最初に保存を押したときに1回だけ作り、
+//   やり直しでも使い回す（固定費が2件になると、毎月2件ずつ支出が作られる）。結果が分からない失敗のあとに入力を直して送り直した
+//   ときは、サーバーが保存済みの固定費をそのまま返すので、直した内容を `PATCH` で送る。この画面は、失敗した段階（`create`・
+//   `create-update`）の文言を出すだけ。
 // - 編集の保存は、変えたものだけを送る（`buildUpdatePlan`）。止まっている固定費の「再開する」は、入力の変更も一緒に送る（支払う人の
 //   付け替えと再開が、1回の操作でないと、サーバーが断る）。**「止める」は、入力を変えているあいだは押せない**（変更を一緒に止める
 //   のか、捨てるのかが、分からなくなる）。
@@ -64,6 +65,7 @@ import {
   type RecurringDraft,
   type RecurringFormContext,
 } from '../../src/services/recurringForm.ts';
+import { createRecurringCreator, RecurringCreateFailure } from '../../src/services/recurringCreate.ts';
 import { saveRecurringErrorMessage, skippedNotice, type RecurringWriteAction } from '../../src/services/recurringMessage.ts';
 import {
   CATEGORY_ARCHIVED_HELP,
@@ -169,7 +171,14 @@ function RecurringEditor({ groupId, ctx }: { groupId: string; ctx: RecurringForm
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);
-  const requestId = useRef<string | null>(null);
+  // 登録の手順（`id`・結果が分からない失敗・登録が済んだか、を持つ）
+  const [creator] = useState(() =>
+    createRecurringCreator({
+      create: (id, request) => recurringService.create(id, request),
+      update: (id, request) => recurringService.update(id, request),
+      newId,
+    }),
+  );
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -186,7 +195,8 @@ function RecurringEditor({ groupId, ctx }: { groupId: string; ctx: RecurringForm
       }
       if (!dirtyRef.current) return;
       event.preventDefault();
-      Alert.alert('入力内容を破棄しますか？', undefined, [
+      // 登録は済んでいるのに、直した内容を反映できていないとき（`create-update`）は、そのことを伝える
+      Alert.alert('入力内容を破棄しますか？', creator.created() ? '固定費は登録済みです。直した内容は、反映されません。' : undefined, [
         { text: '続ける', style: 'cancel' },
         {
           text: '破棄する',
@@ -262,8 +272,10 @@ function RecurringEditor({ groupId, ctx }: { groupId: string; ctx: RecurringForm
       if (notice === null) leave();
       else Alert.alert(notice.title, notice.body, [{ text: 'OK', onPress: leave }], { cancelable: false });
     } catch (e) {
+      // 登録の手順の失敗は、どの段階か（`create`・`create-update`）で、文言を変える
+      const failure = e instanceof RecurringCreateFailure ? { action: e.step, error: e.error } : { action, error: e };
       setError(
-        saveRecurringErrorMessage(e, action, memberName, {
+        saveRecurringErrorMessage(failure.error, failure.action, memberName, {
           payerMemberId: draft.payerMemberId,
           splitMemberIds: splitMemberIdsOf(draft, ctx),
         }),
@@ -280,9 +292,9 @@ function RecurringEditor({ groupId, ctx }: { groupId: string; ctx: RecurringForm
       'save',
       async () => {
         if (editing === null) {
-          const request = buildCreateRequest(draft, ctx, (requestId.current ??= newId()));
-          if (request === null) return null;
-          return { saved: await recurringService.create(groupId, request), change: 'create' };
+          const body = buildCreateRequest(draft, ctx);
+          if (body === null) return null;
+          return { saved: await creator.submit(groupId, body), change: 'create' };
         }
         const plan = buildUpdatePlan(draft, ctx);
         if (plan.kind === 'invalid') return null;

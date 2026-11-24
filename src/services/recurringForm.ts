@@ -19,13 +19,14 @@ import {
   sameSplit,
   splitDraftFromRequest,
   syncSplitDraft,
+  withoutZeroRows,
   type SplitCheck,
   type SplitDraft,
 } from './splitForm.ts';
 import type { SplitRequest } from '../domain/expense.ts';
 import type { GroupMember } from '../domain/group.ts';
 import type { Category, MonthListItem } from '../domain/month.ts';
-import type { CreateRecurringRequest, RecurringExpense, UpdateRecurringRequest } from '../domain/recurring.ts';
+import type { NewRecurringRequest, RecurringExpense, UpdateRecurringRequest } from '../domain/recurring.ts';
 import type { RecurringData } from './recurringService.ts';
 
 /** 毎月の日を選ぶ範囲（1〜31。その月に無い日は月末日） */
@@ -291,8 +292,11 @@ export function splitMemberIdsOf(draft: RecurringDraft, ctx: RecurringFormContex
   return memberIdsOfSplit(splitRequestOf(draft, ctx));
 }
 
-/** 登録のリクエスト。保存できないときは `null`。`id` は、シートごとに1回だけ作った識別子（`CreateRecurringRequest.id`）。 */
-export function buildCreateRequest(draft: RecurringDraft, ctx: RecurringFormContext, id: string): CreateRecurringRequest | null {
+/**
+ * 登録の本文（識別子を除く）。保存できないときは `null`。識別子は、登録の手順（`src/services/recurringCreate.ts`）が、シートごとに
+ * 1回だけ作って付ける。
+ */
+export function buildCreateRequest(draft: RecurringDraft, ctx: RecurringFormContext): NewRecurringRequest | null {
   const check = checkDraft(draft, ctx);
   if (!check.canSave || check.amount.kind !== 'ok') return null;
   const month = firstTargetMonth(draft.startMonth, ctx);
@@ -300,7 +304,6 @@ export function buildCreateRequest(draft: RecurringDraft, ctx: RecurringFormCont
   if (split === null || draft.categoryId === null || draft.payerMemberId === null || draft.dayOfMonth === null) return null;
   const description = draft.description.trim();
   return {
-    id,
     ...(description === '' ? {} : { description }),
     amountMinor: check.amount.minor,
     categoryId: draft.categoryId,
@@ -326,10 +329,13 @@ export type RecurringUpdatePlan =
  * 固定費の金額を変えるとき（サーバーが400で求める。金額指定は自動で配分しない）に送る。割合・均等・1人は、金額に依らないので、
  * 金額だけ変えるときは送らない（送ると、使えなくなったメンバーが負担に残る固定費の金額が直せなくなる）。
  *
+ * **0%・0円の行は、送らない**（支出と違い、もとの負担にいたメンバーの行も残さない）。サーバーは、負担の指定を送ると、その全員が
+ * 使えるかを検べる（0%の行も対象）ので、使えなくなったメンバーの0の行が残ると、そのメンバーを0%にして直しても409で断られる。
+ * 「変えていないか」の比較も、もとの負担の0の行を除いて行う（0の行だけが違うとき、変えたことにしない）。
+ *
  * `resume` は、止まっている固定費を再開する（`paused: false` を添える）。`category` 以外の負担の固定費は、止めた理由によらず、
  * 負担の指定を送り直さないと再開できない（サーバーが400で求める。画面で確認した負担を、サーバーが勝手に有効にしない）ので、
- * 変えていなくても `split` を送る。再開では、もともと負担にいたメンバーの0%・0円の行は残さない（使えなくなったメンバーの行が
- * 残ると、再開が409で断られる）。アプリが負担の方法を扱えない固定費（`splitLocked`）は、`split` を送れないので、再開できない
+ * 変えていなくても `split` を送る。アプリが負担の方法を扱えない固定費（`splitLocked`）は、`split` を送れないので、再開できない
  * （`resumeBlocker`）。
  */
 export function buildUpdatePlan(
@@ -360,13 +366,9 @@ export function buildUpdatePlan(
 
   if (original.split !== null) {
     const month = firstTargetMonth(draft.startMonth, ctx);
-    const kept =
-      !resume && draft.split !== null && original.split.method === draft.split.method
-        ? new Set(memberIdsOfSplit(original.split))
-        : new Set<string>();
-    const split = buildSplitRequest(draft.split, splitMemberIds(ctx, month), ctx.minorUnit, kept);
+    const split = buildSplitRequest(draft.split, splitMemberIds(ctx, month), ctx.minorUnit);
     if (split === null) return { kind: 'invalid' };
-    const changed = !sameSplit(split, original.split);
+    const changed = !sameSplit(split, withoutZeroRows(original.split));
     const needsForAmount = amountChanged && original.split.method === 'fixed';
     const needsForResume = resume && split.method !== 'category';
     if (changed || needsForAmount || needsForResume) request.split = split;

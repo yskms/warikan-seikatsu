@@ -51,6 +51,9 @@ export interface CreateRecurringRequest {
   currencyCode: string;
 }
 
+/** 登録の本文から、識別子を除いたもの（識別子は、登録の手順 `src/services/recurringCreate.ts` が持つ） */
+export type NewRecurringRequest = Omit<CreateRecurringRequest, 'id'>;
+
 /** 変更の本文。変えるものだけ（1つ以上）。`description`・`endMonth` は `null` で消す。 */
 export interface UpdateRecurringRequest {
   description?: string | null;

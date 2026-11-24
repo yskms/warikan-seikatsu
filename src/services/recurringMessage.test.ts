@@ -62,6 +62,15 @@ describe('saveRecurringErrorMessage（断られたとき）', () => {
   });
 });
 
+describe('saveRecurringErrorMessage（登録が済んだあとの、入力の反映）', () => {
+  it('固定費は登録されたことを、文の頭で伝える。そのあとに、元の失敗の文言', () => {
+    const conflict = saveRecurringErrorMessage(reject('conflict'), 'create-update');
+    assert.equal(conflict, '固定費は登録されましたが、直した内容を反映できていません。他のメンバーが更新しました。もう一度保存してください。');
+    assert.match(saveRecurringErrorMessage(new AuthError('network'), 'create-update'), /^固定費は登録されましたが.*通信できませんでした/);
+    assert.match(saveRecurringErrorMessage(reject('member_not_available', { memberId: 'm2' }), 'create-update', names, { payerMemberId: 'm2' }), /^固定費は登録されましたが.*支払う人にできません/);
+  });
+});
+
 describe('saveRecurringErrorMessage（通信などの失敗）', () => {
   it('通信できない・混み合っている・ログイン・保存先を読めない', () => {
     assert.match(saveRecurringErrorMessage(new AuthError('network'), 'create'), /通信できませんでした。入力内容はそのまま/);
@@ -93,18 +102,20 @@ describe('skippedNotice', () => {
     assert.equal(skippedNotice({ paused: false }, notSkipped), null);
   });
 
-  it('登録・再開・日や開始月を変えたあとは、出す', () => {
+  it('登録・再開・日・開始月・終了月を変えたあとは、出す（終了した固定費の終了月を延ばして、今月の予定日をすぎているとき）', () => {
     const expected = { title: '今月の分は作られません', body: '必要なら、支出を直接登録してください。' };
     assert.deepEqual(skippedNotice('create', skipped), expected);
     assert.deepEqual(skippedNotice({ paused: false }, skipped), expected);
     assert.deepEqual(skippedNotice({ dayOfMonth: 3 }, skipped), expected);
     assert.deepEqual(skippedNotice({ startMonth: '2026-12' }, skipped), expected);
+    assert.deepEqual(skippedNotice({ endMonth: '2027-03' }, skipped), expected);
+    assert.deepEqual(skippedNotice({ endMonth: null }, skipped), expected);
   });
 
   it('内容や金額を直しただけのとき・止めたときは、出さない', () => {
     assert.equal(skippedNotice({ amountMinor: 1, currencyCode: 'JPY' }, skipped), null);
     assert.equal(skippedNotice({ description: 'x' }, skipped), null);
     assert.equal(skippedNotice({ paused: true }, skipped), null);
-    assert.equal(skippedNotice({ endMonth: null }, skipped), null);
+    assert.equal(skippedNotice({ categoryId: 'c2' }, skipped), null);
   });
 });

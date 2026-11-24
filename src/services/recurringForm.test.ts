@@ -324,8 +324,7 @@ describe('checkDraft', () => {
 describe('buildCreateRequest', () => {
   it('登録の本文。内容・終了する月は、あるときだけ。通貨を添える', () => {
     const ctx = context();
-    assert.deepEqual(buildCreateRequest(filled(ctx), ctx, 'id-1'), {
-      id: 'id-1',
+    assert.deepEqual(buildCreateRequest(filled(ctx), ctx), {
       amountMinor: 80000,
       categoryId: 'c1',
       payerMemberId: 'm1',
@@ -334,8 +333,7 @@ describe('buildCreateRequest', () => {
       startMonth: '2026-11',
       currencyCode: 'JPY',
     });
-    assert.deepEqual(buildCreateRequest(filled(ctx, { description: '  家賃  ', endMonth: '2027-10', startMonth: '2026-12' }), ctx, 'id-2'), {
-      id: 'id-2',
+    assert.deepEqual(buildCreateRequest(filled(ctx, { description: '  家賃  ', endMonth: '2027-10', startMonth: '2026-12' }), ctx), {
       description: '家賃',
       amountMinor: 80000,
       categoryId: 'c1',
@@ -351,9 +349,9 @@ describe('buildCreateRequest', () => {
   it('負担を変える入力は、使えるメンバーだけで組み立てる（割合・均等・金額指定・1人）', () => {
     const ctx = context();
     const custom = toggleCustomSplit(filled(ctx), ctx);
-    assert.deepEqual(buildCreateRequest(custom, ctx, 'i')?.split, { method: 'equal', memberIds: ['m1', 'm2'] });
+    assert.deepEqual(buildCreateRequest(custom, ctx)?.split, { method: 'equal', memberIds: ['m1', 'm2'] });
     const ratio = { ...custom, split: { ...custom.split!, method: 'ratio' as const, percents: { m1: '70', m2: '30' } } };
-    assert.deepEqual(buildCreateRequest(ratio, ctx, 'i')?.split, {
+    assert.deepEqual(buildCreateRequest(ratio, ctx)?.split, {
       method: 'ratio',
       shares: [
         { memberId: 'm1', basisPoints: 7000 },
@@ -362,9 +360,9 @@ describe('buildCreateRequest', () => {
     });
     // 0%・0円のメンバーは送らない
     const zero = { ...custom, split: { ...custom.split!, method: 'ratio' as const, percents: { m1: '100', m2: '0' } } };
-    assert.deepEqual(buildCreateRequest(zero, ctx, 'i')?.split, { method: 'ratio', shares: [{ memberId: 'm1', basisPoints: 10000 }] });
+    assert.deepEqual(buildCreateRequest(zero, ctx)?.split, { method: 'ratio', shares: [{ memberId: 'm1', basisPoints: 10000 }] });
     const fixed = { ...custom, split: { ...custom.split!, method: 'fixed' as const, amounts: { m1: '50000', m2: '30000' } } };
-    assert.deepEqual(buildCreateRequest(fixed, ctx, 'i')?.split, {
+    assert.deepEqual(buildCreateRequest(fixed, ctx)?.split, {
       method: 'fixed',
       amounts: [
         { memberId: 'm1', amountMinor: 50000 },
@@ -372,18 +370,18 @@ describe('buildCreateRequest', () => {
       ],
     });
     const single = { ...custom, split: { ...custom.split!, method: 'single' as const, singleId: 'm2' } };
-    assert.deepEqual(buildCreateRequest(single, ctx, 'i')?.split, { method: 'single', memberId: 'm2' });
+    assert.deepEqual(buildCreateRequest(single, ctx)?.split, { method: 'single', memberId: 'm2' });
   });
 
   it('保存できない入力は `null`', () => {
     const ctx = context();
-    assert.equal(buildCreateRequest(filled(ctx, { dayOfMonth: null }), ctx, 'i'), null);
-    assert.equal(buildCreateRequest(filled(ctx, { amount: '' }), ctx, 'i'), null);
+    assert.equal(buildCreateRequest(filled(ctx, { dayOfMonth: null }), ctx), null);
+    assert.equal(buildCreateRequest(filled(ctx, { amount: '' }), ctx), null);
   });
 
   it('通貨の小数桁数に合わせて、最小単位にする（USD）', () => {
     const ctx = context(null, { group: group({ currencyCode: 'USD', currencyMinorUnit: 2 }) });
-    const request = buildCreateRequest(filled(ctx, { amount: '12.5' }), ctx, 'i');
+    const request = buildCreateRequest(filled(ctx, { amount: '12.5' }), ctx);
     assert.equal(request?.amountMinor, 1250);
     assert.equal(request?.currencyCode, 'USD');
   });
@@ -480,6 +478,52 @@ describe('buildUpdatePlan', () => {
   it('負担を変えていなければ、もともと負担にいた人の0%の行も、変えたことにしない', () => {
     const ctx = context(recurring({ split: { method: 'ratio', shares: [{ memberId: 'm1', basisPoints: 10000 }, { memberId: 'm2', basisPoints: 0 }] } }));
     assert.deepEqual(buildUpdatePlan(initialDraft(ctx), ctx), { kind: 'unchanged' });
+  });
+
+  it('もとの負担に0%の行があっても、変えていなければ負担を送らない（日だけ直せる）', () => {
+    const leftMember = member('m2', { status: 'left', expenseEndMonth: '2026-10' });
+    const split = { method: 'ratio' as const, shares: [{ memberId: 'm1', basisPoints: 10000 }, { memberId: 'm2', basisPoints: 0 }] };
+    const ctx = context(recurring({ split, pausedAt: 1, pausedReason: 'member_changed' }), { group: group({ members: [member('m1'), leftMember] }) });
+    assert.deepEqual(buildUpdatePlan({ ...initialDraft(ctx), dayOfMonth: 3 }, ctx), { kind: 'request', request: { dayOfMonth: 3 } });
+  });
+
+  it('使えなくなったメンバーを0%にして直したときは、そのメンバーの行を送らない（止めたまま保存できる）', () => {
+    const leftMember = member('m2', { status: 'left', expenseEndMonth: '2026-10' });
+    const split = { method: 'ratio' as const, shares: [{ memberId: 'm1', basisPoints: 5000 }, { memberId: 'm2', basisPoints: 5000 }] };
+    const ctx = context(recurring({ split, pausedAt: 1, pausedReason: 'member_changed' }), { group: group({ members: [member('m1'), leftMember] }) });
+    const base = initialDraft(ctx);
+    const draft = { ...base, split: { ...base.split!, percents: { m1: '100', m2: '0' } } };
+    assert.deepEqual(buildUpdatePlan(draft, ctx), {
+      kind: 'request',
+      request: { split: { method: 'ratio', shares: [{ memberId: 'm1', basisPoints: 10000 }] } },
+    });
+  });
+
+  it('金額指定の固定費の金額を変えるときも、0円の行は送らない', () => {
+    const leftMember = member('m2', { status: 'left', expenseEndMonth: '2026-10' });
+    const split = { method: 'fixed' as const, amounts: [{ memberId: 'm1', amountMinor: 3000 }, { memberId: 'm2', amountMinor: 0 }] };
+    const ctx = context(recurring({ amountMinor: 3000, split }), { group: group({ members: [member('m1'), leftMember] }) });
+    const base = initialDraft(ctx);
+    const draft = { ...base, amount: '4000', split: { ...base.split!, amounts: { m1: '4000', m2: '' } } };
+    assert.deepEqual(buildUpdatePlan(draft, ctx), {
+      kind: 'request',
+      request: { amountMinor: 4000, currencyCode: 'JPY', split: { method: 'fixed', amounts: [{ memberId: 'm1', amountMinor: 4000 }] } },
+    });
+  });
+
+  it('開始する月を動かして元に戻しても、入力は変わっていない（均等・割合・1人・金額指定）', () => {
+    for (const split of [
+      { method: 'equal' as const, memberIds: ['m1', 'm2'] },
+      { method: 'ratio' as const, shares: [{ memberId: 'm1', basisPoints: 7000 }, { memberId: 'm2', basisPoints: 3000 }] },
+      { method: 'single' as const, memberId: 'm2' },
+      { method: 'fixed' as const, amounts: [{ memberId: 'm1', amountMinor: 50000 }, { memberId: 'm2', amountMinor: 30000 }] },
+    ]) {
+      const ctx = context(recurring({ amountMinor: 80000, split }));
+      const base = initialDraft(ctx);
+      const moved = setStartMonth(base, '2026-12', ctx);
+      assert.deepEqual(setStartMonth(moved, '2026-11', ctx), base, split.method);
+      assert.deepEqual(buildUpdatePlan(setStartMonth(moved, '2026-11', ctx), ctx), { kind: 'unchanged' }, split.method);
+    }
   });
 
   it('負担の方法をアプリが読めない固定費は、負担を送らない（ほかの項目は直せる）', () => {

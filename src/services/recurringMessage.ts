@@ -6,7 +6,13 @@ import type { RecurringSaved, UpdateRecurringRequest } from '../domain/recurring
 import { AuthError } from '../repositories/authError.ts';
 import { RecurringRejectedError } from '../repositories/recurringRepository.ts';
 
-export type RecurringWriteAction = 'create' | 'update' | 'pause' | 'resume' | 'remove';
+/**
+ * `create-update` は、登録が済んだあとの、入力の反映（`recurringCreate.ts`）。固定費はもうできているので、文の頭で、それを伝える
+ * （伝えないと、登録できなかったと思ってシートを閉じる）。
+ */
+export type RecurringWriteAction = 'create' | 'create-update' | 'update' | 'pause' | 'resume' | 'remove';
+
+const CREATED_BUT_NOT_UPDATED = '固定費は登録されましたが、直した内容を反映できていません。';
 
 function codeOf(error: unknown): string {
   return error instanceof AuthError ? error.code : 'unexpected';
@@ -31,6 +37,9 @@ export function saveRecurringErrorMessage(
   memberName: (memberId: string) => string | undefined = () => undefined,
   context: RecurringSaveContext = {},
 ): string {
+  if (action === 'create-update') {
+    return `${CREATED_BUT_NOT_UPDATED}${saveRecurringErrorMessage(error, 'update', memberName, context)}`;
+  }
   const verb = action === 'remove' ? '削除' : action === 'pause' ? '止める操作' : action === 'resume' ? '再開' : '保存';
   if (error instanceof RecurringRejectedError) {
     switch (error.reason) {
@@ -97,12 +106,19 @@ export interface RecurringNotice {
 
 /**
  * 保存のあとに出す「今月の分は作られません」の案内。応答の `thisMonthSkipped` は「今月の分を作らない記録がいまある」という
- * 状態なので、止めて再開したときや、内容を直しただけのときも true が返る。案内は、**登録・再開・日や開始月を変えた操作のあと**に
+ * 状態なので、止めて再開したときや、内容を直しただけのときも true が返る。案内は、**登録・再開・日・開始月・終了月を変えた操作のあと**に
  * 出し、内容を直しただけのときは出さない（docs/screens.md 6章の「固定費」）。
+ * 「登録・再開・日・開始月・終了月を変えた」は、サーバーが「新しく今月の予定日を過ぎた状態」にしうる操作（`isDueThisMonth`）。
  */
 export function skippedNotice(change: 'create' | UpdateRecurringRequest, saved: RecurringSaved): RecurringNotice | null {
   if (!saved.thisMonthSkipped) return null;
+  // 終了する月も含める: 終了した固定費の終了する月を今月以降に延ばして、今月の予定日をすぎていると、今月の分を作らない記録が残る
+  // （サーバーの `isDueThisMonth` は、終了する月も見る）
   const relevant =
-    change === 'create' || change.paused === false || change.dayOfMonth !== undefined || change.startMonth !== undefined;
+    change === 'create' ||
+    change.paused === false ||
+    change.dayOfMonth !== undefined ||
+    change.startMonth !== undefined ||
+    change.endMonth !== undefined;
   return relevant ? { title: '今月の分は作られません', body: '必要なら、支出を直接登録してください。' } : null;
 }
