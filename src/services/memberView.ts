@@ -131,10 +131,12 @@ export function sortInvites(invites: readonly Invite[]): Invite[] {
 }
 
 /**
- * 一覧に出す招待。新しく発行したものが上。**端末の時計で、期限が切れたものは出さない**（サーバーの一覧も、期限内のものだけ。
- * 画面を開いたままで期限が来たものを、「共有」で、使えないURLとして送れてしまわないように）。端末の時計がずれていても、一覧を
- * 読み直せば、サーバーの判定に戻る。
+ * 端末の時計で、期限が切れた招待か。**「共有」を出すかにだけ使う**（画面を開いたままで期限が来た招待を、使えないURLとして
+ * 送れてしまわないように）。サーバーの判定ではないので、**一覧からは外さず、「取り消す」は残す**: 端末の時計が進んでいると、
+ * サーバーでは有効な招待が「期限切れ」に見える。外すと、相手に送ったURLは使えるままなのに、取り消す手段が画面に無くなる
+ * （3日以上進んでいれば、発行した招待がすぐに消え、`too_many_invites` で「取り消して」と案内しても、一覧が空になる）。取り消しは、
+ * 取り消し済み・期限切れでも、サーバーが成功にする。一覧を読み直しても、この判定は端末の時計のまま（サーバーの一覧には戻らない）。
  */
-export function visibleInvites(invites: readonly Invite[], now: number): Invite[] {
-  return sortInvites(invites.filter((invite) => invite.expiresAt > now));
+export function isInviteExpired(invite: Pick<Invite, 'expiresAt'>, now: number): boolean {
+  return invite.expiresAt <= now;
 }

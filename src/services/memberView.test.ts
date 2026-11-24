@@ -10,7 +10,7 @@ import {
   formatInviteExpiry,
   memberStatusLabel,
   sortInvites,
-  visibleInvites,
+  isInviteExpired,
 } from './memberView.ts';
 
 function member(overrides: Partial<GroupMember> & { id: string }): GroupMember {
@@ -201,19 +201,11 @@ describe('sortInvites', () => {
   });
 });
 
-describe('visibleInvites', () => {
+describe('isInviteExpired', () => {
   const now = 1_000;
-  it('期限が切れた招待（端末の時計で）は出さない。期限ちょうども出さない。新しいものが上', () => {
-    const invites = [
-      { id: 'a', expiresAt: now + 1, createdAt: 1 },
-      { id: 'b', expiresAt: now, createdAt: 2 },
-      { id: 'c', expiresAt: now - 1, createdAt: 3 },
-      { id: 'd', expiresAt: now + 5000, createdAt: 4 },
-    ];
-    assert.deepEqual(visibleInvites(invites, now).map((invite) => invite.id), ['d', 'a']);
-  });
-
-  it('全部切れていれば空', () => {
-    assert.deepEqual(visibleInvites([{ id: 'a', expiresAt: now - 1, createdAt: 1 }], now), []);
+  it('期限を過ぎた・期限ちょうどは切れている。まだ先なら切れていない（端末の時計での判定）', () => {
+    assert.equal(isInviteExpired({ expiresAt: now - 1 }, now), true);
+    assert.equal(isInviteExpired({ expiresAt: now }, now), true);
+    assert.equal(isInviteExpired({ expiresAt: now + 1 }, now), false);
   });
 });

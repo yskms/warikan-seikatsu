@@ -15,12 +15,14 @@
 //   （取り消し・共有）の失敗は、ダイアログ（`Alert`）で出す**。一覧は最大10件で、メンバーの欄の下にあり、下のほうの行を操作したとき、
 //   ボタンの下の文言は画面の外になりうる。行の上に文言を足すと、続けて押したタップが別の行に当たる。ダイアログなら、位置によらず見え、
 //   読み上げ（iOSの `accessibilityLiveRegion` は効かない）にも乗る。
-// - **期限の表示は、30秒ごとに更新する**（画面を開いたままでも、「あと…」が古くならない）。端末の時計で期限が切れた招待は、一覧から
-//   外す（`visibleInvites`）。使えないURLを、「共有」で送ってしまわないため。
+// - **期限の表示は、30秒ごとと、アプリが前面に戻ったときに更新する**（画面を開いたままでも、「あと…」が古くならない）。端末の時計で
+//   期限が切れた招待は、「期限切れ」と出して、**「共有」だけを隠す**（`isInviteExpired`。使えないURLを送ってしまわないため）。
+//   **行は一覧から外さず、「取り消す」は残す**: 時計が進んでいる端末では、サーバーでは有効な招待が「期限切れ」に見える。外すと、
+//   送ったURLは使えるままなのに、取り消す手段が無くなる（一覧を読み直しても、この判定は端末の時計のまま）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { inviteService } from '../../platform/inviteService.ts';
@@ -38,7 +40,8 @@ import {
   buildInviteSection,
   buildMemberList,
   formatInviteExpiry,
-  visibleInvites,
+  isInviteExpired,
+  sortInvites,
   type MemberRow,
 } from '../../src/services/memberView.ts';
 import { Avatar } from '../home/Avatar.tsx';
@@ -105,7 +108,15 @@ export function MembersScreen({ groupId }: { groupId: string }) {
     useCallback(() => {
       setNow(Date.now());
       const timer = setInterval(() => setNow(Date.now()), EXPIRY_TICK_MS);
-      return () => clearInterval(timer);
+      // バックグラウンドから戻った直後は、次のタイマーまで古い表示のままになる。前面に戻ったときにも更新する（`useFocusEffect` は、
+      // アプリの前面・背面の切り替えでは動き直さない）
+      const appState = AppState.addEventListener('change', (state) => {
+        if (state === 'active') setNow(Date.now());
+      });
+      return () => {
+        clearInterval(timer);
+        appState.remove();
+      };
     }, []),
   );
 
@@ -205,9 +216,9 @@ export function MembersScreen({ groupId }: { groupId: string }) {
     return { members: buildMemberList(group.members), invite: buildInviteSection(group) };
   }, [load]);
 
-  // 期限が切れた招待は出さない（端末の時計。`now` が進むたびに絞り直す）
-  const invites = useMemo(() => (load.status === 'ready' ? visibleInvites(load.data.invites, now) : []), [load, now]);
-  const hasUnshareable = invites.some((invite) => tokens[invite.id] === undefined);
+  const invites = useMemo(() => (load.status === 'ready' ? sortInvites(load.data.invites) : []), [load]);
+  // URLを出し直せない招待があるか。期限が切れた招待は、出し直せても使えないので、数えない
+  const hasUnshareable = invites.some((invite) => tokens[invite.id] === undefined && !isInviteExpired(invite, now));
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -295,23 +306,29 @@ export function MembersScreen({ groupId }: { groupId: string }) {
                     使っていない招待
                   </Text>
                   <View>
-                    {invites.map((invite) => (
-                      <View key={invite.id} style={[styles.inviteRow, { borderBottomColor: colors.border }]}>
-                        <MaterialCommunityIcons name="link-variant" size={22} color={colors.textSecondary} />
-                        <Text style={[styles.inviteExpiry, { color: colors.textPrimary }]} numberOfLines={1}>
-                          {formatInviteExpiry(invite.expiresAt, now)}
-                        </Text>
-                        {tokens[invite.id] !== undefined ? (
-                          <InviteAction label="共有" disabled={busy !== null} onPress={() => share(invite.id)} />
-                        ) : null}
-                        <InviteAction
-                          label="取り消す"
-                          busy={busy?.kind === 'revoke' && busy.inviteId === invite.id}
-                          disabled={busy !== null}
-                          onPress={() => confirmRevoke(invite.id)}
-                        />
-                      </View>
-                    ))}
+                    {invites.map((invite) => {
+                      const expired = isInviteExpired(invite, now);
+                      return (
+                        <View key={invite.id} style={[styles.inviteRow, { borderBottomColor: colors.border }]}>
+                          <MaterialCommunityIcons name="link-variant" size={22} color={colors.textSecondary} />
+                          <Text
+                            style={[styles.inviteExpiry, { color: expired ? colors.textSecondary : colors.textPrimary }]}
+                            numberOfLines={1}
+                          >
+                            {formatInviteExpiry(invite.expiresAt, now)}
+                          </Text>
+                          {tokens[invite.id] !== undefined && !expired ? (
+                            <InviteAction label="共有" disabled={busy !== null} onPress={() => share(invite.id)} />
+                          ) : null}
+                          <InviteAction
+                            label="取り消す"
+                            busy={busy?.kind === 'revoke' && busy.inviteId === invite.id}
+                            disabled={busy !== null}
+                            onPress={() => confirmRevoke(invite.id)}
+                          />
+                        </View>
+                      );
+                    })}
                   </View>
                   {hasUnshareable ? (
                     <Text style={[styles.note, { color: colors.textSecondary }]}>
