@@ -1,7 +1,14 @@
 // ホームの上部のグループ名と、グループの切り替え（docs/screens.md 1章）。複数のグループに入っている人は、グループ名をタップして、
 // 下から出る一覧（月のピッカー `MonthHeader.tsx` と同じ作り）から選ぶ。**グループが1つの人には、切り替えの操作を見せない**
 // （グループ名を、ただの見出しとして出す）。
-// 選ぶと、一覧を閉じてから `onSelect` を呼ぶ（`GroupGate` が、画面ごと作り直す）。選んだのがいまのグループなら、何もしない。
+// 選ぶと、一覧を閉じる指示と `onSelect` を、**同時に**行う（`GroupGate` が、ホームごと作り直す）ので、`Modal` は、表示中のまま外れる
+// （閉じるアニメーションは走らない）。RN 0.86 のiOSは、`Modal` が外れたとき、表示中のモーダルを閉じる処理を持つ
+// （`RCTModalHostViewComponentView.mm` の `ensurePresentedOnlyIfNeeded`。`superview` から外れると閉じる）。Androidは、エミュレータで
+// 確かめた。iOSは未確認。選んだのがいまのグループなら、何もしない。
+//
+// **`disabled` のあいだは、押せない**: 切り替えるとホームごと外れるので、書き込みの通信の最中（ホームの精算完了・繰越。
+// `ui/home/useTransferActions.ts`）に押せると、結果（成功・失敗の文言・読み直し）を受ける画面が無くなる。繰越は取り消せないので、
+// 済んだか分からないまま別のグループへ移ってしまう。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -16,9 +23,11 @@ interface GroupSwitcherProps {
   currentId: string;
   groups: readonly GroupOption[];
   onSelect(groupId: string): void;
+  /** 切り替えを押せなくする（書き込みの通信の最中）。グループが1つのときは、もともと押せない */
+  disabled?: boolean;
 }
 
-export function GroupSwitcher({ name, currentId, groups, onSelect }: GroupSwitcherProps) {
+export function GroupSwitcher({ name, currentId, groups, onSelect, disabled = false }: GroupSwitcherProps) {
   const colors = useColors();
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -35,9 +44,11 @@ export function GroupSwitcher({ name, currentId, groups, onSelect }: GroupSwitch
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${name}。グループを切り替える`}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
         hitSlop={8}
         onPress={() => setPickerOpen(true)}
-        style={styles.button}
+        style={[styles.button, disabled && styles.dimmed]}
       >
         <Text style={[styles.name, styles.buttonName, { color: colors.textSecondary }]} numberOfLines={1}>
           {name}
@@ -101,6 +112,7 @@ const styles = StyleSheet.create({
   button: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 44, maxWidth: '100%' },
   // 長い名前は、矢印を押し出さず、名前のほうを省略する
   buttonName: { flexShrink: 1 },
+  dimmed: { opacity: 0.4 },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: { maxHeight: '70%', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 16, paddingHorizontal: 20 },
   sheetTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 8 },

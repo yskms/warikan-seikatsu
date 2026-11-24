@@ -120,6 +120,8 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
           currentId={groupId}
           groups={groups}
           onSelect={onSelectGroup}
+          // 精算完了・繰越の通信の最中は、切り替えない（ホームごと外れて、結果を受ける画面が無くなる）
+          disabled={transfers.busy !== null}
         />
 
         {selected !== null && groupData !== null ? (
