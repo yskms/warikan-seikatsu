@@ -691,7 +691,7 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 | 409 | `currency_locked` | 通貨の変更：金額に関わるものがある |
 | 409 | `conflict` | 作成：他の人が使っている `id`。変更：他のリクエストの書き込みと競合した（8章） |
 
-アプリ側（`src/repositories/groupRepository.ts`）は、`GET /groups`・`GET /groups/:id`・`POST /groups` だけ実装した。`PATCH` は、グループの設定の画面を作るときに足す（`src/repositories/apiClient.ts` の `ApiMethod` には、支出の編集・削除で `PATCH`・`DELETE` を足してある）。失敗の分類は、アカウントと同じ `AuthError`（名前は認証用だが、HTTPの失敗の種類は共通。`authError.ts` はSingfolioのコピーなので、分けない）。通貨の表・色のキー・名前の長さの上限は `src/domain/group.ts` に持ち、`src/domain/group.test.ts` が、Workerのソース（`worker/src/` の `currencies.ts`・`membership.ts`・`limits.ts`）を読んで、食い違っていないかを確かめる（書き方が変わると、テストが失敗する。そのときは、テストの読み方を直す）。応答の読み方は、一覧（`GET /groups`）は全項目を検べ、**作成（`POST /groups`）は、書き込みの済んだ操作なので、グループの `id` だけを検べる**（形のずれで、作成が済んだものを失敗に見せない）。グループの詳細（`GET /groups/:id`。メンバーなど）も読み込みなので、全項目を検べる（ホームが使う）。
+アプリ側（`src/repositories/groupRepository.ts`）は、`GET /groups`・`GET /groups/:id`・`POST /groups`・`PATCH /groups/:id`・`PATCH /groups/:id/members/me`（グループの設定の画面。screens.md 6章）と、脱退を選ぶ・取り消す操作を実装した。`PATCH` の応答は、書き込みなので、`group.id` があることだけを確かめる（`src/repositories/apiClient.ts` の `ApiMethod` には、支出の編集・削除で `PATCH`・`DELETE` を足してある）。失敗の分類は、アカウントと同じ `AuthError`（名前は認証用だが、HTTPの失敗の種類は共通。`authError.ts` はSingfolioのコピーなので、分けない）。通貨の表・色のキー・名前の長さの上限は `src/domain/group.ts` に持ち、`src/domain/group.test.ts` が、Workerのソース（`worker/src/` の `currencies.ts`・`membership.ts`・`limits.ts`）を読んで、食い違っていないかを確かめる（書き方が変わると、テストが失敗する。そのときは、テストの読み方を直す）。応答の読み方は、一覧（`GET /groups`）は全項目を検べ、**作成（`POST /groups`）は、書き込みの済んだ操作なので、グループの `id` だけを検べる**（形のずれで、作成が済んだものを失敗に見せない）。グループの詳細（`GET /groups/:id`。メンバーなど）も読み込みなので、全項目を検べる（ホームが使う）。
 
 ### 費目・負担割合・支出・固定費
 

@@ -1,4 +1,4 @@
-// グループのHTTP（GET /groups・GET /groups/:id・POST /groups・脱退を選ぶ POST /groups/:id/leave と取り消す DELETE）。Serviceからだけ使う。画面・Serviceは、URLやレスポンスの形を知らない。
+// グループのHTTP（GET /groups・GET /groups/:id・POST /groups・変更の PATCH /groups/:id と /groups/:id/members/me・脱退を選ぶ POST /groups/:id/leave と取り消す DELETE）。Serviceからだけ使う。画面・Serviceは、URLやレスポンスの形を知らない。
 // リクエスト・レスポンスの形は docs/backend-design.md 9章の「グループAPI」が正で、Worker（worker/）とはコードを共有しない。
 //
 // HTTPの共通の扱い（再試行しない・5xxの扱い・Cookieを送らない・タイムアウト）は `apiClient.ts`。失敗は、アカウントと同じ
@@ -68,6 +68,18 @@ export interface LeaveRequested {
   confirmed: boolean;
   /** 最後の1人の脱退が確定して、グループのデータがすべて消えた */
   groupDeleted: boolean;
+}
+
+/** `PATCH /groups/:id` の本文。変えるものだけを入れる（1つ以上）。 */
+export interface UpdateGroupRequest {
+  name?: string;
+  currencyCode?: string;
+}
+
+/** `PATCH /groups/:id/members/me` の本文。変えるものだけを入れる（1つ以上）。 */
+export interface UpdateMeRequest {
+  displayName?: string;
+  color?: string;
 }
 
 export interface CreateGroupRequest {
@@ -196,6 +208,39 @@ export function createGroupRepository(
         { session, rejected: groupRejection },
         async (response) => {
           if (!('leaveRequestedMonth' in record(await response.json()))) invalid();
+        },
+      );
+    },
+
+    /**
+     * `PATCH /groups/:id`。グループ名・通貨のうち、変えるものだけを送る。応答は、`group` の `id` だけを読む（書き込みの応答。
+     * 形が少しずれただけで失敗にすると、サーバーでは済んでいるのに、画面が失敗と受け取る。`id` は、JSONでない200〔宿のWi-Fiの認証画面など〕を、
+     * 変更できたと取り違えないための最低限の確認）。同じ内容を送り直しても、結果は変わらない（サーバーは、変わらなければ書かない）。
+     * 断られたら `GroupRejectedError`: 403 `forbidden`（脱退が確定した人）・409 `currency_locked`（金額に関わるものがある）・
+     * 409 `conflict`（他の書き込みと競合した）・404 `not_found`・400 `invalid_request`。
+     */
+    update(session: string, groupId: string, request: UpdateGroupRequest): Promise<void> {
+      return client.request(
+        'PATCH',
+        `/groups/${encodeURIComponent(groupId)}`,
+        { session, json: request, rejected: groupRejection },
+        async (response) => {
+          id(record(record(await response.json()).group).id);
+        },
+      );
+    },
+
+    /**
+     * `PATCH /groups/:id/members/me`。自分の表示名・色のうち、変えるものだけを送る。応答の読み方と、断られたときは、`update` と同じ
+     * （403は無い。脱退が確定したあとも直せる）。
+     */
+    updateMe(session: string, groupId: string, request: UpdateMeRequest): Promise<void> {
+      return client.request(
+        'PATCH',
+        `/groups/${encodeURIComponent(groupId)}/members/me`,
+        { session, json: request, rejected: groupRejection },
+        async (response) => {
+          id(record(record(await response.json()).group).id);
         },
       );
     },

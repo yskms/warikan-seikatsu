@@ -4,14 +4,20 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { GroupListItem } from '../domain/group.ts';
+import type { GroupDetail, GroupListItem } from '../domain/group.ts';
 import { AuthError } from '../repositories/authError.ts';
-import type { CreateGroupRequest, GroupRepository } from '../repositories/groupRepository.ts';
+import type {
+  CreateGroupRequest,
+  GroupRepository,
+  UpdateGroupRequest,
+  UpdateMeRequest,
+} from '../repositories/groupRepository.ts';
 import type { SessionAccess } from './accountService.ts';
 import { createGroupService } from './groupService.ts';
 
 const item = { id: 'g1' } as GroupListItem;
 const created = { id: 'g1' };
+const detail = { id: 'g1' } as GroupDetail;
 const request: CreateGroupRequest = {
   id: '3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b',
   name: 'ふたりの生活費',
@@ -37,6 +43,16 @@ function setup(options: { session?: string; failWith?: Error } = {}) {
     },
     async cancelLeave(session: string, groupId: string) {
       log.push(`cancelLeave:${session}:${groupId}`);
+    },
+    async get(session: string, groupId: string) {
+      log.push(`get:${session}:${groupId}`);
+      return detail;
+    },
+    async update(session: string, groupId: string, req: UpdateGroupRequest) {
+      log.push(`update:${session}:${groupId}:${JSON.stringify(req)}`);
+    },
+    async updateMe(session: string, groupId: string, req: UpdateMeRequest) {
+      log.push(`updateMe:${session}:${groupId}:${JSON.stringify(req)}`);
     },
   } as unknown as GroupRepository;
   const access: SessionAccess = {
@@ -76,12 +92,30 @@ describe('groupService', () => {
     assert.deepEqual(log.filter((entry) => entry.startsWith('requestLeave:')), ['requestLeave:SESSION:g1:ack', 'requestLeave:SESSION:g1']);
   });
 
+  it('getGroup・updateGroup・updateMe は withSession を通して、セッションとグループのIDと本文を Repository に渡す', async () => {
+    const { service, log } = setup({ session: 'SESSION' });
+    assert.equal(await service.getGroup('g1'), detail);
+    await service.updateGroup('g1', { name: '新しい名前' });
+    await service.updateMe('g1', { color: 'blue' });
+    assert.deepEqual(log, [
+      'withSession',
+      'get:SESSION:g1',
+      'withSession',
+      'update:SESSION:g1:{"name":"新しい名前"}',
+      'withSession',
+      'updateMe:SESSION:g1:{"color":"blue"}',
+    ]);
+  });
+
   it('サインインしていない（withSession の失敗）は、そのまま投げる。Repository は呼ばない', async () => {
     const { service, log } = setup({ failWith: new AuthError('not-signed-in') });
     await assert.rejects(service.listGroups(), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     await assert.rejects(service.createGroup(request), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     await assert.rejects(service.requestLeave('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     await assert.rejects(service.cancelLeave('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
-    assert.deepEqual(log, ['withSession', 'withSession', 'withSession', 'withSession']);
+    await assert.rejects(service.getGroup('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    await assert.rejects(service.updateGroup('g1', { name: 'x' }), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    await assert.rejects(service.updateMe('g1', { color: 'blue' }), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    assert.deepEqual(log, Array(7).fill('withSession'));
   });
 });

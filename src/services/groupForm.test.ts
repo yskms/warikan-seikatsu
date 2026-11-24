@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { validateCreateGroupForm, validateDisplayName } from './groupForm.ts';
+import { validateCreateGroupForm, validateDisplayName, validateGroupName } from './groupForm.ts';
 
 const valid = { name: 'ふたりの生活費', displayName: 'あなた', currencyCode: 'JPY' };
 
@@ -65,5 +65,16 @@ describe('validateDisplayName（参加でも使う）', () => {
     const single = validateDisplayName('');
     assert.ok(!create.ok && !single.ok);
     assert.equal(create.errors.displayName, single.error);
+  });
+});
+
+describe('validateGroupName', () => {
+  it('通ったときは、前後の空白を落とした値を返す。作成のフォームと同じ規則（空・30字超・制御文字は断る）', () => {
+    assert.deepEqual(validateGroupName('　家計 '), { ok: true, value: '家計' });
+    assert.ok(!validateGroupName('  ').ok);
+    assert.ok(validateGroupName('あ'.repeat(30)).ok);
+    const over = validateGroupName('あ'.repeat(31));
+    assert.ok(!over.ok && over.error.includes('30'));
+    assert.ok(!validateGroupName('あ\nい').ok);
   });
 });

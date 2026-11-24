@@ -1,5 +1,5 @@
-// 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「固定費」・「メンバーと招待」と、
-// 「アカウント」のログアウト・アカウントを削除。グループの設定・アプリの設定（キーパッドの並び）・このアプリについて（規約など）は、
+// 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「固定費」・「メンバーと招待」・
+// 「グループの設定」と、「アカウント」のログアウト・アカウントを削除。アプリの設定（キーパッドの並び）・このアプリについて（規約など）は、
 // まだ作っていない。作るときに、ここへ足す。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -52,6 +52,15 @@ export function SettingsScreen() {
             style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
           >
             <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>メンバーと招待</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="グループの設定"
+            onPress={() => router.push({ pathname: '/group-settings', params: { groupId: group.id } })}
+            style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
+          >
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>グループの設定</Text>
             <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
           </Pressable>
         </View>

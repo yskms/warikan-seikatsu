@@ -51,16 +51,22 @@ export function validateDisplayName(displayName: string): DisplayNameResult {
   return error === null ? { ok: true, value: displayName.trim() } : { ok: false, error };
 }
 
-/** 通ったときは、前後の空白を落とした値を返す（そのまま送れる）。 */
-export function validateCreateGroupForm(form: CreateGroupForm): CreateGroupFormResult {
-  const errors: CreateGroupFormErrors = {};
-  const nameError = checkLabel(
-    form.name,
+/** グループ名の検査。作成と、グループの設定（名前の変更）が、同じ規則を使う。通ったときは、前後の空白を落とした値を返す。 */
+export function validateGroupName(name: string): DisplayNameResult {
+  const error = checkLabel(
+    name,
     MAX_GROUP_NAME_LENGTH,
     'グループ名を入力してください。',
     `グループ名は${MAX_GROUP_NAME_LENGTH}文字までです。`,
   );
-  if (nameError) errors.name = nameError;
+  return error === null ? { ok: true, value: name.trim() } : { ok: false, error };
+}
+
+/** 通ったときは、前後の空白を落とした値を返す（そのまま送れる）。 */
+export function validateCreateGroupForm(form: CreateGroupForm): CreateGroupFormResult {
+  const errors: CreateGroupFormErrors = {};
+  const nameResult = validateGroupName(form.name);
+  if (!nameResult.ok) errors.name = nameResult.error;
   const displayNameResult = validateDisplayName(form.displayName);
   if (!displayNameResult.ok) errors.displayName = displayNameResult.error;
   if (!CURRENCIES.some((currency) => currency.code === form.currencyCode)) {

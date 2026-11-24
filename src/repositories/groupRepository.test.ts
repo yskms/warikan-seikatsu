@@ -394,3 +394,95 @@ describe('cancelLeave', () => {
     await rejectsWith(createGroupRepository(fakeFetch(() => new Error('offline')).fetchImpl).cancelLeave(SESSION, 'g1'), 'network');
   });
 });
+
+describe('update（PATCH /groups/:id）', () => {
+  it('変えるものだけを本文に入れて、セッションつきで PATCH する。応答は group の id があることだけを確かめる', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { group }));
+    await createGroupRepository(fetchImpl).update(SESSION, 'g1', { name: '新しい名前' });
+    assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/g1`);
+    assert.equal(calls[0]!.init.method, 'PATCH');
+    assert.equal(calls[0]!.init.headers.Authorization, `Bearer ${SESSION}`);
+    assert.deepEqual(JSON.parse(calls[0]!.init.body!), { name: '新しい名前' });
+    await createGroupRepository(fetchImpl).update(SESSION, 'g1', { currencyCode: 'USD' });
+    assert.deepEqual(JSON.parse(calls[1]!.init.body!), { currencyCode: 'USD' });
+  });
+
+  it('グループのIDは、URLに安全な形で入れる', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { group }));
+    await createGroupRepository(fetchImpl).update(SESSION, 'a/b', { name: 'x' });
+    assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/a%2Fb`);
+  });
+
+  it('書き込みの応答は、使う項目（group.id）だけを検べる。ほかの項目の崩れで、済んだ変更を失敗にしない', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(200, { group: { id: 'g1', members: 'broken', currencyLocked: 1 } }));
+    await createGroupRepository(fetchImpl).update(SESSION, 'g1', { name: 'x' });
+  });
+
+  it('JSONのオブジェクトでない200・group.id が無い200（宿のWi-Fiの認証画面など）は、変更できたと取り違えず invalid-response', async () => {
+    for (const body of [null, 'ok', [], {}, { group: null }, { group: {} }, { group: { id: 3 } }]) {
+      const { fetchImpl } = fakeFetch(() => reply(200, body));
+      await rejectsWith(createGroupRepository(fetchImpl).update(SESSION, 'g1', { name: 'x' }), 'invalid-response');
+    }
+    const notJson = fakeFetch(() => Promise.resolve({ ok: true, status: 200, json: async () => Promise.reject(new Error('html')) })).fetchImpl;
+    await rejectsWith(createGroupRepository(notJson).update(SESSION, 'g1', { name: 'x' }), 'invalid-response');
+  });
+
+  it('サーバーが断った（400・403・404・409）は GroupRejectedError。理由を載せる', async () => {
+    for (const [status, error] of [
+      [400, 'invalid_request'],
+      [403, 'forbidden'],
+      [404, 'not_found'],
+      [409, 'currency_locked'],
+      [409, 'conflict'],
+    ] as const) {
+      const { fetchImpl } = fakeFetch(() => reply(status, { error }));
+      await assert.rejects(createGroupRepository(fetchImpl).update(SESSION, 'g1', { name: 'x' }), (e) => {
+        assert.ok(e instanceof GroupRejectedError);
+        assert.deepEqual([e.code, e.status, e.reason], ['invalid-request', status, error]);
+        return true;
+      });
+    }
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network（GroupRejectedError ではない）', async () => {
+    for (const [respond, code] of [
+      [() => reply(401), 'unauthorized'],
+      [() => reply(503), 'unavailable'],
+      [() => new Error('offline'), 'network'],
+    ] as const) {
+      await assert.rejects(createGroupRepository(fakeFetch(respond).fetchImpl).update(SESSION, 'g1', { name: 'x' }), (e) => {
+        assert.ok(e instanceof AuthError && !(e instanceof GroupRejectedError));
+        assert.equal(e.code, code);
+        return true;
+      });
+    }
+  });
+});
+
+describe('updateMe（PATCH /groups/:id/members/me）', () => {
+  it('変えるものだけを本文に入れて、セッションつきで PATCH する', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { group }));
+    const repository = createGroupRepository(fetchImpl);
+    await repository.updateMe(SESSION, 'g1', { displayName: 'ゆうき' });
+    await repository.updateMe(SESSION, 'g1', { color: 'blue' });
+    assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/g1/members/me`);
+    assert.equal(calls[0]!.init.method, 'PATCH');
+    assert.equal(calls[0]!.init.headers.Authorization, `Bearer ${SESSION}`);
+    assert.deepEqual(JSON.parse(calls[0]!.init.body!), { displayName: 'ゆうき' });
+    assert.deepEqual(JSON.parse(calls[1]!.init.body!), { color: 'blue' });
+  });
+
+  it('応答の読み方と断られ方は update と同じ', async () => {
+    await rejectsWith(
+      createGroupRepository(fakeFetch(() => reply(200, { group: {} })).fetchImpl).updateMe(SESSION, 'g1', { color: 'blue' }),
+      'invalid-response',
+    );
+    const { fetchImpl } = fakeFetch(() => reply(409, { error: 'conflict' }));
+    await assert.rejects(createGroupRepository(fetchImpl).updateMe(SESSION, 'g1', { color: 'blue' }), (e) => {
+      assert.ok(e instanceof GroupRejectedError);
+      assert.equal(e.reason, 'conflict');
+      return true;
+    });
+    await rejectsWith(createGroupRepository(fakeFetch(() => reply(401)).fetchImpl).updateMe(SESSION, 'g1', { color: 'blue' }), 'unauthorized');
+  });
+});
