@@ -58,6 +58,7 @@ import { formatMonth } from '../../src/services/dateFormat.ts';
 import { Avatar } from '../home/Avatar.tsx';
 import { CategoryIcon } from '../home/CategoryIcon.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
+import { useMounted } from '../useMounted.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 import { AmountField } from './AmountField.tsx';
@@ -154,6 +155,9 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
   // 保存・削除の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`。外れると、保存の `id` が捨てられる）
   useHoldInviteSwap(busy !== null);
+  // 外れたあと（セッション切れ・招待URLによる切り替え）に、完了した通信や、開いたままのダイアログのコールバックが、別の画面を戻さない
+  // ようにする（`ui/useMounted.ts`）
+  const mounted = useMounted();
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);
@@ -176,7 +180,13 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
       event.preventDefault();
       Alert.alert('入力内容を破棄しますか？', undefined, [
         { text: '続ける', style: 'cancel' },
-        { text: '破棄する', style: 'destructive', onPress: () => navigation.dispatch(event.data.action) },
+        {
+          text: '破棄する',
+          style: 'destructive',
+          onPress: () => {
+            if (mounted.current) navigation.dispatch(event.data.action);
+          },
+        },
       ]);
     });
   }, [navigation]);
@@ -212,6 +222,8 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   }
 
   function leave() {
+    // 外れたあとは、画面を戻さない（そのとき開いている別の画面を戻してしまう）
+    if (!mounted.current) return;
     leaving.current = true;
     if (router.canGoBack()) router.back();
     else router.replace('/');
@@ -219,7 +231,8 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
 
   /** 保存の実行。`monthOverride` は、「締められました。次の月に登録しますか？」に応じたときの登録先。 */
   async function save(monthOverride?: string) {
-    if (running.current || ctx.readOnly) return;
+    // 外れたあとに、開いたままのダイアログ（「登録しますか？」）から呼ばれたときは、何もしない
+    if (running.current || ctx.readOnly || !mounted.current) return;
     const target = monthOverride === undefined ? draft : syncForMonth({ ...draft, monthChoice: monthOverride }, ctx);
     const targetMonth = targetMonthOf(target, ctx);
     running.current = true;
@@ -299,7 +312,8 @@ function ExpenseEditor({ groupId, ctx, lastCategoryId }: ExpenseEditorProps) {
   }
 
   async function remove(id: string) {
-    if (running.current) return;
+    // 外れたあとに、開いたままのダイアログ（削除の確認）から呼ばれたときは、何もしない（見えない画面の支出を、消さない）
+    if (running.current || !mounted.current) return;
     running.current = true;
     setBusy('delete');
     setError(null);

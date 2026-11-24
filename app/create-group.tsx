@@ -24,6 +24,7 @@ import { createGroupErrorMessage } from '../src/services/groupMessage.ts';
 import { validateCreateGroupForm, type CreateGroupFormErrors } from '../src/services/groupForm.ts';
 import { getDeviceTimeZone } from '../src/services/timeZone.ts';
 import { useHoldInviteSwap } from '../ui/inviteHold.ts';
+import { useMounted } from '../ui/useMounted.ts';
 import { PrimaryButton } from '../ui/PrimaryButton.tsx';
 import { TextField } from '../ui/TextField.tsx';
 import { useColors } from '../ui/useColors.ts';
@@ -40,6 +41,8 @@ export default function CreateGroupScreen() {
   const [busy, setBusy] = useState(false);
   // 作成の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`。完了後に `router.replace('/')` を呼ぶため）
   useHoldInviteSwap(busy);
+  // 外れたあと（セッション切れ・招待URLによる切り替え）に、完了した通信が、別の画面を動かさないようにする（`ui/useMounted.ts`）
+  const mounted = useMounted();
   const submitting = useRef(false);
   // この作成の識別子。画面を開いてから最初に送るときに1回だけ作り、やり直しでも同じ値を送る: 通信が切れて、サーバーで
   // 作成が済んだか分からないとき、同じ `id` なら、グループが2つにならない（サーバーは、済んでいれば保存済みのグループを返す）。
@@ -77,8 +80,8 @@ export default function CreateGroupScreen() {
     try {
       requestId.current ??= newId();
       await groupService.createGroup({ id: requestId.current, ...result.value, timezone });
-      // グループができたので、最初の画面へ戻る（そこで読み直して、ホームを出す）。
-      router.replace('/');
+      // グループができたので、最初の画面へ戻る（そこで読み直して、ホームを出す）。外れたあとは、動かさない（`ui/useMounted.ts`）。
+      if (mounted.current) router.replace('/');
     } catch (e) {
       setError(createGroupErrorMessage(e));
     } finally {

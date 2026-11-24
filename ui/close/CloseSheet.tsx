@@ -31,6 +31,7 @@ import {
 import type { CloseFormData } from '../../src/services/settlementService.ts';
 import { TransferRow } from '../home/TransferRow.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
+import { useMounted } from '../useMounted.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 
@@ -54,6 +55,8 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
   const [busy, setBusy] = useState(false);
   // 締めている通信の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）
   useHoldInviteSwap(busy);
+  // 外れたあと（セッション切れ・招待URLによる切り替え）に、完了した通信が、別の画面を戻さないようにする（`ui/useMounted.ts`）
+  const mounted = useMounted();
   const [error, setError] = useState<string | null>(null);
   const [groupDeleted, setGroupDeleted] = useState(false);
   const running = useRef(false);
@@ -86,6 +89,8 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
   const model = useMemo(() => (load.status === 'ready' ? buildCloseConfirm(load.data) : null), [load]);
 
   function leave() {
+    // 外れたあとは、画面を戻さない（そのとき開いている別の画面を戻してしまう）
+    if (!mounted.current) return;
     leaving.current = true;
     if (router.canGoBack()) router.back();
     else router.replace('/');

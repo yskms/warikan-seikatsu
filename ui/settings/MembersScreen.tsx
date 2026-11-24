@@ -45,6 +45,7 @@ import {
   type MemberRow,
 } from '../../src/services/memberView.ts';
 import { Avatar } from '../home/Avatar.tsx';
+import { useHoldInviteSwap } from '../inviteHold.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
 
@@ -69,6 +70,10 @@ export function MembersScreen({ groupId }: { groupId: string }) {
   // この画面で発行した招待のトークン（招待のID → トークン）。一覧の「共有」で、URLを出し直すため。画面を閉じると失われる
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<Busy>(null);
+  // 招待の発行の通信の最中だけ、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）。トークンは発行の応答でしか分からず、
+  // この画面のメモリにだけ持つ（外れると、招待はできるのに、トークンが失われ、未使用の招待として上限に数えられる）。応答を受けたあとは
+  // `busy` が `share` に変わり、共有シートに渡したトークンは、外れても失われないので、遅らせない。
+  useHoldInviteSwap(busy?.kind === 'issue');
   // 操作の同時実行を止める（state は次の描画まで変わらないので、続けて押されたときのために、同期して見られる印を持つ）
   const busyRef = useRef(false);
   // 古い応答を捨てる印。表示できる内容があるか（読み直しの失敗の出し方を分ける）

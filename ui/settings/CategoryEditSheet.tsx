@@ -71,6 +71,7 @@ import { Chips } from '../expense/Chips.tsx';
 import { Avatar } from '../home/Avatar.tsx';
 import { CategoryIcon } from '../home/CategoryIcon.tsx';
 import { useHoldInviteSwap } from '../inviteHold.ts';
+import { useMounted } from '../useMounted.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { TextField } from '../TextField.tsx';
 import { useColors } from '../useColors.ts';
@@ -116,6 +117,9 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   const [busy, setBusy] = useState(false);
   // 保存の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）
   useHoldInviteSwap(busy);
+  // 外れたあと（セッション切れ・招待URLによる切り替え）に、完了した通信や、開いたままのダイアログのコールバックが、別の画面を戻さない
+  // ようにする（`ui/useMounted.ts`）
+  const mounted = useMounted();
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
   const leaving = useRef(false);
@@ -182,6 +186,7 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
           text: '破棄する',
           style: 'destructive',
           onPress: () => {
+            if (!mounted.current) return;
             leaving.current = true;
             navigation.dispatch(event.data.action);
           },
@@ -191,6 +196,8 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   }, [navigation]);
 
   function leave() {
+    // 外れたあとは、画面を戻さない（そのとき開いている別の画面を戻してしまう）
+    if (!mounted.current) return;
     leaving.current = true;
     if (router.canGoBack()) router.back();
     else router.replace({ pathname: '/categories', params: { groupId } });
@@ -225,7 +232,8 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
     task: (setAction: (next: CategoryAction) => void) => Promise<void>,
     initialAction: CategoryAction,
   ) {
-    if (running.current) return;
+    // 外れたあとに、開いたままのダイアログ（「使わなくする」の確認）から呼ばれたときは、何もしない
+    if (running.current || !mounted.current) return;
     running.current = true;
     setBusy(true);
     setError(null);
