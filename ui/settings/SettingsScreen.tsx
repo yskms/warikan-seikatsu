@@ -1,5 +1,5 @@
 // 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「メンバーと招待」と、「アカウント」の
-// ログアウト。固定費・グループの設定・アプリの設定（キーパッドの並び）・アカウントの削除・このアプリについて（規約など）は、
+// ログアウト・アカウントを削除。固定費・グループの設定・アプリの設定（キーパッドの並び）・このアプリについて（規約など）は、
 // まだ作っていない。作るときに、ここへ足す。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -57,6 +57,19 @@ export function SettingsScreen() {
             </Text>
           ) : null}
           <PrimaryButton label="ログアウト" variant="secondary" busy={busy} onPress={confirmSignOut} />
+          {/* 削除の画面で、説明を読んでから、本人確認を経て削除する。ログアウトの最中は、押せない（セッションを捨てる最中に、
+              削除の手順を始めない） */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="アカウントを削除"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            onPress={() => router.push('/delete-account')}
+            style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, busy && styles.dimmed, pressed && styles.pressed]}
+          >
+            <Text style={[styles.rowLabel, { color: colors.error }]}>アカウントを削除</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -73,4 +86,5 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 16, fontWeight: '600' },
   error: { fontSize: 14, lineHeight: 20 },
   pressed: { opacity: 0.7 },
+  dimmed: { opacity: 0.5 },
 });

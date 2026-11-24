@@ -38,5 +38,7 @@ export function useSignOut() {
     ]);
   }, [run]);
 
-  return { confirmSignOut, busy, error };
+  // `signOut` は、確認を挟まずに実行する（アカウントを削除したあと、端末にログインの情報が残ったときの「ログアウト」。
+  // 「続きから使えます」の確認は、削除した人には合わない）
+  return { confirmSignOut, signOut: run, busy, error };
 }

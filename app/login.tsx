@@ -21,6 +21,7 @@ import type { AuthProvider } from '../src/domain/types.ts';
 import { isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../src/legal/legalUrls.ts';
 import { isAlreadySignedIn, signInErrorMessage } from '../src/services/signInMessage.ts';
 import { useAuth } from '../ui/AuthStateProvider.tsx';
+import { clearLoginNotice, useLoginNotice } from '../ui/loginNotice.ts';
 import { useColors } from '../ui/useColors.ts';
 import { usePendingInvite } from '../ui/usePendingInvite.ts';
 
@@ -36,6 +37,8 @@ export default function LoginScreen() {
   const { state, markSignedIn } = useAuth();
   const colors = useColors();
   const invited = usePendingInvite() !== null;
+  // アカウントを削除したあとの案内など（`ui/loginNotice.ts`）。ログインが済むまで出す
+  const notice = useLoginNotice();
   // 進行中のログイン手段。あるあいだは、どのボタンも押せない。表示用の `busy` とは別に、`ref` でも持つ: `busy` は、
   // 再描画されるまで古いままなので、続けて2回押されると、どちらの押下も `null` を見て、各社の画面が2回開きうる。
   const [busy, setBusy] = useState<AuthProvider | null>(null);
@@ -49,11 +52,14 @@ export default function LoginScreen() {
     setError(null);
     try {
       await accountService.signIn(provider);
+      clearLoginNotice();
       markSignedIn();
     } catch (e) {
       // すでにサインイン済みなら、ログイン済みとして進める。取りやめは、何も出さない。
-      if (isAlreadySignedIn(e)) markSignedIn();
-      else setError(signInErrorMessage(e, provider));
+      if (isAlreadySignedIn(e)) {
+        clearLoginNotice();
+        markSignedIn();
+      } else setError(signInErrorMessage(e, provider));
     } finally {
       signingIn.current = false;
       setBusy(null);
@@ -71,6 +77,20 @@ export default function LoginScreen() {
           {/* 読点で改行する（狭い画面で、「必／要です」のように中途半端に折り返さない） */}
           {'ふたりで使うには、\nデータ保護のためログインが必要です'}
         </Text>
+      ) : null}
+      {/* 削除の結果など。招待の案内の下に出す。`accessibilityLiveRegion` で、ログイン画面に移ったときに読み上げる */}
+      {notice !== null ? (
+        <View
+          style={[styles.noticeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          {notice.map((line) => (
+            <Text key={line} style={[styles.noticeLine, { color: colors.textPrimary }]}>
+              {line}
+            </Text>
+          ))}
+        </View>
       ) : null}
       <View style={styles.hero}>
         <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
@@ -238,6 +258,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     overflow: 'hidden',
   },
+  noticeCard: { marginTop: 16, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, gap: 6 },
+  noticeLine: { fontSize: 14, lineHeight: 20 },
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   title: { fontSize: 34, fontWeight: '700' },
   rule: { width: 40, height: 4, borderRadius: 2 },

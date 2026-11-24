@@ -10,8 +10,8 @@ interface PrimaryButtonProps {
   /** 進行中。ラベルの代わりにインジケーターを出し、押せなくする */
   busy?: boolean;
   disabled?: boolean;
-  /** 塗らない、控えめな見た目（取り消せない操作の隣など） */
-  variant?: 'primary' | 'secondary';
+  /** 塗らない、控えめな見た目（取り消せない操作の隣など）。`destructive` は、取り消せない削除（エラーの色の枠と文字） */
+  variant?: 'primary' | 'secondary' | 'destructive';
   /** 小さい見た目（カードの中の操作など）。高さは、押しやすさのために44以上を保つ */
   compact?: boolean;
 }
@@ -20,7 +20,7 @@ export function PrimaryButton({ label, onPress, busy = false, disabled = false, 
   const colors = useColors();
   const inactive = disabled || busy;
   const primary = variant === 'primary';
-  const textColor = primary ? colors.onAccent : colors.textPrimary;
+  const textColor = primary ? colors.onAccent : variant === 'destructive' ? colors.error : colors.textPrimary;
   return (
     <Pressable
       accessibilityRole="button"
@@ -33,7 +33,7 @@ export function PrimaryButton({ label, onPress, busy = false, disabled = false, 
         compact && styles.compact,
         primary
           ? { backgroundColor: colors.accent, borderColor: colors.accent }
-          : { backgroundColor: colors.surface, borderColor: colors.border },
+          : { backgroundColor: colors.surface, borderColor: variant === 'destructive' ? colors.error : colors.border },
         disabled && !busy && styles.dimmed,
         pressed && styles.pressed,
       ]}
