@@ -9,26 +9,35 @@ import {
   type Breakdown,
   type InviteCard,
   type MemberBurden,
-  type Notice,
   type TotalModel,
 } from '../../src/services/homeView.ts';
 import { useColors } from '../useColors.ts';
 import { Avatar } from './Avatar.tsx';
 import { CategoryIcon } from './CategoryIcon.tsx';
 
-/** お知らせ。タップで、その月へ移る。複数あれば重ねて出す。 */
-export function NoticeList({ notices, onSelectMonth }: { notices: Notice[]; onSelectMonth(month: string): void }) {
+/** ホームのお知らせの1つ（月のお知らせ・固定費のお知らせを、同じ形で並べる） */
+export interface NoticeItem {
+  /** 重ならない識別子 */
+  key: string;
+  message: string;
+  /** スクリーンリーダー向けの、タップしたときに起きることの説明 */
+  hint: string;
+  onPress(): void;
+}
+
+/** お知らせ。複数あれば重ねて出す。タップで何が起きるかは、呼ぶ側が決める（月へ移る・固定費を開く）。 */
+export function NoticeList({ notices }: { notices: readonly NoticeItem[] }) {
   const colors = useColors();
   if (notices.length === 0) return null;
   return (
     <View style={styles.notices}>
       {notices.map((notice) => (
         <Pressable
-          key={notice.kind}
+          key={notice.key}
           accessibilityRole="button"
           accessibilityLabel={notice.message}
-          accessibilityHint="タップすると、その月を開きます"
-          onPress={() => onSelectMonth(notice.month)}
+          accessibilityHint={notice.hint}
+          onPress={notice.onPress}
           // 地の色（accent）は白の上で文字に足りないので、枠と面で目立たせ、文字は本文の色にする
           style={[styles.notice, { backgroundColor: colors.surface, borderColor: colors.accent }]}
         >

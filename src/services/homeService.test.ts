@@ -6,21 +6,24 @@ import { describe, it } from 'node:test';
 
 import type { GroupDetail } from '../domain/group.ts';
 import type { Category, ExpenseList, MonthList, MonthView } from '../domain/month.ts';
+import type { RecurringExpense } from '../domain/recurring.ts';
 import { AuthError } from '../repositories/authError.ts';
 import type { CategoryRepository } from '../repositories/categoryRepository.ts';
 import type { ExpenseRepository } from '../repositories/expenseRepository.ts';
 import type { GroupRepository } from '../repositories/groupRepository.ts';
 import type { MonthRepository } from '../repositories/monthRepository.ts';
+import type { RecurringRepository } from '../repositories/recurringRepository.ts';
 import type { SessionAccess } from './accountService.ts';
 import { createHomeService } from './homeService.ts';
 
 const group = { id: 'g1' } as GroupDetail;
 const monthList: MonthList = { currentMonth: '2026-11', months: [{ month: '2026-11', status: 'open' }] };
 const categoryList: Category[] = [{ id: 'c1', name: '食費', icon: 'cart', color: 'green', sortOrder: 1, archived: false }];
+const recurringList = [{ id: 'r1' }] as RecurringExpense[];
 const summary = { month: '2026-11' } as MonthView;
 const expenseList: ExpenseList = { month: '2026-11', closed: false, expenses: [] };
 
-function setup(options: { session?: string; failWith?: Error; failRepository?: 'summary' } = {}) {
+function setup(options: { session?: string; failWith?: Error; failRepository?: 'summary'; failRecurring?: Error } = {}) {
   const log: string[] = [];
   const groups = {
     async get(session: string, groupId: string) {
@@ -51,6 +54,13 @@ function setup(options: { session?: string; failWith?: Error; failRepository?: '
       return categoryList;
     },
   } as unknown as CategoryRepository;
+  const recurring = {
+    async list(session: string, groupId: string) {
+      log.push(`recurring:${session}:${groupId}`);
+      if (options.failRecurring) throw options.failRecurring;
+      return recurringList;
+    },
+  } as unknown as RecurringRepository;
   let withSessionCalls = 0;
   const access: SessionAccess = {
     async withSession(task) {
@@ -61,19 +71,45 @@ function setup(options: { session?: string; failWith?: Error; failRepository?: '
     },
   };
   return {
-    service: createHomeService({ groups, months, expenses, categories, access }),
+    service: createHomeService({ groups, months, expenses, categories, recurring, access }),
     log,
     withSessionCalls: () => withSessionCalls,
   };
 }
 
 describe('homeService', () => {
-  it('loadGroup は、1回の withSession の中で、グループ・月の一覧・費目を読む', async () => {
+  it('loadGroup は、1回の withSession の中で、グループ・月の一覧・費目・固定費を読む', async () => {
     const { service, log, withSessionCalls } = setup({ session: 'SESSION' });
-    assert.deepEqual(await service.loadGroup('g1'), { group, months: monthList, categories: categoryList });
+    assert.deepEqual(await service.loadGroup('g1'), {
+      group,
+      months: monthList,
+      categories: categoryList,
+      recurring: recurringList,
+    });
     assert.equal(withSessionCalls(), 1);
     assert.equal(log[0], 'withSession');
-    assert.deepEqual(log.slice(1).sort(), ['categories:SESSION:g1', 'group:SESSION:g1', 'months:SESSION:g1']);
+    assert.deepEqual(log.slice(1).sort(), [
+      'categories:SESSION:g1',
+      'group:SESSION:g1',
+      'months:SESSION:g1',
+      'recurring:SESSION:g1',
+    ]);
+  });
+
+  it('固定費だけが読めなくても、ホームは失敗にしない（お知らせが出ないだけ。recurring は null）', async () => {
+    for (const code of ['network', 'unavailable', 'invalid-response'] as const) {
+      const { service } = setup({ failRecurring: new AuthError(code) });
+      assert.deepEqual(
+        await service.loadGroup('g1'),
+        { group, months: monthList, categories: categoryList, recurring: null },
+        code,
+      );
+    }
+  });
+
+  it('固定費の読み込みが 401 のときは、握りつぶさずに投げる（セッション切れを伝える層へ届く）', async () => {
+    const { service } = setup({ failRecurring: new AuthError('unauthorized') });
+    await assert.rejects(service.loadGroup('g1'), (error) => error instanceof AuthError && error.code === 'unauthorized');
   });
 
   it('loadMonth は、1回の withSession の中で、月の集計と支出を、同じ月で読む', async () => {

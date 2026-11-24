@@ -6,7 +6,7 @@
 // （`useTransferActions`。どちらも、終わると、ホームを読み直す）。1人だけのグループには、「相手を招待する」カードを出す（押すと、
 // メンバーと招待の画面を開くだけ。招待の発行はその画面だけに置く）。**まだ作っていない**もの
 // （それぞれ、作るときにここへ足す）:
-// - お知らせのうち「メンバーが増減した」「固定費が止まった」（費目の割合を見直した印・固定費のAPIを読む画面を作るとき）
+// - お知らせのうち「メンバーが増減した」（費目の割合を見直した印を覚える場所が、まだ無い。docs/backend-design.md 12章）
 //
 // 読み込みの流れ: グループ（メンバー）・月の一覧・費目を読み、選ぶ月を決めてから、その月の集計と支出を読む。
 // 画面を開いたとき・ホームへ戻ったとき・引っ張ったときに取り直す（1章。プッシュ通知やリアルタイム更新はしない）。取り直しの
@@ -35,6 +35,7 @@ import {
   moneyFormatters,
   neighborMonths,
 } from '../../src/services/homeView.ts';
+import { buildRecurringNotices } from '../../src/services/recurringView.ts';
 import type { GroupOption } from '../CurrentGroup.tsx';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
@@ -42,7 +43,14 @@ import { ExpenseSection } from './ExpenseSection.tsx';
 import { GroupSwitcher } from './GroupSwitcher.tsx';
 import { MonthHeader } from './MonthHeader.tsx';
 import { SettlementCard } from './SettlementCard.tsx';
-import { BreakdownSection, InviteCardView, MemberBurdens, NoticeList, TotalCard } from './SummarySections.tsx';
+import {
+  BreakdownSection,
+  InviteCardView,
+  MemberBurdens,
+  NoticeList,
+  TotalCard,
+  type NoticeItem,
+} from './SummarySections.tsx';
 import { useTransferActions } from './useTransferActions.ts';
 
 interface HomeScreenProps {
@@ -105,6 +113,32 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
     carryMonthLabel: view?.settlement.kind === 'closed' ? view.settlement.carryMonthLabel : '次の月',
   });
 
+  // お知らせ: 前の月（タップでその月へ）と、固定費（1件なら、その固定費の編集のシート。複数なら、固定費の一覧）
+  const notices = useMemo<NoticeItem[]>(() => {
+    if (groupData === null || current === null || selected === null) return [];
+    const monthNotices = buildNotices(selected, groupData.months.months, current.summary.close).map((notice) => ({
+      key: notice.kind,
+      message: notice.message,
+      hint: 'タップすると、その月を開きます',
+      onPress: () => void loader.selectMonth(notice.month),
+    }));
+    const recurringNotices = buildRecurringNotices({
+      recurring: groupData.recurring,
+      members: groupData.group.members,
+      categories: groupData.categories,
+      currentMonth: groupData.months.currentMonth,
+    }).map((notice) => ({
+      key: notice.kind,
+      message: notice.message,
+      hint: notice.target.kind === 'edit' ? 'タップすると、その固定費を開きます' : 'タップすると、固定費の一覧を開きます',
+      onPress: () =>
+        notice.target.kind === 'edit'
+          ? router.push({ pathname: '/recurring-edit', params: { groupId, recurringId: notice.target.recurringId } })
+          : router.push({ pathname: '/recurring', params: { groupId } }),
+    }));
+    return [...monthNotices, ...recurringNotices];
+  }, [groupData, current, selected, loader, router, groupId]);
+
   const inviteCard = groupData === null ? null : buildInviteCard(groupData.group);
   const months = groupData?.months.months ?? [];
   const neighbors = selected === null ? { previous: null, next: null } : neighborMonths(months, selected);
@@ -154,10 +188,7 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
 
         {view !== null && current !== null && groupData !== null && selected !== null ? (
           <>
-            <NoticeList
-              notices={buildNotices(selected, months, current.summary.close)}
-              onSelectMonth={(month) => void loader.selectMonth(month)}
-            />
+            <NoticeList notices={notices} />
             {inviteCard !== null ? (
               <InviteCardView
                 card={inviteCard}

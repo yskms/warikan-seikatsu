@@ -1,6 +1,8 @@
 // 固定費の一覧（docs/screens.md 6章の「固定費」）に出す内容の組み立て。計算（負担額・予定日）はここでしない（Workerだけが持つ）。
 // サーバーの応答を、表示する形にすることだけをする。
 import type { SplitRequest } from '../domain/expense.ts';
+import type { GroupMember } from '../domain/group.ts';
+import type { Category } from '../domain/month.ts';
 import type { RecurringExpense } from '../domain/recurring.ts';
 import { formatMonth } from './dateFormat.ts';
 import { memberLookup, moneyFormatters, type MoneyFormatter } from './homeView.ts';
@@ -80,9 +82,22 @@ export const CATEGORY_ARCHIVED_HELP =
   'カテゴリを「また使う」に戻すか、別のカテゴリに選び直してください。今月の分が見送られていた場合は、そのあとすぐに登録されます。' +
   '手で入力した分があれば、あとで片方を削除してください。';
 
-export function statusOf(item: RecurringExpense, currentMonth: string): RecurringStatus {
+export function statusOf(
+  item: Pick<RecurringExpense, 'endMonth' | 'pausedAt'>,
+  currentMonth: string,
+): RecurringStatus {
   if (item.endMonth !== null && item.endMonth < currentMonth) return 'ended';
   return item.pausedAt !== null ? 'paused' : 'active';
+}
+
+const UNKNOWN_CATEGORY_NAME = '不明なカテゴリ';
+
+/** 固定費の題。内容が無ければ、カテゴリの名前（一覧の行・ホームのお知らせ・脱退の欄の添え書きで同じにする）。 */
+export function recurringTitle(
+  item: Pick<RecurringExpense, 'description' | 'categoryId'>,
+  categories: ReadonlyMap<string, Pick<Category, 'name'>>,
+): string {
+  return item.description ?? categories.get(item.categoryId)?.name ?? UNKNOWN_CATEGORY_NAME;
 }
 
 export function buildRecurringSections(data: RecurringData): RecurringSections {
@@ -92,7 +107,7 @@ export function buildRecurringSections(data: RecurringData): RecurringSections {
   const sections: RecurringSections = { paused: [], active: [], ended: [] };
   for (const item of data.recurring) {
     const category = categories.get(item.categoryId);
-    const categoryName = category?.name ?? '不明なカテゴリ';
+    const categoryName = category?.name ?? UNKNOWN_CATEGORY_NAME;
     const status = statusOf(item, data.months.currentMonth);
     let statusText: string | null = null;
     let attention = false;
@@ -105,7 +120,7 @@ export function buildRecurringSections(data: RecurringData): RecurringSections {
       statusText = CATEGORY_ARCHIVED_TEXT;
       attention = true;
     }
-    const title = item.description ?? categoryName;
+    const title = recurringTitle(item, categories);
     const amountText = money(item.amountMinor);
     const detailText = `${dayText(item.dayOfMonth)}・支払う人 ${lookup.name(item.payerMemberId)}・${categoryName}`;
     const customSplit = item.split === null || item.split.method !== 'category';
@@ -146,4 +161,111 @@ export function describeSplit(split: SplitRequest, nameOf: (memberId: string) =>
     case 'single':
       return `${nameOf(split.memberId)}が全額負担します`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// ホームのお知らせ（docs/screens.md 3章）
+
+export interface RecurringNotice {
+  kind: 'recurring-paused' | 'recurring-payer-leaving';
+  message: string;
+  /** タップ先。1件なら、その固定費の編集のシート。複数なら、固定費の一覧 */
+  target: { kind: 'edit'; recurringId: string } | { kind: 'list' };
+}
+
+export interface RecurringNoticeInput {
+  /** 読めなかったときは `null`（お知らせを出さない。`HomeGroupData.recurring`） */
+  recurring: readonly RecurringExpense[] | null;
+  /** 支払う人の脱退を見る（`leaveRequestedMonth`・`leaveEffective`。サーバーの値。月の判定は書き写さない） */
+  members: readonly Pick<GroupMember, 'id' | 'leaveRequestedMonth' | 'leaveEffective'>[];
+  categories: readonly Pick<Category, 'id' | 'name'>[];
+  /** グループの今月（月の一覧の `currentMonth`）。終了した固定費を除くために使う */
+  currentMonth: string;
+}
+
+/** 止まった固定費に、次にしてほしいこと。理由が知らない値・無いときは、確認を促す */
+function pausedAction(reason: RecurringExpense['pausedReason']): string {
+  switch (reason) {
+    case 'payer_left':
+      return '支払う人を選び直してください';
+    case 'member_changed':
+      return '負担の分け方を見直してください';
+    default:
+      return '内容を確認してください';
+  }
+}
+
+/**
+ * ホームのお知らせのうち、固定費に関するもの。**1つの種類につき、お知らせは1つだけ**（1件ならその固定費の編集へ、複数なら
+ * 固定費の一覧へ。固定費は50件まで持て、メンバーの増減で、個別の負担の固定費がまとめて止まるので、1件ずつ重ねない）。
+ *
+ * - **止まった（`recurring-paused`）**: 止まっている固定費（終了したものを除く）のうち、**手動で止めたもの（`manual`）は出さない**
+ *   （自分たちで止めたので、知らせることが無い）。知らない理由・理由が無いものは、出す（自動登録が止まっているのに、黙らない）。
+ * - **支払う人が脱退予定（`recurring-payer-leaving`）**: まだ止まっていない固定費で、支払う人が脱退を選んでいる（確定する前。
+ *   確定すると、サーバーが止める）もの。設計は、支払う人の付け替えのアラートを、脱退を選んだ時点から出す（docs/backend-design.md
+ *   5章の「脱退」）。付け替えれば、止まらずに続く。
+ *
+ * 止まった理由・支払う人の脱退は、サーバーの値で見る（脱退の確定・止まる条件は書き写さない）。
+ */
+export function buildRecurringNotices(input: RecurringNoticeInput): RecurringNotice[] {
+  const { recurring, members, currentMonth } = input;
+  if (recurring === null) return [];
+  const categories = new Map(input.categories.map((category) => [category.id, category]));
+  const notices: RecurringNotice[] = [];
+
+  const paused = recurring.filter((item) => statusOf(item, currentMonth) === 'paused' && item.pausedReason !== 'manual');
+  const only = paused.length === 1 ? paused[0] : undefined;
+  if (only !== undefined) {
+    notices.push({
+      kind: 'recurring-paused',
+      message: `${recurringTitle(only, categories)}の固定費が止まっています。${pausedAction(only.pausedReason)}`,
+      target: { kind: 'edit', recurringId: only.id },
+    });
+  } else if (paused.length >= 2) {
+    const actions = new Set(paused.map((item) => pausedAction(item.pausedReason)));
+    const action = actions.size === 1 ? [...actions][0] : '内容を確認してください';
+    notices.push({
+      kind: 'recurring-paused',
+      message: `固定費が${paused.length}件止まっています。${action}`,
+      target: { kind: 'list' },
+    });
+  }
+
+  const leaving = new Set(
+    members.filter((member) => member.leaveRequestedMonth !== null || member.leaveEffective).map((member) => member.id),
+  );
+  const payerLeaving = recurring.filter(
+    (item) => statusOf(item, currentMonth) === 'active' && leaving.has(item.payerMemberId),
+  );
+  const onlyLeaving = payerLeaving.length === 1 ? payerLeaving[0] : undefined;
+  if (onlyLeaving !== undefined) {
+    notices.push({
+      kind: 'recurring-payer-leaving',
+      message: `${recurringTitle(onlyLeaving, categories)}の固定費は、支払う人が脱退予定です。支払う人を選び直してください`,
+      target: { kind: 'edit', recurringId: onlyLeaving.id },
+    });
+  } else if (payerLeaving.length >= 2) {
+    notices.push({
+      kind: 'recurring-payer-leaving',
+      message: `固定費${payerLeaving.length}件の支払う人が脱退予定です。支払う人を選び直してください`,
+      target: { kind: 'list' },
+    });
+  }
+  return notices;
+}
+
+/**
+ * 自分が支払う人の、止まっていない（手動で止めたものも含めて、止まっているものは除く）・終了していない固定費の題。脱退の欄の
+ * 添え書き（`leaveView.ts`）に使う。サーバーは、脱退が確定すると、支払う人が脱退した固定費を止める（付け替えていなければ）。
+ */
+export function myPayerRecurringTitles(input: {
+  recurring: readonly RecurringExpense[];
+  categories: readonly Pick<Category, 'id' | 'name'>[];
+  currentMonth: string;
+  memberId: string;
+}): string[] {
+  const categories = new Map(input.categories.map((category) => [category.id, category]));
+  return input.recurring
+    .filter((item) => item.payerMemberId === input.memberId && statusOf(item, input.currentMonth) === 'active')
+    .map((item) => recurringTitle(item, categories));
 }

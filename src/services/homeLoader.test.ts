@@ -38,6 +38,7 @@ function groupData(months: string[], currentMonth: string, name = 'ふたりの�
     group: { id: 'g1', name } as GroupDetail,
     months: { currentMonth, months: months.map((month) => ({ month, status: 'open' as const })) } as MonthList,
     categories: [],
+    recurring: null,
   };
 }
 

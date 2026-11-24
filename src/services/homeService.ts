@@ -6,17 +6,21 @@
 // `withSession` の中で並べて走らせる（セッションの読み出しを1回にする。どれかが 401 なら、層がセッションを捨てて通知する）。
 import type { GroupDetail } from '../domain/group.ts';
 import type { Category, ExpenseList, MonthList, MonthView } from '../domain/month.ts';
+import type { RecurringExpense } from '../domain/recurring.ts';
 import type { CategoryRepository } from '../repositories/categoryRepository.ts';
 import type { ExpenseRepository } from '../repositories/expenseRepository.ts';
 import type { GroupRepository } from '../repositories/groupRepository.ts';
 import type { MonthRepository } from '../repositories/monthRepository.ts';
+import type { RecurringRepository } from '../repositories/recurringRepository.ts';
 import type { SessionAccess } from './accountService.ts';
+import { bestEffort } from './bestEffort.ts';
 
 export interface HomeServiceDeps {
   groups: GroupRepository;
   months: MonthRepository;
   expenses: ExpenseRepository;
   categories: CategoryRepository;
+  recurring: RecurringRepository;
   access: SessionAccess;
 }
 
@@ -25,6 +29,11 @@ export interface HomeGroupData {
   group: GroupDetail;
   months: MonthList;
   categories: Category[];
+  /**
+   * 固定費（止まっているもの・終了したものも含む）。ホームの「固定費が止まった」お知らせにだけ使う。**読めなければ `null`**
+   * （お知らせが出ないだけで、ホームは失敗にしない。`bestEffort`。401だけは、投げる）。
+   */
+  recurring: RecurringExpense[] | null;
 }
 
 /** 選んだ月のデータ。 */
@@ -33,17 +42,18 @@ export interface HomeMonthData {
   expenses: ExpenseList;
 }
 
-export function createHomeService({ groups, months, expenses, categories, access }: HomeServiceDeps) {
+export function createHomeService({ groups, months, expenses, categories, recurring, access }: HomeServiceDeps) {
   return {
-    /** グループの情報（メンバー）・選べる月の一覧・費目。 */
+    /** グループの情報（メンバー）・選べる月の一覧・費目・固定費（お知らせ用。読めなければ `null`）。 */
     loadGroup(groupId: string): Promise<HomeGroupData> {
       return access.withSession(async (session) => {
-        const [group, monthList, categoryList] = await Promise.all([
+        const [group, monthList, categoryList, recurringList] = await Promise.all([
           groups.get(session, groupId),
           months.list(session, groupId),
           categories.list(session, groupId),
+          bestEffort(recurring.list(session, groupId)),
         ]);
-        return { group, months: monthList, categories: categoryList };
+        return { group, months: monthList, categories: categoryList, recurring: recurringList };
       });
     },
 

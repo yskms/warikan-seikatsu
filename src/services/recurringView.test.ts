@@ -7,11 +7,13 @@ import type { GroupDetail, GroupMember } from '../domain/group.ts';
 import type { Category } from '../domain/month.ts';
 import type { RecurringExpense } from '../domain/recurring.ts';
 import {
+  buildRecurringNotices,
   buildRecurringSections,
   CATEGORY_ARCHIVED_TEXT,
   dayNote,
   dayText,
   describeSplit,
+  myPayerRecurringTitles,
   pausedReasonText,
   statusOf,
 } from './recurringView.ts';
@@ -189,5 +191,142 @@ describe('describeSplit', () => {
       'あなた ¥50,000、彼女 ¥30,000',
     );
     assert.equal(describeSplit({ method: 'single', memberId: 'm2' }, nameOf, money), '彼女が全額負担します');
+  });
+});
+
+describe('buildRecurringNotices（ホームのお知らせ）', () => {
+  const members = [member('m1', 'あなた'), member('m2', '彼女')];
+  const notices = (recurring: RecurringExpense[] | null, overrides: { members?: GroupMember[]; currentMonth?: string } = {}) =>
+    buildRecurringNotices({
+      recurring,
+      members: overrides.members ?? members,
+      categories,
+      currentMonth: overrides.currentMonth ?? '2026-11',
+    });
+
+  it('固定費が読めていない（null）・無い・止まっていないときは、何も出さない', () => {
+    assert.deepEqual(notices(null), []);
+    assert.deepEqual(notices([]), []);
+    assert.deepEqual(notices([item()]), []);
+  });
+
+  it('止まった固定費が1件なら、その名前で出し、タップでその固定費の編集へ（支払う人の脱退）', () => {
+    assert.deepEqual(notices([item({ pausedAt: 1, pausedReason: 'payer_left' })]), [
+      {
+        kind: 'recurring-paused',
+        message: '家賃の固定費が止まっています。支払う人を選び直してください',
+        target: { kind: 'edit', recurringId: 'r1' },
+      },
+    ]);
+  });
+
+  it('理由で、してほしいことを変える（メンバーの変化は負担の見直し。知らない理由・理由が無いときは確認）', () => {
+    const message = (pausedReason: RecurringExpense['pausedReason']) =>
+      notices([item({ pausedAt: 1, pausedReason })])[0]?.message;
+    assert.equal(message('member_changed'), '家賃の固定費が止まっています。負担の分け方を見直してください');
+    assert.equal(message('unknown'), '家賃の固定費が止まっています。内容を確認してください');
+    assert.equal(message(null), '家賃の固定費が止まっています。内容を確認してください');
+  });
+
+  it('手動で止めた固定費は、知らせない（自分たちで止めた）', () => {
+    assert.deepEqual(notices([item({ pausedAt: 1, pausedReason: 'manual' })]), []);
+  });
+
+  it('終了した固定費は、止まっていても知らせない', () => {
+    assert.deepEqual(notices([item({ pausedAt: 1, pausedReason: 'payer_left', endMonth: '2026-10' })]), []);
+    // 終了する月が今月なら、まだ終わっていない
+    assert.equal(notices([item({ pausedAt: 1, pausedReason: 'payer_left', endMonth: '2026-11' })]).length, 1);
+  });
+
+  it('内容が無ければ、カテゴリの名前を題にする', () => {
+    const [notice] = notices([item({ description: null, categoryId: 'c2', pausedAt: 1, pausedReason: 'payer_left' })]);
+    assert.equal(notice?.message, '食費の固定費が止まっています。支払う人を選び直してください');
+  });
+
+  it('止まった固定費が複数なら、1つにまとめ、タップで一覧へ。理由が同じならその案内、違えば確認', () => {
+    const same = notices([
+      item({ id: 'a', pausedAt: 1, pausedReason: 'member_changed' }),
+      item({ id: 'b', pausedAt: 1, pausedReason: 'member_changed' }),
+      item({ id: 'c', pausedAt: 1, pausedReason: 'manual' }),
+    ]);
+    assert.deepEqual(same, [
+      { kind: 'recurring-paused', message: '固定費が2件止まっています。負担の分け方を見直してください', target: { kind: 'list' } },
+    ]);
+    const mixed = notices([
+      item({ id: 'a', pausedAt: 1, pausedReason: 'member_changed' }),
+      item({ id: 'b', pausedAt: 1, pausedReason: 'payer_left' }),
+      item({ id: 'c', pausedAt: 1, pausedReason: 'unknown' }),
+    ]);
+    assert.deepEqual(mixed, [
+      { kind: 'recurring-paused', message: '固定費が3件止まっています。内容を確認してください', target: { kind: 'list' } },
+    ]);
+  });
+
+  it('支払う人が脱退を選んでいる（まだ止まっていない）固定費は、付け替えを促す。1件ならその編集へ、複数なら一覧へ', () => {
+    const leaving = [member('m1', 'あなた'), { ...member('m2', '彼女'), leaveRequestedMonth: '2026-11' }];
+    assert.deepEqual(notices([item({ payerMemberId: 'm2' }), item({ id: 'r2', payerMemberId: 'm1' })], { members: leaving }), [
+      {
+        kind: 'recurring-payer-leaving',
+        message: '家賃の固定費は、支払う人が脱退予定です。支払う人を選び直してください',
+        target: { kind: 'edit', recurringId: 'r1' },
+      },
+    ]);
+    assert.deepEqual(
+      notices([item({ id: 'a', payerMemberId: 'm2' }), item({ id: 'b', payerMemberId: 'm2' })], { members: leaving }),
+      [
+        {
+          kind: 'recurring-payer-leaving',
+          message: '固定費2件の支払う人が脱退予定です。支払う人を選び直してください',
+          target: { kind: 'list' },
+        },
+      ],
+    );
+  });
+
+  it('脱退月が終わった（leaveEffective。Cronの確定の前）支払う人も、脱退予定として知らせる', () => {
+    const effective = [member('m1', 'あなた'), { ...member('m2', '彼女'), leaveEffective: true }];
+    assert.equal(notices([item({ payerMemberId: 'm2' })], { members: effective }).length, 1);
+  });
+
+  it('支払う人の脱退は、止まっている・終了した固定費、脱退していない人が支払う固定費、メンバーに無い支払う人には出さない', () => {
+    const leaving = [member('m1', 'あなた'), { ...member('m2', '彼女'), leaveRequestedMonth: '2026-11' }];
+    assert.deepEqual(notices([item({ payerMemberId: 'm2', pausedAt: 1, pausedReason: 'manual' })], { members: leaving }), []);
+    assert.deepEqual(notices([item({ payerMemberId: 'm2', endMonth: '2026-10' })], { members: leaving }), []);
+    assert.deepEqual(notices([item({ payerMemberId: 'm1' })], { members: leaving }), []);
+    assert.deepEqual(notices([item({ payerMemberId: 'zzz' })], { members: leaving }), []);
+  });
+
+  it('止まった（payer_left）お知らせと、脱退予定のお知らせは、別々に、止まったほうを先に出す', () => {
+    const leaving = [member('m1', 'あなた'), { ...member('m2', '彼女'), leaveRequestedMonth: '2026-11' }];
+    const result = notices(
+      [
+        item({ id: 'a', payerMemberId: 'm2' }),
+        item({ id: 'b', description: '光熱費', pausedAt: 1, pausedReason: 'payer_left', payerMemberId: 'm2' }),
+      ],
+      { members: leaving },
+    );
+    assert.deepEqual(result.map((notice) => notice.kind), ['recurring-paused', 'recurring-payer-leaving']);
+  });
+});
+
+describe('myPayerRecurringTitles（脱退の欄の添え書き）', () => {
+  const base = { categories, currentMonth: '2026-11', memberId: 'm1' };
+
+  it('自分が支払う人の、止まっていない・終了していない固定費の題を、サーバーの順に返す', () => {
+    const titles = myPayerRecurringTitles({
+      ...base,
+      recurring: [
+        item({ id: 'a', description: '家賃' }),
+        item({ id: 'b', description: '相手が払う', payerMemberId: 'm2' }),
+        item({ id: 'c', description: '止めている', pausedAt: 1, pausedReason: 'manual' }),
+        item({ id: 'd', description: '終わった', endMonth: '2026-10' }),
+        item({ id: 'e', description: null, categoryId: 'c2' }),
+      ],
+    });
+    assert.deepEqual(titles, ['家賃', '食費']);
+  });
+
+  it('固定費が無ければ、空', () => {
+    assert.deepEqual(myPayerRecurringTitles({ ...base, recurring: [] }), []);
   });
 });

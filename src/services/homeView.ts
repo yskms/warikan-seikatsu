@@ -117,7 +117,8 @@ export interface Notice {
  * 翌月に最初の支出を登録したグループなど。docs/backend-design.md 4章）。その月まで「先に締めてください」と促すと、締められる
  * という `close` と食い違う。この規則はアプリに書き写さず、サーバーの答えに従う。
  *
- * メンバーが増減したお知らせ・固定費が止まったお知らせ（screens.md 3章）は、それを返すAPIを読む画面ができるときに足す。
+ * 固定費のお知らせは `recurringView.ts` の `buildRecurringNotices`（月へ移るものではないので、別に組み立てる）。メンバーが増減した
+ * お知らせ（screens.md 3章）は、費目の割合を見直した印を覚える場所ができるときに足す（docs/backend-design.md 12章）。
  */
 export function buildNotices(selectedMonth: string, months: readonly MonthListItem[], close: CloseState): Notice[] {
   const previous = previousMonth(selectedMonth);
