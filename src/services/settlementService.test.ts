@@ -37,8 +37,8 @@ function setup(options: { session?: string; failWith?: Error; failRepository?: '
     },
   } as unknown as MonthRepository;
   const settlements = {
-    async close(session: string, groupId: string, month: string) {
-      log.push(`close:${session}:${groupId}:${month}`);
+    async close(session: string, groupId: string, month: string, acknowledgeDelete = false) {
+      log.push(`close:${session}:${groupId}:${month}${acknowledgeDelete ? ':ack' : ''}`);
       if (options.failRepository === 'close') throw new AuthError('network');
       return { kind: 'closed' };
     },
@@ -90,6 +90,13 @@ describe('settlementService', () => {
       'withSession',
       'carry:SESSION:t2',
     ]);
+  });
+
+  it('close の確認の申告（acknowledgeDelete）は、そのまま Repository へ渡す。既定は、申告なし', async () => {
+    const { service, log } = setup({ session: 'SESSION' });
+    await service.close('g1', '2026-10', true);
+    await service.close('g1', '2026-10', false);
+    assert.deepEqual(log.filter((entry) => entry.startsWith('close:')), ['close:SESSION:g1:2026-10:ack', 'close:SESSION:g1:2026-10']);
   });
 
   it('セッションの失敗は、Repository を呼ばず、そのまま画面へ届く', async () => {

@@ -19,7 +19,11 @@
 // - **脱退を選ぶ操作**は、確認ダイアログ（`Alert`）のあとに送る（取り消せるのは、確定するまで）。**最後の1人かは、書き写さない**:
 //   確認の警告とボタンの文言は、グループ情報の `leaveDeletesGroup`（サーバーの値）で出し分ける。やり直さない（競合なら、読み直して、
 //   もう一度押してもらう）。**その場で確定した・グループが消えた**ときは、案内のダイアログを出して、所属グループの一覧を読み直し
-//   （`reloadGroups`。`ui/GroupGate.tsx` が行き先を決める）、閉じる。確定するまで取り消せる状態（`requested`）は、画面の表示が変わる
+//   （`reloadGroups`。`ui/GroupGate.tsx` が行き先を決める）、閉じる。**グループが消えることを警告した確認（`deletesGroup`）のときだけ、
+//   確認の申告（`acknowledgeDelete`）を付けて送る**: 確認を出したあとで、残る人が脱退済みになった、など、警告の無い確認のまま
+//   グループが消えることになったときは、サーバーが何も消さずに断る（409 `delete_not_acknowledged`。読み直して、警告つきで出し直す）。
+//   断られたら、競合を含めて、いつも読み直す。グループが無い（404）ときは、所属グループの一覧も読み直す。成功・失敗のあとの
+//   読み直しは、終わるまで `busy` のまま（古い表示のボタンを、続けて押さない）。確定するまで取り消せる状態（`requested`）は、画面の表示が変わる
 //   （「脱退予定」と「脱退を取り消す」）だけ。失敗の文言は、発行と同じ理由で、ボタンのすぐ下に出す。
 // - **期限の表示は、30秒ごとと、アプリが前面に戻ったときに更新する**（画面を開いたままでも、「あと…」が古くならない）。端末の時計で
 //   期限が切れた招待は、「期限切れ」と出して、**「共有」だけを隠す**（`isInviteExpired`。使えないURLを送ってしまわないため）。
@@ -47,11 +51,12 @@ import { inviteShareMessage, inviteUrl } from '../../src/services/inviteUrl.ts';
 import {
   leaveDone,
   leaveErrorMessage,
+  leaveLostGroup,
   leaveOutcome,
   leaveResultUnknown,
   shouldReloadAfterLeave,
 } from '../../src/services/leaveMessage.ts';
-import { buildLeaveSection, type LeaveConfirm } from '../../src/services/leaveView.ts';
+import { buildLeaveSection, type LeaveSection } from '../../src/services/leaveView.ts';
 import {
   buildInviteSection,
   buildMemberList,
@@ -248,32 +253,44 @@ export function MembersScreen({ groupId }: { groupId: string }) {
     else router.replace('/settings');
   }
 
-  function confirmLeave(confirm: LeaveConfirm) {
+  function confirmLeave(section: Extract<LeaveSection, { kind: 'request' }>) {
     if (busyRef.current) return;
+    const { confirm, deletesGroup } = section;
     Alert.alert(confirm.title, confirm.message, [
       { text: 'やめる', style: 'cancel' },
-      { text: confirm.confirmLabel, style: 'destructive', onPress: requestLeave },
+      { text: confirm.confirmLabel, style: 'destructive', onPress: () => requestLeave(deletesGroup) },
     ]);
   }
 
-  function requestLeave() {
+  /** 状態が変わった・結果が分からない失敗のあとに、画面を読み直す。グループが無い（404）ときは、所属グループの一覧も読み直す。 */
+  async function recoverAfterLeaveFailure(e: unknown) {
+    if (leaveLostGroup(e)) reloadGroups();
+    if (shouldReloadAfterLeave(e) || leaveResultUnknown(e)) await reload();
+  }
+
+  /**
+   * 脱退を選ぶ。`deletesGroup` は、確認に「グループが消える」警告を出したか。出したときだけ、確認の申告を付けて送る（警告を出して
+   * いないのに消えることになったときは、サーバーが何も消さずに断る。確認を出したあとで、残る人が脱退済みになった、など）。
+   */
+  function requestLeave(deletesGroup: boolean) {
     // 外れたあとに、開いたままの確認ダイアログから呼ばれたときは、何もしない
     if (!mounted.current) return;
     void exclusive({ kind: 'leave' }, async () => {
       setLeaveError(null);
       let result: LeaveRequested;
       try {
-        result = await groupService.requestLeave(groupId);
+        result = await groupService.requestLeave(groupId, deletesGroup);
       } catch (e) {
         setLeaveError(leaveErrorMessage(e, 'request'));
-        // 状態が変わったとき（すでに選んでいた・確定していた・グループが無い）と、結果が分からないとき（選べているかもしれない）は、読み直す
-        if (shouldReloadAfterLeave(e) || leaveResultUnknown(e)) void reload();
+        // 状態が変わったとき（断られた。競合・確認の申告が無い、を含む）と、結果が分からないとき（選べているかもしれない）は、読み直す。
+        // 読み直しが終わるまで、押せないままにする（古い表示のボタンを、続けて押さないため）
+        await recoverAfterLeaveFailure(e);
         return;
       }
       const done = leaveDone(leaveOutcome(result));
       if (done === null) {
-        // 確定するまで取り消せる状態。表示が、「脱退予定」と「脱退を取り消す」に変わる
-        void reload();
+        // 確定するまで取り消せる状態。表示が、「脱退予定」と「脱退を取り消す」に変わる（読み直しが終わるまで、押せないままにする）
+        await reload();
         return;
       }
       // その場で確定した・グループが消えた。確定した人は、所属の一覧から消えることがあるので、一覧を読み直す（`GroupGate` が行き先を決める）
@@ -290,10 +307,11 @@ export function MembersScreen({ groupId }: { groupId: string }) {
         await groupService.cancelLeave(groupId);
       } catch (e) {
         setLeaveError(leaveErrorMessage(e, 'cancel'));
-        if (shouldReloadAfterLeave(e) || leaveResultUnknown(e)) void reload();
+        await recoverAfterLeaveFailure(e);
         return;
       }
-      void reload();
+      // 読み直しが終わるまで、押せないままにする（古い表示のボタンを、続けて押さないため）
+      await reload();
     });
   }
 
@@ -438,7 +456,7 @@ export function MembersScreen({ groupId }: { groupId: string }) {
                   label={view.leave.buttonLabel}
                   busy={busy?.kind === 'leave'}
                   disabled={busy !== null}
-                  onPress={() => view.leave.kind === 'request' && confirmLeave(view.leave.confirm)}
+                  onPress={() => view.leave.kind === 'request' && confirmLeave(view.leave)}
                 />
               ) : (
                 <PrimaryButton

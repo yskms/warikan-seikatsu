@@ -43,9 +43,12 @@ export function createSettlementService({ groups, months, settlements, access }:
       });
     },
 
-    /** 月を締める。やり直さない（競合したら、画面が読み直して案内する）。 */
-    close(groupId: string, month: string): Promise<CloseResult> {
-      return access.withSession((session) => settlements.close(session, groupId, month));
+    /**
+     * 月を締める。やり直さない（競合したら、画面が読み直して案内する）。`acknowledgeDelete` は、締めるとグループが消える、という
+     * 警告を見せて確認を得たときだけ true（そうでないのに消えるときは、サーバーが断る。`SettlementRepository.close`）。
+     */
+    close(groupId: string, month: string, acknowledgeDelete = false): Promise<CloseResult> {
+      return access.withSession((session) => settlements.close(session, groupId, month, acknowledgeDelete));
     },
 
     /** 送金を精算済みにする（確定後は戻せない）。 */

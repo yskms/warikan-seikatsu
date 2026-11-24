@@ -63,6 +63,10 @@ export function settlementErrorMessage(error: unknown, action: SettlementAction)
         return action === 'close'
           ? '内容が変わりました。確認してから、もう一度締めてください。'
           : '内容が変わりました。画面を確認して、もう一度お試しください。';
+      case 'delete_not_acknowledged':
+        // 確認を出したあとで、他のメンバーが脱退済みになった、など。締めると、グループのデータがすべて消えることになったので、
+        // 何も消さずに断られた。読み直すと、警告が出る
+        return '状況が変わりました。この月を締めると、グループのデータがすべて削除されることになったため、確認し直してください。';
       case 'month_closed':
         return 'この月は、すでに締められています。';
       case 'month_skipped':

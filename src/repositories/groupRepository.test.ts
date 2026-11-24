@@ -274,6 +274,26 @@ describe('requestLeave', () => {
     assert.equal(calls[0]!.init.body, undefined);
   });
 
+  it('グループが消えることを確認した（acknowledgeDelete）ときだけ、クエリ acknowledgeDelete=true を付ける', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { confirmed: false }));
+    const repository = createGroupRepository(fetchImpl);
+    await repository.requestLeave(SESSION, 'g1', true);
+    await repository.requestLeave(SESSION, 'g1', false);
+    await repository.requestLeave(SESSION, 'g1');
+    assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/g1/leave?acknowledgeDelete=true`);
+    assert.equal(calls[1]!.url, `${API_ORIGIN}/groups/g1/leave`);
+    assert.equal(calls[2]!.url, `${API_ORIGIN}/groups/g1/leave`);
+  });
+
+  it('確認の申告が無いまま消えることになった（409 delete_not_acknowledged）は、GroupRejectedError で、理由を載せる', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(409, { error: 'delete_not_acknowledged' }));
+    await assert.rejects(createGroupRepository(fetchImpl).requestLeave(SESSION, 'g1'), (e) => {
+      assert.ok(e instanceof GroupRejectedError);
+      assert.equal(e.reason, 'delete_not_acknowledged');
+      return true;
+    });
+  });
+
   it('その場で確定した・グループが消えた応答', async () => {
     const confirmed = fakeFetch(() => reply(200, { leaveRequestedMonth: '2026-11', confirmed: true })).fetchImpl;
     assert.deepEqual(await createGroupRepository(confirmed).requestLeave(SESSION, 'g1'), { confirmed: true, groupDeleted: false });
@@ -340,12 +360,21 @@ describe('requestLeave', () => {
 });
 
 describe('cancelLeave', () => {
-  it('DELETE /groups/:id/leave を、セッションつきで呼ぶ。応答の本文は読まない', async () => {
-    const { fetchImpl, calls } = fakeFetch(() => Promise.resolve({ ok: true, status: 200, json: async () => Promise.reject(new Error('unused')) }));
+  it('DELETE /groups/:id/leave を、セッションつきで呼ぶ。応答の leaveRequestedMonth の項目があることだけを確かめる', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { leaveRequestedMonth: null }));
     await createGroupRepository(fetchImpl).cancelLeave(SESSION, 'g1');
     assert.equal(calls[0]!.url, `${API_ORIGIN}/groups/g1/leave`);
     assert.equal(calls[0]!.init.method, 'DELETE');
     assert.equal(calls[0]!.init.headers.Authorization, `Bearer ${SESSION}`);
+  });
+
+  it('JSONのオブジェクトでない200・項目が無い200（宿のWi-Fiの認証画面など）は、取り消せたと取り違えず invalid-response', async () => {
+    for (const body of [null, 'ok', [], {}, { error: 'x' }]) {
+      const { fetchImpl } = fakeFetch(() => reply(200, body));
+      await rejectsWith(createGroupRepository(fetchImpl).cancelLeave(SESSION, 'g1'), 'invalid-response');
+    }
+    const notJson = fakeFetch(() => Promise.resolve({ ok: true, status: 200, json: async () => Promise.reject(new Error('html')) })).fetchImpl;
+    await rejectsWith(createGroupRepository(notJson).cancelLeave(SESSION, 'g1'), 'invalid-response');
   });
 
   it('断られたら GroupRejectedError（leave_confirmed・not_leaving・conflict）', async () => {

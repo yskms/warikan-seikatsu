@@ -8,6 +8,7 @@ import { GroupRejectedError } from '../repositories/groupRepository.ts';
 import {
   leaveDone,
   leaveErrorMessage,
+  leaveLostGroup,
   leaveOutcome,
   leaveResultUnknown,
   shouldReloadAfterLeave,
@@ -53,13 +54,26 @@ describe('leaveErrorMessage', () => {
 });
 
 describe('読み直しの判断', () => {
-  it('サーバーが断ったら読み直す（状態が変わった）。競合だけは、読み直しても変わらないので読み直さない', () => {
+  it('サーバーが断ったら、いつも読み直す。競合（conflict）も（他のメンバーの書き込みで、最後の1人かの警告が古くなりうる）', () => {
     assert.equal(shouldReloadAfterLeave(rejected('leave_confirmed')), true);
     assert.equal(shouldReloadAfterLeave(rejected('leave_already_requested')), true);
     assert.equal(shouldReloadAfterLeave(rejected('not_leaving')), true);
     assert.equal(shouldReloadAfterLeave(rejected('not_found', 404)), true);
-    assert.equal(shouldReloadAfterLeave(rejected('conflict')), false);
-    assert.equal(shouldReloadAfterLeave(new AuthError('network')), false);
+    assert.equal(shouldReloadAfterLeave(rejected('conflict')), true);
+    assert.equal(shouldReloadAfterLeave(rejected('delete_not_acknowledged')), true);
+    assert.equal(shouldReloadAfterLeave(new AuthError('network')), false, '通信の失敗は、読み直しても同じ失敗になりうる');
+  });
+
+  it('確認の申告が無いまま消えることになった（delete_not_acknowledged）ときは、確認し直す案内を出す', () => {
+    const text = leaveErrorMessage(rejected('delete_not_acknowledged'), 'request');
+    assert.ok(text.includes('グループのデータがすべて削除されることになりました'));
+    assert.ok(text.includes('確認し直してください'));
+  });
+
+  it('グループが無い（404 not_found）ときだけ、所属グループの一覧も読み直す', () => {
+    assert.equal(leaveLostGroup(rejected('not_found', 404)), true);
+    assert.equal(leaveLostGroup(rejected('conflict')), false);
+    assert.equal(leaveLostGroup(new AuthError('network')), false);
   });
 
   it('結果が分からない失敗（断られていない）は、読み直して確かめる', () => {

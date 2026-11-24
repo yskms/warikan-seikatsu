@@ -15,7 +15,7 @@ import {
 } from '../domain/group.ts';
 import { createApiClient, isOpaqueValue, type ApiFetchLike } from './apiClient.ts';
 import { AuthError } from './authError.ts';
-import { array, bool, id, int, nullableStr, oneOfOrUnknown, record, str } from './parse.ts';
+import { array, bool, id, int, invalid, nullableStr, oneOfOrUnknown, record, str } from './parse.ts';
 
 export type GroupFetchLike = ApiFetchLike;
 
@@ -165,12 +165,16 @@ export function createGroupRepository(
      * `POST /groups/:id/leave`。「今月で脱退する」。確定するまでは取り消せる。脱退月がすでに締められていれば、その場で確定する
      * （`confirmed`）。最後の1人の確定は、グループを消す（`groupDeleted`）。応答は、この2つだけを読む（`LeaveRequested`）。
      * 断られたら `GroupRejectedError`: 409 `leave_already_requested`（すでに選んでいる）・409 `leave_confirmed`（すでに確定した）・
-     * 409 `conflict`（他の書き込みと競合した。やり直さない）・404 `not_found`。
+     * 409 `conflict`（他の書き込みと競合した。やり直さない）・404 `not_found`・409 `delete_not_acknowledged`（グループが消えることに
+     * なったのに、確認の申告が無かった。何も消えていない）。
+     * `acknowledgeDelete`: 「グループのデータがすべて消えます」の警告を見せて、確認を得たか（クエリ `acknowledgeDelete=true`）。
+     * 警告を出したときだけ true にする。確認を出したあとで状態が変わり（残る人が脱退済みになった、など）、警告の無い確認のまま、
+     * グループが消えることになったときは、サーバーが何も消さずに断る（`worker/src/deleteAck.ts`）。付けても、消えない操作には効かない。
      */
-    requestLeave(session: string, groupId: string): Promise<LeaveRequested> {
+    requestLeave(session: string, groupId: string, acknowledgeDelete = false): Promise<LeaveRequested> {
       return client.request(
         'POST',
-        `/groups/${encodeURIComponent(groupId)}/leave`,
+        `/groups/${encodeURIComponent(groupId)}/leave${acknowledgeDelete ? '?acknowledgeDelete=true' : ''}`,
         { session, rejected: groupRejection },
         async (response) => {
           const data = record(await response.json());
@@ -181,14 +185,18 @@ export function createGroupRepository(
 
     /**
      * `DELETE /groups/:id/leave`。脱退を取り消す（確定するまで。脱退月が終わったあとは、Cronの確定の前でも取り消せない）。応答は
-     * 読まない。断られたら `GroupRejectedError`: 409 `leave_confirmed`・409 `not_leaving`（選んでいない）・409 `conflict`・404。
+     * JSONのオブジェクトで、`leaveRequestedMonth` の項目があることだけを確かめる（値は読まない）: 何も読まないと、JSONでない200
+     * （宿のWi-Fiの認証画面など）を、取り消せたと取り違える。断られたら `GroupRejectedError`: 409 `leave_confirmed`・
+     * 409 `not_leaving`（選んでいない）・409 `conflict`・404。
      */
     cancelLeave(session: string, groupId: string): Promise<void> {
       return client.request(
         'DELETE',
         `/groups/${encodeURIComponent(groupId)}/leave`,
         { session, rejected: groupRejection },
-        async () => undefined,
+        async (response) => {
+          if (!('leaveRequestedMonth' in record(await response.json()))) invalid();
+        },
       );
     },
 

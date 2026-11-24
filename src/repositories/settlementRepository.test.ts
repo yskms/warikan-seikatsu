@@ -52,6 +52,26 @@ describe('close', () => {
     assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
   });
 
+  it('グループが消えることを確認した（acknowledgeDelete）ときだけ、クエリ acknowledgeDelete=true を付ける', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { groupDeleted: true }));
+    const repository = createSettlementRepository(fetchImpl);
+    await repository.close(SESSION, 'g1', '2026-10', true);
+    await repository.close(SESSION, 'g1', '2026-10', false);
+    await repository.close(SESSION, 'g1', '2026-10');
+    assert.equal(calls[0].url, `${API_ORIGIN}/groups/g1/months/2026-10/close?acknowledgeDelete=true`);
+    assert.equal(calls[1].url, `${API_ORIGIN}/groups/g1/months/2026-10/close`);
+    assert.equal(calls[2].url, `${API_ORIGIN}/groups/g1/months/2026-10/close`);
+  });
+
+  it('確認の申告が無いまま消えることになった（409 delete_not_acknowledged）は、SettlementRejectedError で、理由を載せる', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(409, { error: 'delete_not_acknowledged' }));
+    await assert.rejects(createSettlementRepository(fetchImpl).close(SESSION, 'g1', '2026-10'), (e) => {
+      assert.ok(e instanceof SettlementRejectedError);
+      assert.equal(e.reason, 'delete_not_acknowledged');
+      return true;
+    });
+  });
+
   it('最後の1人の脱退でグループごと消したときは、group-deleted（締めてはいない）', async () => {
     const { fetchImpl } = fakeFetch(() => reply(200, { groupDeleted: true }));
     assert.deepEqual(await createSettlementRepository(fetchImpl).close(SESSION, 'g1', '2026-10'), { kind: 'group-deleted' });

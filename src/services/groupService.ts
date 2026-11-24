@@ -34,9 +34,11 @@ export function createGroupService({ groups, access }: GroupServiceDeps) {
      * 「今月で脱退する」を選ぶ。**やり直さない**（競合したら、画面が読み直して、もう一度押してもらう。確認の内容が変わりうる）。
      * 脱退月がすでに締められていれば、その場で確定する（`confirmed`）。最後の1人なら、グループが消える（`groupDeleted`）。
      * 確定した人は、所属の一覧から消えることがあるので、画面は、一覧を読み直す（`ui/groupList.ts` の `reloadGroups`）。
+     * `acknowledgeDelete`: 「グループのデータがすべて消えます」の警告を見せて、確認を得たときだけ true
+     * （そうでないのに消えることになったときは、サーバーが何も消さずに断る。`GroupRepository.requestLeave`）。
      */
-    requestLeave(groupId: string): Promise<LeaveRequested> {
-      return access.withSession((session) => groups.requestLeave(session, groupId));
+    requestLeave(groupId: string, acknowledgeDelete = false): Promise<LeaveRequested> {
+      return access.withSession((session) => groups.requestLeave(session, groupId, acknowledgeDelete));
     },
 
     /** 脱退を取り消す（確定するまで）。やり直さない。 */

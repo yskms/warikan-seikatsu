@@ -38,6 +38,11 @@ export class SettlementRejectedError extends AuthError {
   }
 }
 
+/** 確認の申告（`acknowledgeDelete=true`）のクエリ。付けても、グループが消えない操作には効かない。 */
+function deleteAck(acknowledgeDelete: boolean): string {
+  return acknowledgeDelete ? '?acknowledgeDelete=true' : '';
+}
+
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 function optionalString(value: unknown): string | null {
@@ -82,10 +87,13 @@ export function createSettlementRepository(
     /**
      * `POST /groups/:id/months/:month/close`。締めた（201）、またはグループごと消した（200 `groupDeleted`）。
      * やり直さない（競合したら 409 `conflict`。確認の内容が変わりうるため）。断られたら `SettlementRejectedError`。
+     * `acknowledgeDelete`: 「グループのデータがすべて消えます」の警告を見せて、確認を得たか（クエリ `acknowledgeDelete=true`）。
+     * 締めるとグループが消えるのに、これが無いと、サーバーは何も消さずに 409 `delete_not_acknowledged` で断る（確認の画面を開いたあとで、
+     * 他のメンバーが脱退済みになった、など、警告の無い確認のまま消えてしまうのを防ぐ。`worker/src/deleteAck.ts`）。警告を出したときだけ true にする。
      * `targetMonth` は呼び出し側が検べた `YYYY-MM`（パスに入れるので、形が違えば失敗にする）。
      */
-    async close(session: string, groupId: string, targetMonth: string): Promise<CloseResult> {
-      const path = `/groups/${encodeURIComponent(groupId)}/months/${month(targetMonth)}/close`;
+    async close(session: string, groupId: string, targetMonth: string, acknowledgeDelete = false): Promise<CloseResult> {
+      const path = `/groups/${encodeURIComponent(groupId)}/months/${month(targetMonth)}/close${deleteAck(acknowledgeDelete)}`;
       return client.request('POST', path, { session, rejected: rejection }, async (response) => {
         const data = record(await response.json());
         if (data.groupDeleted === true) return { kind: 'group-deleted' };

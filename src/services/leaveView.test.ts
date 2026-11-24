@@ -43,6 +43,7 @@ describe('buildLeaveSection', () => {
     assert.equal(section.confirm.confirmLabel, '脱退する');
     assert.ok(section.confirm.message.includes('確定するまでは、取り消せます'));
     assert.ok(!section.confirm.message.includes('削除'), '残る人がいるときは、削除に触れない');
+    assert.equal(section.deletesGroup, false, '警告を出していないので、確認の申告は付けない');
   });
 
   it('最後の1人（サーバーの leaveDeletesGroup）なら、「グループを削除して脱退」と、削除の警告を出す', () => {
@@ -54,6 +55,7 @@ describe('buildLeaveSection', () => {
     assert.equal(section.confirm.confirmLabel, 'グループを削除して脱退');
     assert.ok(section.confirm.message.includes('すべて削除され、元に戻せません'));
     assert.ok(section.note.includes('すべて削除され、元に戻せません'));
+    assert.equal(section.deletesGroup, true, '警告を出したので、送るときに確認の申告を付ける');
   });
 
   it('最後の1人かは、人数ではなく、サーバーの値だけで決める（1人だけのグループでも、値が false なら普通の文言）', () => {

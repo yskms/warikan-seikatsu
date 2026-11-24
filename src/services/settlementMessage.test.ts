@@ -100,9 +100,15 @@ describe('settlementErrorMessage', () => {
     assert.match(settlementErrorMessage(new Error('x'), 'settle'), /精算済みにできませんでした。時間をおいて/);
   });
 
+  it('確認の申告が無いまま、グループが消えることになった（delete_not_acknowledged）ときは、確認し直す案内で、読み直す', () => {
+    const error = rejected('delete_not_acknowledged');
+    assert.match(settlementErrorMessage(error, 'close'), /グループのデータがすべて削除されることになったため、確認し直してください/);
+    assert.equal(shouldReloadAfter(error), true);
+  });
+
   it('どの失敗も、空でなく、長いダッシュを含まない', () => {
     const codes: AuthErrorCode[] = ['network', 'unavailable', 'unauthorized', 'invalid-request', 'invalid-response', 'storage-failed', 'unexpected'];
-    const reasons = [null, 'conflict', 'month_closed', 'month_skipped', 'month_not_started', 'previous_month_not_closed', 'previous_month_unsettled', 'transfer_not_pending', 'transfer_not_carryable', 'not_found', 'forbidden'];
+    const reasons = [null, 'conflict', 'month_closed', 'month_skipped', 'month_not_started', 'previous_month_not_closed', 'previous_month_unsettled', 'transfer_not_pending', 'transfer_not_carryable', 'not_found', 'forbidden', 'delete_not_acknowledged'];
     for (const action of ACTIONS) {
       const messages = [
         ...codes.map((code) => settlementErrorMessage(new AuthError(code), action)),

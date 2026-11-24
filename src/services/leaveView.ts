@@ -15,7 +15,18 @@ export type LeaveSection =
   /** 出さない（脱退が確定している・参加中でない・知らない状態・自分が見つからない） */
   | { kind: 'hidden' }
   /** まだ脱退を選んでいない。「脱退する」を出す */
-  | { kind: 'request'; buttonLabel: string; note: string; confirm: LeaveConfirm }
+  | {
+      kind: 'request';
+      buttonLabel: string;
+      note: string;
+      confirm: LeaveConfirm;
+      /**
+       * 確認に、グループが消える警告（`leaveDeletesGroup`。サーバーの値）を出すか。出したときだけ、送るときに、確認の申告
+       * （`acknowledgeDelete`）を付ける。警告を出さなかったのに消えることになったとき（画面を読んだあとで、残る人が脱退済みに
+       * なった、など）は、サーバーが断る（`worker/src/deleteAck.ts`）。
+       */
+      deletesGroup: boolean;
+    }
   /** 脱退を選んでいて、まだ確定していない。「脱退を取り消す」を出す */
   | { kind: 'cancel'; buttonLabel: string; note: string };
 
@@ -55,6 +66,7 @@ export function buildLeaveSection(
   if (lastMember) {
     return {
       kind: 'request',
+      deletesGroup: true,
       buttonLabel: LEAVE_AND_DELETE_BUTTON_LABEL,
       note: `${LAST_MEMBER_WARNING}確定は、今月を締めたとき、または来月1日です。`,
       confirm: {
@@ -69,6 +81,7 @@ export function buildLeaveSection(
   }
   return {
     kind: 'request',
+    deletesGroup: false,
     buttonLabel: LEAVE_BUTTON_LABEL,
     note: '脱退を選ぶと、今月を締めたとき、または来月1日に、脱退が確定します。確定するまでは、取り消せます。',
     confirm: {

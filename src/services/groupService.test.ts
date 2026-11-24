@@ -31,8 +31,8 @@ function setup(options: { session?: string; failWith?: Error } = {}) {
       log.push(`create:${session}:${req.id}`);
       return created;
     },
-    async requestLeave(session: string, groupId: string) {
-      log.push(`requestLeave:${session}:${groupId}`);
+    async requestLeave(session: string, groupId: string, acknowledgeDelete = false) {
+      log.push(`requestLeave:${session}:${groupId}${acknowledgeDelete ? ':ack' : ''}`);
       return { confirmed: false, groupDeleted: false };
     },
     async cancelLeave(session: string, groupId: string) {
@@ -67,6 +67,13 @@ describe('groupService', () => {
     assert.deepEqual(await service.requestLeave('g1'), { confirmed: false, groupDeleted: false });
     await service.cancelLeave('g1');
     assert.deepEqual(log, ['withSession', 'requestLeave:SESSION:g1', 'withSession', 'cancelLeave:SESSION:g1']);
+  });
+
+  it('requestLeave の確認の申告（acknowledgeDelete）は、そのまま Repository へ渡す。既定は、申告なし', async () => {
+    const { service, log } = setup({ session: 'SESSION' });
+    await service.requestLeave('g1', true);
+    await service.requestLeave('g1');
+    assert.deepEqual(log.filter((entry) => entry.startsWith('requestLeave:')), ['requestLeave:SESSION:g1:ack', 'requestLeave:SESSION:g1']);
   });
 
   it('サインインしていない（withSession の失敗）は、そのまま投げる。Repository は呼ばない', async () => {

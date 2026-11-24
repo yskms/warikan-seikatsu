@@ -12,7 +12,7 @@
 //
 // 参加した直後は、参加したグループを開く（参加確認の画面が `openGroup` で置く）。
 import { Redirect } from 'expo-router';
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,6 +27,9 @@ import { useGroupsRevision } from './groupList.ts';
 import { PrimaryButton } from './PrimaryButton.tsx';
 import { useColors } from './useColors.ts';
 import { useSignOut } from './useSignOut.ts';
+
+/** 一覧の読み直しが失敗したときの、やり直しの間隔（ミリ秒）。これを使い切ったら、前の一覧のままにする */
+const REFRESH_RETRY_DELAYS_MS = [3_000, 8_000, 20_000];
 
 type LoadState =
   | { status: 'loading' }
@@ -43,27 +46,40 @@ export function GroupGate({ children }: { children: (group: CurrentGroup) => Rea
   // 脱退・グループの削除のあとの読み直しの合図（`ui/groupList.ts` の `reloadGroups`）
   const revision = useGroupsRevision();
 
+  // 一覧を読み込み済みか（読み直しの失敗を、やり直すかの判断に使う）
+  const hasList = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     // 読み込み済みの一覧は、読み直しのあいだも残す（画面を、読み込み中の表示に差し替えない。いま開いているグループの画面が、
     // 脱退の案内を出している最中かもしれない）。最初の読み込みと、失敗からの「もう一度」だけ、読み込み中にする
     setLoad((current) => (current.status === 'loaded' ? current : { status: 'loading' }));
-    // 端末に覚えた最後に開いたグループは、一覧と一緒に読む（読めなければ `null`。投げない）
-    Promise.all([groupService.listGroups(), loadLastGroup()]).then(
-      ([groups, lastGroupId]) => {
-        if (!cancelled) setLoad({ status: 'loaded', groups, lastGroupId });
-      },
-      (error: unknown) => {
-        // 読み直しの失敗は、前の一覧のままにする（最初の読み込みの失敗だけ、エラーの表示にする）
-        if (!cancelled) {
+    const run = (retry: number) => {
+      // 端末に覚えた最後に開いたグループは、一覧と一緒に読む（読めなければ `null`。投げない）
+      Promise.all([groupService.listGroups(), loadLastGroup()]).then(
+        ([groups, lastGroupId]) => {
+          if (cancelled) return;
+          hasList.current = true;
+          setLoad({ status: 'loaded', groups, lastGroupId });
+        },
+        (error: unknown) => {
+          if (cancelled) return;
+          // 読み直しの失敗は、前の一覧のままにする（最初の読み込みの失敗だけ、エラーの表示にする。「もう一度」がある）
           setLoad((current) =>
             current.status === 'loaded' ? current : { status: 'error', message: loadGroupsErrorMessage(error) },
           );
-        }
-      },
-    );
+          // 前の一覧がある（読み直しの失敗）ときは、少し置いて、数回やり直す。グループが消えた・脱退したあとの読み直しが、
+          // 通信の失敗で止まると、読めなくなったグループの画面に留まり、ログアウトしか抜け道が無くなるため
+          const delay = hasList.current ? REFRESH_RETRY_DELAYS_MS[retry] : undefined;
+          if (delay !== undefined) timer = setTimeout(() => run(retry + 1), delay);
+        },
+      );
+    };
+    run(0);
     return () => {
       cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [attempt, revision]);
 

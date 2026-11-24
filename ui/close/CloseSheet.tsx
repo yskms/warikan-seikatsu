@@ -106,7 +106,9 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
     setBusy(true);
     setError(null);
     try {
-      const result = await settlementService.close(groupId, month);
+      // グループが消えることを警告した確認（`deleteConfirm`）を出したときだけ、確認の申告を付ける。確認を出したあとで状態が変わり、
+      // 警告の無い確認のまま消えることになったときは、サーバーが断る（読み直して、警告を出し直す）
+      const result = await settlementService.close(groupId, month, model.deletesGroup);
       if (result.kind === 'group-deleted') {
         setGroupDeleted(true);
         // 所属グループの一覧を読み直す（このグループは、もう無い）。シートを閉じたあと、`GroupGate` が行き先を決める

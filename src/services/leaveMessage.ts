@@ -12,11 +12,21 @@ function codeOf(error: unknown): string {
 }
 
 /**
- * サーバーが断ったあと、画面の内容を読み直すか。脱退の状態（すでに選んでいる・すでに確定した・選んでいない・もう無い）が、
- * 読んだときから変わったときは、読み直す。競合（`conflict`）は、読み直しても画面の状態は変わらない。
+ * サーバーが断ったあと、画面の内容を読み直すか。**断られたら、競合（`conflict`）も含めて、いつも読み直す**。脱退の状態（すでに選んでいる・
+ * すでに確定した・選んでいない・もう無い）が、読んだときから変わったときだけでなく、競合も、他のメンバーが書き込んだ（メンバーの
+ * 状態が変わったかもしれない）合図で、確認の警告（`leaveDeletesGroup`。最後の1人か）が古くなりうる。読み直さないと、古い警告の
+ * まま、押し直すことになる。`delete_not_acknowledged` も、読み直して、警告つきの確認を出し直す。
  */
 export function shouldReloadAfterLeave(error: unknown): boolean {
-  return error instanceof GroupRejectedError && error.reason !== 'conflict';
+  return error instanceof GroupRejectedError;
+}
+
+/**
+ * 断られた理由が、グループ（自分の所属）が無いことか（404 `not_found`: グループが消えた・自分が脱退済みになった、など）。このとき、
+ * 画面は、所属グループの一覧も読み直す（`reloadGroups`）。いまの画面から先へは、進めない。
+ */
+export function leaveLostGroup(error: unknown): boolean {
+  return error instanceof GroupRejectedError && error.reason === 'not_found';
 }
 
 /**
@@ -49,6 +59,10 @@ export function leaveErrorMessage(error: unknown, action: LeaveAction): string {
         return `${failed}すでに脱退が確定しています。`;
       case 'not_leaving':
         return `${failed}脱退は選んでいません。`;
+      case 'delete_not_acknowledged':
+        // 確認を出したあとで、他のメンバーが脱退済みになった、など。脱退が確定すると、グループのデータがすべて削除されることに
+        // なったので、何も消さずに断られた。読み直すと、警告つきの確認になる
+        return `${failed}状況が変わり、脱退が確定すると、グループのデータがすべて削除されることになりました。確認し直してください。`;
       case 'not_found':
         return `${failed}このグループを開けませんでした。グループの状態が変わったかもしれません。`;
       case 'conflict':
