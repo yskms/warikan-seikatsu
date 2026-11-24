@@ -68,7 +68,8 @@ export default function LoginScreen() {
           style={[styles.invited, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
           accessibilityRole="text"
         >
-          ふたりで使うには、データ保護のためログインが必要です
+          {/* 読点で改行する（狭い画面で、「必／要です」のように中途半端に折り返さない） */}
+          {'ふたりで使うには、\nデータ保護のためログインが必要です'}
         </Text>
       ) : null}
       <View style={styles.hero}>

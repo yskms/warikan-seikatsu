@@ -105,7 +105,7 @@ export function JoinScreen({ token }: { token: string }) {
           setStep({ kind: 'unavailable' });
           break;
         case 'full':
-          // 確認のあとに埋まった。表示名の入力はそのまま残し、「参加する」だけ押せなくする
+          // 確認のあとに埋まった。満員の案内に切り替え（入力欄は隠れる）、「参加する」を押せなくする
           setStep((current) => (current.kind === 'ready' ? { ...current, groupFull: true } : current));
           break;
         case 'already-member':
@@ -129,7 +129,7 @@ export function JoinScreen({ token }: { token: string }) {
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
-            {step.kind === 'unavailable' ? 'この招待は使えません' : 'グループに招待されています'}
+            {step.kind === 'unavailable' ? 'この招待は使えません' : 'グループへの招待'}
           </Text>
 
           {step.kind === 'loading' ? (
