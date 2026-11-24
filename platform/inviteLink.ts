@@ -3,12 +3,22 @@
 // 置かない（CLAUDE.md）。
 //
 // **メインの画面は、ログインしていない人には出ない**（`Stack.Protected`）ので、招待URLで起動した未ログインの人の行き先は、何もしなければ
-// 残らない（URLは捨てられる）。そこで、expo-router とは別に、ここでURLを受け取って持っておき、ログイン後の分岐（`ui/GroupGate.tsx`）が
-// 見て、参加確認（`app/join.tsx`）へ回す。expo-router には、招待URLを画面として渡さない（`app/+native-intent.tsx`）。
+// 残らない（URLは捨てられる）。そこで、expo-router とは別に、ここでURLを受け取って持っておき、ルート（`app/_layout.tsx` の
+// `RootNavigator`）が、招待を持っているあいだ、参加確認（`app/join.tsx`）だけを出す。expo-router には、招待URLを画面として渡さない
+// （`app/+native-intent.tsx`）。
 //
-// 起動したときのURL（`getInitialURL`）は、読み終えるまで `linksReady` が偽: 読み終える前にログイン後の分岐が動くと、招待された人が、
+// 起動したときのURL（`getInitialURL`）は、読み終えるまで `linksReady` が偽: 読み終える前にログイン後の画面が動くと、招待された人が、
 // 作る必要のないグループの作成画面へ回されうる。`app/_layout.tsx` が、読み終えるまでスプラッシュを出したままにする。
-// `getInitialURL` は、プロセスの生きているあいだ同じURLを返すので、起動時に1回だけ読む（その後の招待は `url` イベントで届く）。
+//
+// **`getInitialURL` は、ルートが描かれるたびに読み直す**（`startInviteLinks`。`app/_layout.tsx` の `RootLayout` の `useEffect`）。
+// Androidでは、戻る操作でアプリを閉じても（Activityが終わる）、プロセスは残る。そのあとに招待URLを開くと、新しいActivityが
+// 作られ、JSの実行環境はそのまま使われる。このとき `url` イベントは届かない（`onNewIntent` を通らない）ので、`getInitialURL`
+// を読み直さないと、招待を取りこぼす（エミュレータで、戻る操作のあとに招待URLを開いて確かめた）。新しいActivityでは、ルートが
+// 描き直されるので、その `useEffect` で読み直す。
+// 副作用: システムが同じActivityを作り直したとき（最近使ったアプリから開き直したときを含む）、そのActivityを起動したURLが
+// また読まれ、**手放した招待が、もう一度、参加確認に出ることがある**（参加済みなら、確認を出さずにそのグループを開く。
+// キャンセルしたものは、もう一度出る。使えない招待は、「使えません」の案内）。新しく開いたURLと区別できない（Intentに識別子が無い）ので、
+// 手放した招待を覚えて捨てる形にはしない（開き直したURLを無視するほうが悪い）。
 import { Linking } from 'react-native';
 
 import { parseInviteLink } from '../src/services/inviteLink.ts';
@@ -30,18 +40,25 @@ function accept(url: string | null): void {
   if (token !== null) pendingInvite.set(token);
 }
 
-let started = false;
+let listening = false;
 
-/** URLの受け取りを始める（`app/_layout.tsx` のモジュールの先頭で、1回だけ呼ぶ。2回目以降は何もしない）。 */
+/**
+ * URLの受け取りを始める。**ルートが描かれるたびに呼ぶ**（上の説明。`url` イベントの購読は、1回だけ）。
+ * 起動したときのURLは、時間切れ（上限）のあとに届いても受け取る（ルート（`app/_layout.tsx`）が、招待を持った時点で、どの画面にいても、
+ * 参加確認へ移すので、あとから届いても間に合う）。
+ */
 export function startInviteLinks(): void {
-  if (started) return;
-  started = true;
   try {
-    // アプリの生きているあいだ受け取り続けるので、解除しない
-    Linking.addEventListener('url', ({ url }) => accept(url));
+    if (!listening) {
+      listening = true;
+      // アプリの生きているあいだ受け取り続けるので、解除しない
+      Linking.addEventListener('url', ({ url }) => accept(url));
+    }
+    const initial = Linking.getInitialURL();
+    // 時間切れのあとに届いても受け取る
+    initial.then(accept, () => {});
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), INITIAL_URL_TIMEOUT_MS));
-    Promise.race([Linking.getInitialURL(), timeout])
-      .then(accept)
+    Promise.race([initial, timeout])
       .catch(() => {})
       .finally(() => linksReady.set(true));
   } catch {

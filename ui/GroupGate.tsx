@@ -4,10 +4,10 @@
 // 複数のグループに入っている人の切り替えと、最後に開いたグループを覚えておくことは、まだ作っていない（いまは、作成の古い順の
 // 先頭を出す）。
 //
-// **招待**: 招待URLから来た人は、ログイン後に参加確認（`app/join.tsx`）へ進む（docs/screens.md 2章）。**この分岐は、保持した招待
-// （`platform/inviteLink.ts` の `pendingInvite`）を、グループの有無より先に見て**、参加確認へ回す。外さない（無条件に「グループが無ければ
-// グループ作成」を行うと、招待された人が、作る必要のないグループの作成画面へ回される）。作成画面には、作らずに出る道として、
-// ログアウトだけを置いてある。招待を持っているあいだは、グループの一覧を読まない（参加確認のあとで、読み直す）。
+// **招待**: 招待URLから来た人の参加確認（`app/join.tsx`。docs/screens.md 2章）は、ここでは扱わない。ルート（`app/_layout.tsx` の
+// `RootNavigator`）が、招待を持っているあいだ、`(main)`（この画面）ごと外して、参加確認だけを出す。**招待の分岐を、ここ（や、
+// `create-group` の画面）の `Redirect` に戻さない**（`Redirect` は、その画面にフォーカスがあるときしか動かず、ほかの画面・シートの上に
+// 招待が届いても、参加確認へ移らない）。このゲートが描かれるのは、招待を持っていないときだけ。
 //
 // 参加した直後は、参加したグループを開く（`ui/activeGroup.ts`。切り替えを作るまでの代わり）。
 import { Redirect } from 'expo-router';
@@ -22,7 +22,6 @@ import { useActiveGroupId } from './activeGroup.ts';
 import type { CurrentGroup } from './CurrentGroup.tsx';
 import { PrimaryButton } from './PrimaryButton.tsx';
 import { useColors } from './useColors.ts';
-import { usePendingInvite } from './usePendingInvite.ts';
 import { useSignOut } from './useSignOut.ts';
 
 type LoadState =
@@ -36,13 +35,9 @@ export function GroupGate({ children }: { children: (group: CurrentGroup) => Rea
   // 読み直しの合図（「もう一度」を押すたびに増やす）
   const [attempt, setAttempt] = useState(0);
   const { confirmSignOut, busy: signingOut, error: signOutError } = useSignOut();
-  const pendingInvite = usePendingInvite();
   const activeGroupId = useActiveGroupId();
-  const hasPendingInvite = pendingInvite !== null;
 
   useEffect(() => {
-    // 招待を持っているあいだは、読まない（参加確認へ回す。済んだあとに、この画面が作り直されて読む）
-    if (hasPendingInvite) return;
     let cancelled = false;
     setLoad({ status: 'loading' });
     groupService.listGroups().then(
@@ -56,10 +51,8 @@ export function GroupGate({ children }: { children: (group: CurrentGroup) => Rea
     return () => {
       cancelled = true;
     };
-  }, [attempt, hasPendingInvite]);
+  }, [attempt]);
 
-  // 招待を、グループの有無より先に見る（上の説明）
-  if (hasPendingInvite) return <Redirect href="/join" />;
   if (load.status === 'loaded' && load.groups.length === 0) return <Redirect href="/create-group" />;
   // グループがある。ホームが、自分でデータを読む（ホームへ戻るたびに取り直す）ので、ここで読んだ一覧は、グループの特定にだけ使う。
   // 参加した直後のグループが一覧にあれば、それを開く。無ければ（一覧の取得と食い違ったとき）、先頭。
