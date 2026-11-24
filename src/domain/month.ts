@@ -1,5 +1,6 @@
 // 月の一覧・月の集計（精算）・支出・費目の型。形は docs/backend-design.md 9章の「月締め・精算API」「支出API」
 // 「費目・負担割合API」が正で、Worker（worker/）とはコードを共有しない。
+import type { ExpenseAllocation } from './expense.ts';
 
 /** 月の一覧の `status`（保存せず、締めと送金の状態から毎回導く。9章の「月の一覧」） */
 export const MONTH_STATUSES = ['open', 'skipped', 'unsettled', 'settled'] as const;
@@ -108,6 +109,16 @@ export interface Expense {
    * 表示にしか使わない（`category` かどうかだけ）ので、知らない値も文字列のまま持つ（CLAUDE.md）。
    */
   splitMethod: string;
+}
+
+/**
+ * 編集のシートを開くための、1件の支出の全体。一覧の `Expense` に、負担額（`category` 以外の支出だけ）を足したもの。
+ * 一覧（ホーム）は負担額を読まない（読まない項目が崩れても、ホーム全体を失敗にしないため）。
+ */
+export interface ExpenseDetail extends Expense {
+  allocations: ExpenseAllocation[];
+  /** その月が締め済みか（締めた月の支出は、読み取り専用で開く） */
+  closed: boolean;
 }
 
 /** `GET /groups/:id/expenses?month=`。日付の新しい順（同じ日付は登録の新しい順） */

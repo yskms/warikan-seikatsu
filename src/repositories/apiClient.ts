@@ -6,7 +6,7 @@
 // このアプリで変えたところ:
 // - `API_ORIGIN` が、本番のドメインが決まるまでの仮の値（下記）。
 // - 共有するRepositoryの説明。
-// - `ApiMethod` は、いま使うものだけ（`PATCH`・`DELETE` は、グループ・支出のRepositoryを作るときに足す）。
+// - `ApiMethod` は、いま使うものだけ（`PATCH`・`DELETE` は、支出のRepositoryの編集・削除で足した）。
 //
 // `fetch` は注入する（Repositoryを組み立てる層が、グローバルの `fetch` を渡す）。Nodeのテストは偽の `fetch` で動かす。
 //
@@ -21,7 +21,7 @@
 // - 例外の `message` に、URL・セッション・応答の本文を載せない。
 import { AuthError } from './authError.ts';
 
-export type ApiMethod = 'GET' | 'POST' | 'PUT';
+export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** `fetch` のうち、ここで使う部分（グローバルの `fetch` をそのまま渡せる形）。 */
 export type ApiFetchLike = (
