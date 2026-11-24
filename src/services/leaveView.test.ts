@@ -92,13 +92,25 @@ describe('buildLeaveSection', () => {
 
 describe('固定費の支払う人の添え書き', () => {
   it('名前が無ければ出さない。1件・2件はそのまま、3件以上は「ほかN件」', () => {
-    assert.equal(payerRecurringNote([]), null);
-    const one = payerRecurringNote(['家賃']);
+    assert.equal(payerRecurringNote([], 'request'), null);
+    const one = payerRecurringNote(['家賃'], 'cancel');
     assert.ok(one?.startsWith('家賃の固定費は、支払う人を選び直す必要があります。'));
     assert.ok(one?.includes('脱退が確定すると、選び直していない固定費は自動登録が止まります。'));
     assert.ok(one?.includes('確定する前に、設定の「固定費」から選び直してください。'));
-    assert.ok(payerRecurringNote(['家賃', '光熱費'])?.startsWith('家賃、光熱費の固定費は、'));
-    assert.ok(payerRecurringNote(['家賃', '光熱費', 'ネット', '保険'])?.startsWith('家賃、光熱費ほか2件の固定費は、'));
+    assert.ok(payerRecurringNote(['家賃', '光熱費'], 'cancel')?.startsWith('家賃、光熱費の固定費は、'));
+    assert.ok(payerRecurringNote(['家賃', '光熱費', 'ネット', '保険'], 'cancel')?.startsWith('家賃、光熱費ほか2件の固定費は、'));
+  });
+
+  it('同じ題は1つにまとめる（内容が無い同じカテゴリの固定費が2件でも、「家賃、家賃」と並べない）', () => {
+    assert.ok(payerRecurringNote(['家賃', '家賃'], 'cancel')?.startsWith('家賃の固定費は、'));
+    assert.ok(payerRecurringNote(['家賃', '光熱費', '家賃', '光熱費', 'ネット'], 'cancel')?.startsWith('家賃、光熱費ほか1件の固定費は、'));
+  });
+
+  it('脱退を選ぶ前だけ、「今月をすでに締めている場合は、脱退する前に選び直してください」を添える（脱退を選んだ時点で確定するため）', () => {
+    const request = payerRecurringNote(['家賃'], 'request') ?? '';
+    const cancel = payerRecurringNote(['家賃'], 'cancel') ?? '';
+    assert.ok(request.includes('今月をすでに締めている場合は、脱退を選ぶとすぐ確定するので、脱退する前に選び直してください。'));
+    assert.ok(!cancel.includes('今月をすでに締めている'), '脱退を選んだあとは、確定していないので、添えない');
   });
 
   it('脱退を選ぶ前は、欄と確認の本文の両方に添える', () => {
@@ -106,6 +118,7 @@ describe('固定費の支払う人の添え書き', () => {
     assert.equal(section.kind, 'request');
     if (section.kind !== 'request') return;
     assert.ok(section.payerNote?.startsWith('家賃の固定費は、支払う人を選び直す必要があります。'));
+    assert.ok(section.payerNote?.includes('脱退する前に選び直してください'));
     assert.ok(section.confirm.message.includes(section.payerNote ?? '?'));
     assert.ok(section.confirm.message.includes('確定するまでは、取り消せます'), '元の文言は残る');
   });

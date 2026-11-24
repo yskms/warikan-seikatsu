@@ -196,10 +196,15 @@ describe('describeSplit', () => {
 
 describe('buildRecurringNotices（ホームのお知らせ）', () => {
   const members = [member('m1', 'あなた'), member('m2', '彼女')];
-  const notices = (recurring: RecurringExpense[] | null, overrides: { members?: GroupMember[]; currentMonth?: string } = {}) =>
+  const notices = (
+    recurring: RecurringExpense[] | null,
+    overrides: { members?: GroupMember[]; currentMonth?: string; leaveDeletesGroup?: boolean } = {},
+  ) =>
     buildRecurringNotices({
       recurring,
+      memberId: 'm1',
       members: overrides.members ?? members,
+      leaveDeletesGroup: overrides.leaveDeletesGroup ?? false,
       categories,
       currentMonth: overrides.currentMonth ?? '2026-11',
     });
@@ -296,6 +301,51 @@ describe('buildRecurringNotices（ホームのお知らせ）', () => {
     assert.deepEqual(notices([item({ payerMemberId: 'zzz' })], { members: leaving }), []);
   });
 
+  it('自分の脱退が有効（leaveEffective）なら、どちらのお知らせも出さない（サーバーが固定費の変更を403で断るので、直せない）', () => {
+    const me = { ...member('m1', 'あなた'), leaveEffective: true };
+    const partnerLeaving = { ...member('m2', '彼女'), leaveRequestedMonth: '2026-11' };
+    const recurring = [
+      item({ id: 'a', pausedAt: 1, pausedReason: 'payer_left' }),
+      item({ id: 'b', payerMemberId: 'm2' }),
+    ];
+    assert.deepEqual(notices(recurring, { members: [me, partnerLeaving] }), []);
+    // 脱退を選んだだけ（確定していない）なら、まだ直せるので出す
+    const requested = { ...member('m1', 'あなた'), leaveRequestedMonth: '2026-11' };
+    assert.equal(notices(recurring, { members: [requested, partnerLeaving] }).length, 2);
+  });
+
+  it('グループが消える（leaveDeletesGroup。最後の1人）ときは、支払う人の脱退予定のお知らせを出さない。止まったお知らせは、出す', () => {
+    const leaving = [{ ...member('m1', 'あなた'), leaveRequestedMonth: '2026-11' }, member('m2', '彼女')];
+    const recurring = [item({ id: 'a' }), item({ id: 'b', description: '光熱費', pausedAt: 1, pausedReason: 'payer_left' })];
+    assert.deepEqual(
+      notices(recurring, { members: leaving, leaveDeletesGroup: true }).map((notice) => notice.kind),
+      ['recurring-paused'],
+    );
+    assert.deepEqual(
+      notices(recurring, { members: leaving, leaveDeletesGroup: false }).map((notice) => notice.kind),
+      ['recurring-paused', 'recurring-payer-leaving'],
+    );
+  });
+
+  it('終了する月が、支払う人の脱退月以前の固定費は、付け替えを促さない（脱退の確定のあとに作る予定が無い）', () => {
+    const leaving = [member('m1', 'あなた'), { ...member('m2', '彼女'), leaveRequestedMonth: '2026-11' }];
+    const kinds = (endMonth: string | null) =>
+      notices([item({ payerMemberId: 'm2', endMonth })], { members: leaving }).map((notice) => notice.kind);
+    assert.deepEqual(kinds('2026-11'), [], '脱退月で終わる');
+    assert.deepEqual(kinds('2026-12'), ['recurring-payer-leaving'], '脱退月の翌月まで続く');
+    assert.deepEqual(kinds(null), ['recurring-payer-leaving'], '終わりが無い');
+    // 脱退月が分からないとき（leaveRequestedMonth が無く、expenseEndMonth を使う）も同じ
+    const effective = [
+      member('m1', 'あなた'),
+      { ...member('m2', '彼女'), leaveEffective: true, expenseEndMonth: '2026-11' },
+    ];
+    assert.deepEqual(
+      notices([item({ payerMemberId: 'm2', endMonth: '2026-11' })], { members: effective }),
+      [],
+    );
+    assert.equal(notices([item({ payerMemberId: 'm2', endMonth: '2026-12' })], { members: effective }).length, 1);
+  });
+
   it('止まった（payer_left）お知らせと、脱退予定のお知らせは、別々に、止まったほうを先に出す', () => {
     const leaving = [member('m1', 'あなた'), { ...member('m2', '彼女'), leaveRequestedMonth: '2026-11' }];
     const result = notices(
@@ -324,6 +374,18 @@ describe('myPayerRecurringTitles（脱退の欄の添え書き）', () => {
       ],
     });
     assert.deepEqual(titles, ['家賃', '食費']);
+  });
+
+  it('今月で終わる固定費は含めない（脱退月は今月。確定のあとに作る予定が無く、付け替えは要らない）。来月以降まで続くものは含める', () => {
+    const titles = myPayerRecurringTitles({
+      ...base,
+      recurring: [
+        item({ id: 'a', description: '今月で終わる', endMonth: '2026-11' }),
+        item({ id: 'b', description: '来月まで', endMonth: '2026-12' }),
+        item({ id: 'c', description: '終わりなし', endMonth: null }),
+      ],
+    });
+    assert.deepEqual(titles, ['来月まで', '終わりなし']);
   });
 
   it('固定費が無ければ、空', () => {

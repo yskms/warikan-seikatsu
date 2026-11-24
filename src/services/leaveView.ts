@@ -42,16 +42,20 @@ const PAYER_NOTE_NAMES = 2;
 /**
  * 自分が支払う人の固定費があるときの添え書き（docs/screens.md 6章）。サーバーは、脱退が確定すると、支払う人が脱退した固定費を止める
  * （付け替えていなければ。docs/backend-design.md 5章の「脱退」）。確定したあとは、本人は固定費を変えられない（403）ので、「確定する前に」と
- * 案内する（今月をすでに締めていて、すぐ確定する場合は、脱退を選ぶ前になる）。名前が無ければ `null`。
+ * 案内する。**脱退を選ぶ前**（`request`）は、今月をすでに締めていると、脱退を選んだ時点で確定するので、「脱退する前に」も添える。
+ * 脱退を選んだあと（`cancel`）は、確定していないので、添えない。題は、同じものを1つにまとめる（内容が無い同じカテゴリの固定費が
+ * 2件あっても、「家賃、家賃」と並べない）。名前が無ければ `null`。
  */
-export function payerRecurringNote(titles: readonly string[]): string | null {
-  if (titles.length === 0) return null;
-  const shown = titles.slice(0, PAYER_NOTE_NAMES);
-  const rest = titles.length - shown.length;
+export function payerRecurringNote(titles: readonly string[], kind: 'request' | 'cancel'): string | null {
+  const unique = [...new Set(titles)];
+  if (unique.length === 0) return null;
+  const shown = unique.slice(0, PAYER_NOTE_NAMES);
+  const rest = unique.length - shown.length;
   const names = rest > 0 ? `${shown.join('、')}ほか${rest}件` : shown.join('、');
   return (
     `${names}の固定費は、支払う人を選び直す必要があります。脱退が確定すると、選び直していない固定費は自動登録が止まります。` +
-    '確定する前に、設定の「固定費」から選び直してください。'
+    '確定する前に、設定の「固定費」から選び直してください。' +
+    (kind === 'request' ? '今月をすでに締めている場合は、脱退を選ぶとすぐ確定するので、脱退する前に選び直してください。' : '')
   );
 }
 
@@ -77,7 +81,6 @@ export function buildLeaveSection(
   const me = group.members.find((member) => member.id === group.memberId);
   if (me === undefined || me.status !== 'active' || me.leaveEffective) return { kind: 'hidden' };
   const lastMember = group.leaveDeletesGroup;
-  const payerNote = lastMember ? null : payerRecurringNote(payerRecurringTitles);
 
   if (me.leaveRequestedMonth !== null) {
     return {
@@ -86,7 +89,7 @@ export function buildLeaveSection(
       note: lastMember
         ? `${LAST_MEMBER_WARNING}取り消すと、このグループに残ります。`
         : '取り消すと、このグループに残ります。',
-      payerNote,
+      payerNote: lastMember ? null : payerRecurringNote(payerRecurringTitles, 'cancel'),
     };
   }
 
@@ -107,6 +110,7 @@ export function buildLeaveSection(
       },
     };
   }
+  const payerNote = payerRecurringNote(payerRecurringTitles, 'request');
   return {
     kind: 'request',
     deletesGroup: false,

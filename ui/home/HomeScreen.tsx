@@ -124,7 +124,9 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
     }));
     const recurringNotices = buildRecurringNotices({
       recurring: groupData.recurring,
+      memberId: groupData.group.memberId,
       members: groupData.group.members,
+      leaveDeletesGroup: groupData.group.leaveDeletesGroup,
       categories: groupData.categories,
       currentMonth: groupData.months.currentMonth,
     }).map((notice) => ({

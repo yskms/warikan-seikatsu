@@ -176,8 +176,12 @@ export interface RecurringNotice {
 export interface RecurringNoticeInput {
   /** 読めなかったときは `null`（お知らせを出さない。`HomeGroupData.recurring`） */
   recurring: readonly RecurringExpense[] | null;
+  /** 見ている本人のメンバーID（`GroupDetail.memberId`） */
+  memberId: string;
   /** 支払う人の脱退を見る（`leaveRequestedMonth`・`leaveEffective`。サーバーの値。月の判定は書き写さない） */
-  members: readonly Pick<GroupMember, 'id' | 'leaveRequestedMonth' | 'leaveEffective'>[];
+  members: readonly Pick<GroupMember, 'id' | 'leaveRequestedMonth' | 'expenseEndMonth' | 'leaveEffective'>[];
+  /** 自分が脱退を選んで確定したら、グループが消えるか（`GroupDetail.leaveDeletesGroup`。サーバーの値） */
+  leaveDeletesGroup: boolean;
   categories: readonly Pick<Category, 'id' | 'name'>[];
   /** グループの今月（月の一覧の `currentMonth`）。終了した固定費を除くために使う */
   currentMonth: string;
@@ -206,10 +210,16 @@ function pausedAction(reason: RecurringExpense['pausedReason']): string {
  *   5章の「脱退」）。付け替えれば、止まらずに続く。
  *
  * 止まった理由・支払う人の脱退は、サーバーの値で見る（脱退の確定・止まる条件は書き写さない）。
+ *
+ * - **自分の脱退が有効（`leaveEffective`。精算を待っている人、Cronの確定の前に脱退月が終わった人）なら、どちらも出さない**:
+ *   サーバーは、その人の固定費の変更を403で断る（`canEditGroupSettings`）ので、「選び直してください」と促しても、直せない。
+ * - 支払う人が脱退予定のお知らせは、**グループが消える（`leaveDeletesGroup`。最後の1人）ときは出さない**（固定費も一緒に消える）。
+ *   また、**終了する月が、支払う人の脱退月以前の固定費は含めない**（脱退が確定したあとに作る予定が無いので、付け替えは要らない）。
  */
 export function buildRecurringNotices(input: RecurringNoticeInput): RecurringNotice[] {
   const { recurring, members, currentMonth } = input;
   if (recurring === null) return [];
+  if (members.find((member) => member.id === input.memberId)?.leaveEffective === true) return [];
   const categories = new Map(input.categories.map((category) => [category.id, category]));
   const notices: RecurringNotice[] = [];
 
@@ -231,12 +241,20 @@ export function buildRecurringNotices(input: RecurringNoticeInput): RecurringNot
     });
   }
 
-  const leaving = new Set(
-    members.filter((member) => member.leaveRequestedMonth !== null || member.leaveEffective).map((member) => member.id),
+  // 支払う人が脱退を選んでいる（または有効になった）メンバー → 脱退月（`YYYY-MM`。分からなければ `null`）
+  const leaving = new Map(
+    members
+      .filter((member) => member.leaveRequestedMonth !== null || member.leaveEffective)
+      .map((member) => [member.id, member.leaveRequestedMonth ?? member.expenseEndMonth] as const),
   );
-  const payerLeaving = recurring.filter(
-    (item) => statusOf(item, currentMonth) === 'active' && leaving.has(item.payerMemberId),
-  );
+  const payerLeaving = input.leaveDeletesGroup
+    ? []
+    : recurring.filter((item) => {
+        if (statusOf(item, currentMonth) !== 'active' || !leaving.has(item.payerMemberId)) return false;
+        const leaveMonth = leaving.get(item.payerMemberId) ?? null;
+        // 脱退月で終わる（それ以前に終わる）固定費は、脱退の確定のあとに作る予定が無い
+        return !(item.endMonth !== null && leaveMonth !== null && item.endMonth <= leaveMonth);
+      });
   const onlyLeaving = payerLeaving.length === 1 ? payerLeaving[0] : undefined;
   if (onlyLeaving !== undefined) {
     notices.push({
@@ -257,6 +275,8 @@ export function buildRecurringNotices(input: RecurringNoticeInput): RecurringNot
 /**
  * 自分が支払う人の、止まっていない（手動で止めたものも含めて、止まっているものは除く）・終了していない固定費の題。脱退の欄の
  * 添え書き（`leaveView.ts`）に使う。サーバーは、脱退が確定すると、支払う人が脱退した固定費を止める（付け替えていなければ）。
+ * 脱退月は今月なので、**終了する月が今月以前の固定費は含めない**（今月で終わる固定費は、脱退が確定したあとに作る予定が無く、
+ * 付け替えは要らない）。
  */
 export function myPayerRecurringTitles(input: {
   recurring: readonly RecurringExpense[];
@@ -266,6 +286,11 @@ export function myPayerRecurringTitles(input: {
 }): string[] {
   const categories = new Map(input.categories.map((category) => [category.id, category]));
   return input.recurring
-    .filter((item) => item.payerMemberId === input.memberId && statusOf(item, input.currentMonth) === 'active')
+    .filter(
+      (item) =>
+        item.payerMemberId === input.memberId &&
+        statusOf(item, input.currentMonth) === 'active' &&
+        !(item.endMonth !== null && item.endMonth <= input.currentMonth),
+    )
     .map((item) => recurringTitle(item, categories));
 }
