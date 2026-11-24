@@ -7,6 +7,8 @@ import { read, request, type ApiResult } from './monthApi.ts';
 interface Options {
   now?: number;
   env?: Env;
+  /** グループが消えることを確認した、という申告（クエリ `acknowledgeDelete=true`。`src/deleteAck.ts`） */
+  acknowledgeDelete?: boolean;
 }
 
 /** 各APIの呼び出し。`who` が null なら、セッション無し。 */
@@ -29,7 +31,7 @@ export function membershipApi(defaultEnv: Env) {
     ): Promise<ApiResult> =>
       read(await handleJoin(request('POST', `/invites/${token}/join`, who?.token ?? null, body), ...opts(options), token)),
     requestLeave: async (who: Person | null, groupId: string, options: Options = {}): Promise<ApiResult> =>
-      read(await handleRequestLeave(request('POST', `/groups/${groupId}/leave`, who?.token ?? null), ...opts(options), groupId)),
+      read(await handleRequestLeave(request('POST', `/groups/${groupId}/leave${options.acknowledgeDelete ? '?acknowledgeDelete=true' : ''}`, who?.token ?? null), ...opts(options), groupId)),
     cancelLeave: async (who: Person | null, groupId: string, options: Options = {}): Promise<ApiResult> =>
       read(await handleCancelLeave(request('DELETE', `/groups/${groupId}/leave`, who?.token ?? null), ...opts(options), groupId)),
   };

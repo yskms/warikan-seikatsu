@@ -186,12 +186,45 @@ describe('脱退を選ぶ・取り消すAPI', () => {
         assert.deepEqual([row!.status, row!.left_at], ['left', NOW]);
       });
 
-      it('最後の1人なら、グループのデータをすべて消す', async () => {
+      it('最後の1人で、グループが消えることを確認した（acknowledgeDelete）なら、グループのデータをすべて消す', async () => {
         const g = await setup(['alice']);
         await insertClosing(db, g.groupId, '2026-11', g.people.alice.memberId);
-        const result = await api.requestLeave(g.people.alice, g.groupId);
+        const result = await api.requestLeave(g.people.alice, g.groupId, { acknowledgeDelete: true });
         assert.deepEqual(result.body, { leaveRequestedMonth: '2026-11', confirmed: true, groupDeleted: true });
         assert.equal(await groupCount(g.groupId), 0);
+      });
+
+      it('最後の1人でも、確認の申告が無ければ、何も消さずに409 delete_not_acknowledged。申告つきで送り直すと消える', async () => {
+        const g = await setup(['alice']);
+        await insertClosing(db, g.groupId, '2026-11', g.people.alice.memberId);
+        const refused = await api.requestLeave(g.people.alice, g.groupId);
+        assert.deepEqual([refused.status, refused.body], [409, { error: 'delete_not_acknowledged' }]);
+        // 何も書かれていない: グループも、脱退の選択も残る
+        assert.equal(await groupCount(g.groupId), 1);
+        assert.equal((await memberRow(g.people.alice.memberId))!.leave_requested_month, null);
+        const retry = await api.requestLeave(g.people.alice, g.groupId, { acknowledgeDelete: true });
+        assert.equal(retry.status, 200);
+        assert.equal(await groupCount(g.groupId), 0);
+      });
+
+      it('警告を出した画面が古くて（残る人が、脱退済みになった）、申告が無いとき: 読み直すと leaveDeletesGroup が true になる', async () => {
+        // alice の画面を読んだ時点では、bob が脱退が確定して精算を待っている（leaving）ので、最後の1人ではない
+        const g = await setup(['alice', 'bob'], { bob: { status: 'leaving', expenseEndMonth: '2026-10', leaveRequestedMonth: '2026-10' } });
+        await insertClosing(db, g.groupId, '2026-11', g.people.alice.memberId);
+        // そのあと、bob が脱退済みになった
+        await db.prepare(`UPDATE group_members SET status = 'left', left_at = ? WHERE id = ?`).bind(NOW, g.people.bob.memberId).run();
+        const refused = await api.requestLeave(g.people.alice, g.groupId);
+        assert.deepEqual([refused.status, refused.body], [409, { error: 'delete_not_acknowledged' }]);
+        assert.equal(await groupCount(g.groupId), 1);
+      });
+
+      it('確認の申告は、グループが消えない操作には効かない（無視する）', async () => {
+        const g = await setup(['alice', 'bob']);
+        await insertClosing(db, g.groupId, '2026-11', g.people.bob.memberId);
+        const result = await api.requestLeave(g.people.alice, g.groupId, { acknowledgeDelete: true });
+        assert.equal(result.status, 200);
+        assert.equal(result.body.groupDeleted, undefined);
+        assert.equal(await groupCount(g.groupId), 1);
       });
     });
 

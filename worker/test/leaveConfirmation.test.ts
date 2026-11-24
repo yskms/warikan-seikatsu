@@ -445,7 +445,7 @@ describe('月締めでの脱退の確定', () => {
       assert.ok(before.expenses > 0 && before.invites > 0 && before.recurring_expenses > 0 && before.group_members > 0);
       const otherBefore = await countRows(other.groupId);
 
-      const result = await api.close(g.people.alice, g.groupId, '2026-10');
+      const result = await api.close(g.people.alice, g.groupId, '2026-10', { acknowledgeDelete: true });
       assert.deepEqual([result.status, result.body], [200, { groupDeleted: true }]);
 
       for (const [table, count] of Object.entries(await countRows(g.groupId))) assert.equal(count, 0, table);
@@ -504,9 +504,43 @@ describe('月締めでの脱退の確定', () => {
       const g = await setup(['alice'], { alice: { leaveRequestedMonth: '2026-10' } });
       await factory.addMember(g.groupId, 'erin', null, { status: 'left', expenseEndMonth: '2026-09' });
       await factory.addMember(g.groupId, 'dave', null, { status: 'deleted', expenseEndMonth: '2026-09' });
-      const result = await api.close(g.people.alice, g.groupId, '2026-10');
+      const result = await api.close(g.people.alice, g.groupId, '2026-10', { acknowledgeDelete: true });
       assert.deepEqual([result.status, result.body], [200, { groupDeleted: true }]);
       assert.equal((await countRows(g.groupId)).expense_groups, 0);
+    });
+
+    it('確認の申告（acknowledgeDelete）が無ければ、何も消さずに409 delete_not_acknowledged。申告つきで送り直すと消える', async () => {
+      const g = await setup(['alice'], { alice: { leaveRequestedMonth: '2026-10' } });
+      await pay(g, g.people.alice, 5000);
+      const before = await countRows(g.groupId);
+      const refused = await api.close(g.people.alice, g.groupId, '2026-10');
+      assert.deepEqual([refused.status, refused.body], [409, { error: 'delete_not_acknowledged' }]);
+      assert.deepEqual(await countRows(g.groupId), before, '何も消えない');
+      const retry = await api.close(g.people.alice, g.groupId, '2026-10', { acknowledgeDelete: true });
+      assert.deepEqual([retry.status, retry.body], [200, { groupDeleted: true }]);
+      assert.equal((await countRows(g.groupId)).expense_groups, 0);
+    });
+
+    it('確認のシートを開いたあとで、残る人が脱退済みになったとき（通常の締めのつもり）も、申告が無ければ消えない', async () => {
+      // シートを開いた時点（summary）では、bob が脱退が確定して精算を待っている（leaving）ので、deletesGroup は false
+      const g = await setup(['alice', 'bob'], {
+        alice: { leaveRequestedMonth: '2026-10' },
+        bob: { status: 'leaving', expenseEndMonth: '2026-10', leaveRequestedMonth: '2026-10' },
+      });
+      assert.deepEqual((await api.summary(g.people.alice, g.groupId, '2026-10')).body.close, { closable: true, deletesGroup: false });
+      await db.prepare(`UPDATE group_members SET status = 'left', left_at = 1 WHERE id = ?`).bind(g.people.bob.memberId).run();
+      // 通常の締めのつもりで押す（申告なし）。グループは消えない
+      const refused = await api.close(g.people.alice, g.groupId, '2026-10');
+      assert.deepEqual([refused.status, refused.body], [409, { error: 'delete_not_acknowledged' }]);
+      assert.equal((await countRows(g.groupId)).expense_groups, 1);
+      // 読み直すと、警告が出る値になる
+      assert.deepEqual((await api.summary(g.people.alice, g.groupId, '2026-10')).body.close, { closable: true, deletesGroup: true });
+    });
+
+    it('確認の申告は、グループが消えない締めには効かない（普通に締まる）', async () => {
+      const g = await setup(['alice', 'bob']);
+      const result = await api.close(g.people.alice, g.groupId, '2026-10', { acknowledgeDelete: true });
+      assert.equal(result.status, 201);
     });
   });
 });

@@ -30,30 +30,41 @@ export function pickMemberColor(usedColors: readonly string[], preferred: string
   return MEMBER_COLORS.find((color) => !usedColors.includes(color)) ?? MEMBER_COLORS[usedColors.length % MEMBER_COLORS.length]!;
 }
 
-/** グループの全メンバー（脱退済み・削除済みを含む）。 */
-export async function loadMembers(db: D1Database, groupId: string): Promise<MemberInfo[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT id, display_name, status, history_from_month, expense_end_month, leave_requested_month
-         FROM group_members WHERE group_id = ?`,
-    )
-    .bind(groupId)
-    .all<{
-      id: string;
-      display_name: string;
-      status: MemberInfo['status'];
-      history_from_month: string;
-      expense_end_month: string | null;
-      leave_requested_month: string | null;
-    }>();
-  return results.map((row) => ({
+/** `group_members` の行のうち、`MemberInfo` に使う列（`MEMBER_INFO_COLUMNS` で引く）。 */
+export interface MemberInfoRow {
+  id: string;
+  display_name: string;
+  status: MemberInfo['status'];
+  history_from_month: string;
+  expense_end_month: string | null;
+  leave_requested_month: string | null;
+}
+
+/** `MemberInfoRow` の列。 */
+export const MEMBER_INFO_COLUMNS = 'id, display_name, status, history_from_month, expense_end_month, leave_requested_month';
+
+/**
+ * 行から `MemberInfo` への変換。**`MemberInfo` を作る道は、これだけ**にする（`loadMembers` と、グループ情報の
+ * `leaveDeletesGroup` の計算〔groups.ts〕が使う）。`MemberInfo` に項目が増えたとき、片方だけ古いまま `isLastMember` に渡らない。
+ */
+export function toMemberInfo(row: MemberInfoRow): MemberInfo {
+  return {
     id: row.id,
     displayName: row.display_name,
     status: row.status,
     historyFromMonth: row.history_from_month,
     expenseEndMonth: row.expense_end_month,
     leaveRequestedMonth: row.leave_requested_month,
-  }));
+  };
+}
+
+/** グループの全メンバー（脱退済み・削除済みを含む）。 */
+export async function loadMembers(db: D1Database, groupId: string): Promise<MemberInfo[]> {
+  const { results } = await db
+    .prepare(`SELECT ${MEMBER_INFO_COLUMNS} FROM group_members WHERE group_id = ?`)
+    .bind(groupId)
+    .all<MemberInfoRow>();
+  return results.map(toMemberInfo);
 }
 
 /**

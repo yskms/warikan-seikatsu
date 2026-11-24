@@ -2,13 +2,15 @@
 //
 // - 「今月で脱退する」: `leave_requested_month` に、グループのタイムゾーンの今月（脱退月）を入れる。脱退を選んだ時点で
 //   脱退月がすでに締められていれば（早めに締めた後）、その場で確定する（確定の中身は membership.ts。月締め・Cronと同じ）。
-//   確定するまでは、`status` は `active` のまま。
+//   確定するまでは、`status` は `active` のまま。その確定が、グループを消す（最後の1人）ときは、利用者の申告
+//   （`acknowledgeDelete=true`。`deleteAck.ts`）が無ければ、何も書かずに409 `delete_not_acknowledged` を返す。
 // - 取り消し: 確定するまでの、脱退月の間だけ。脱退月が終わったら、Cronの確定を待たずに、確定したものとして断る
 //   （access.ts の `isLeaveEffective`）。
 // - やり直さずに、競合したら409を返す（8章。確認ダイアログの内容が変わりうるため）。
 //   バージョンを先に読み、そのあとでデータを読む（groupWrite.ts 冒頭の注意1）。
 import { authenticateRequest, isLeaveEffective, isMonthClosed, latestClosedMonth, loadGroupAccess } from './access.ts';
 import { markLeftStatement } from './closedMonth.ts';
+import { acknowledgesDelete, deleteNotAcknowledged } from './deleteAck.ts';
 import { GROUP_WRITE_GUARD, readDataVersion, writeToGroup } from './groupWrite.ts';
 import { conflict, json, notFound, unauthorized } from './http.ts';
 import {
@@ -62,7 +64,9 @@ export async function handleRequestLeave(request: Request, env: Env, now: number
   );
   const due = members.filter((member) => member.id === access.member.id);
   if (isLastMember(members, due)) {
-    // 最後の1人の脱退は、グループのデータをすべて消す（5章「グループの削除」）。
+    // 最後の1人の脱退は、グループのデータをすべて消す（5章「グループの削除」）。利用者が、消えることを確認したときだけ。
+    // 画面を読んだあとで、他のメンバーが脱退済みになった、など、確認の内容が古いときに、警告なしで消さない（`deleteAck.ts`）。
+    if (!acknowledgesDelete(request)) return deleteNotAcknowledged();
     const deleted = await writeToGroup(db, groupId, version, (token) => deleteGroupStatements(db, token, groupId));
     if (!deleted.ok) return conflict('conflict');
     return json({ leaveRequestedMonth: month, confirmed: true, groupDeleted: true });

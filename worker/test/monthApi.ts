@@ -30,6 +30,8 @@ export const read = async (response: Response): Promise<ApiResult> => {
 interface Options {
   now?: number;
   env?: Env;
+  /** グループが消えることを確認した、という申告（クエリ `acknowledgeDelete=true`。`src/deleteAck.ts`） */
+  acknowledgeDelete?: boolean;
 }
 
 /** 各APIの呼び出し。`who` が null なら、セッション無し。 */
@@ -67,7 +69,11 @@ export function monthApi(defaultEnv: Env) {
     close: async (who: Person | null, groupId: string, month: string, options: Options = {}) =>
       read(
         await handleCloseMonth(
-          request('POST', `/groups/${groupId}/months/${month}/close`, who?.token ?? null),
+          request(
+            'POST',
+            `/groups/${groupId}/months/${month}/close${options.acknowledgeDelete ? '?acknowledgeDelete=true' : ''}`,
+            who?.token ?? null,
+          ),
           options.env ?? defaultEnv,
           options.now ?? NOW,
           groupId,

@@ -5,11 +5,13 @@
 //   見込みも締めも `computeMonthFromState`（同じ読み込み・同じ計算）を使うので、締めた結果は、直前の見込みと
 //   一致する（間に別の書き込みが入れば、バージョンが変わって締めは失敗する）。
 // - 月締めの中で、この月を脱退月に選んでいるメンバーの脱退も確定する（membership.ts。5章）。最後の1人なら、
-//   締めずにグループを削除して、200 `{ groupDeleted: true }` を返す。
+//   締めずにグループを削除して、200 `{ groupDeleted: true }` を返す。ただし、利用者の申告（`acknowledgeDelete=true`。
+//   `deleteAck.ts`）が無ければ、何も消さずに409 `delete_not_acknowledged` を返す。
 // - 月締めは、やり直さずに409を返す（4章・8章「競合したとき」。確認ダイアログの内容が変わりうるため）。
 //   バージョンを先に読み、そのあとで権限・状態・集計のデータを読む（groupWrite.ts 冒頭の注意1）。
 import { authenticateRequest, canViewMonth, loadGroupAccess } from './access.ts';
 import { loadClosedMonth, markLeftStatement } from './closedMonth.ts';
+import { acknowledgesDelete, deleteNotAcknowledged } from './deleteAck.ts';
 import { insertRowsGuarded, readDataVersion, writeToGroup } from './groupWrite.ts';
 import { conflict, forbidden, json, notFound, unauthorized } from './http.ts';
 import {
@@ -153,7 +155,10 @@ export async function handleCloseMonth(
     return conflict('conflict');
   }
   if (closeDeletesGroup(members, month)) {
-    // 最後の1人が抜けるときは、締めずに、グループのデータをすべて消す（5章「グループの削除」）。
+    // 最後の1人が抜けるときは、締めずに、グループのデータをすべて消す（5章「グループの削除」）。利用者が、消えることを確認した
+    // ときだけ。確認のシートを開いたあとで、他のメンバーが脱退済みになった、など、確認の内容が古いときに、通常の締めのつもりの
+    // 利用者のグループを、警告なしで消さない（`deleteAck.ts`）。
+    if (!acknowledgesDelete(request)) return deleteNotAcknowledged();
     const deleted = await writeToGroup(db, groupId, version, (token) => deleteGroupStatements(db, token, groupId));
     if (!deleted.ok) return conflict('conflict');
     return json({ groupDeleted: true });

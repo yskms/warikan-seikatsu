@@ -24,7 +24,7 @@ import {
 import { conflict, forbidden, invalidRequest, json, notFound, readJsonObject, unauthorized } from './http.ts';
 import { MAX_MEMBERS_PER_GROUP } from './limits.ts';
 import { parseUpdateMe } from './memberInput.ts';
-import { countSeatedMembers, isGroupFull, isLastMember, pickMemberColor } from './membership.ts';
+import { countSeatedMembers, isGroupFull, isLastMember, pickMemberColor, toMemberInfo } from './membership.ts';
 import { monthIn } from './months.ts';
 import { BASIS_POINTS_TOTAL } from './settlement.ts';
 
@@ -140,15 +140,8 @@ async function loadGroupDetail(db: D1Database, userId: string, groupId: string, 
   );
   // 自分が脱退を選んで確定したら、グループのデータがすべて消えるか（最後の1人。`isLastMember`）。脱退を選ぶ操作の確認で、
   // 「グループを削除して脱退」と警告するための値。最後の1人かの規則をアプリに書き写さないために返す。選べるのは参加中の人だけ。
-  const infos = memberRows.map((row) => ({
-    id: row.id,
-    displayName: row.display_name,
-    status: row.status,
-    historyFromMonth: row.history_from_month,
-    expenseEndMonth: row.expense_end_month,
-    leaveRequestedMonth: row.leave_requested_month,
-  }));
-  const meInfo = infos.find((info) => info.id === me.id)!;
+  const infos = memberRows.map(toMemberInfo);
+  const meInfo = toMemberInfo(me);
   return {
     ...groupJson(groupRow),
     memberId: me.id,
