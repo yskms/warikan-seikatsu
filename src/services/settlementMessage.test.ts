@@ -9,6 +9,7 @@ import {
   GROUP_DELETED_MESSAGE,
   settlementErrorMessage,
   shouldReloadAfter,
+  withReloadFailure,
   type SettlementAction,
 } from './settlementMessage.ts';
 
@@ -19,14 +20,19 @@ const ACTIONS: SettlementAction[] = ['close', 'settle', 'carry'];
 const DASHES = /[—―⸺⸻]/;
 
 describe('settlementErrorMessage', () => {
-  it('競合は、読み直したことと、もう一度の案内。締めは「確認してから」を添える', () => {
+  it('競合は、内容が変わったことと、もう一度の案内。誰かの操作とも、読み直せたとも言わない', () => {
+    for (const action of ACTIONS) {
+      const text = settlementErrorMessage(rejected('conflict'), action);
+      assert.ok(!text.includes('他のメンバー'), action);
+      assert.ok(!text.includes('読み直し'), action);
+    }
     assert.equal(
       settlementErrorMessage(rejected('conflict'), 'close'),
-      '他のメンバーが更新しました。内容を読み直しました。確認してから、もう一度締めてください。',
+      '内容が変わりました。確認してから、もう一度締めてください。',
     );
     assert.equal(
       settlementErrorMessage(rejected('conflict'), 'settle'),
-      '他のメンバーが更新しました。内容を読み直しました。もう一度お試しください。',
+      '内容が変わりました。画面を確認して、もう一度お試しください。',
     );
   });
 
@@ -58,8 +64,10 @@ describe('settlementErrorMessage', () => {
     assert.equal(message('unexpected-value'), 'この送金は、すでに処理されています。');
   });
 
-  it('繰り越せない送金は、精算済みにするよう案内する', () => {
-    assert.match(settlementErrorMessage(rejected('transfer_not_carryable'), 'carry'), /繰り越せません。精算済みにしてください/);
+  it('繰り越せない送金は、精算済みにするよう案内する（削除されたユーザーが関わる場合も含めて言う）', () => {
+    const text = settlementErrorMessage(rejected('transfer_not_carryable'), 'carry');
+    assert.match(text, /繰り越せません。精算済みにしてください/);
+    assert.match(text, /脱退するメンバーや削除されたユーザー/);
   });
 
   it('理由が分からない断り（400 など）は、操作の名前を添えて、アプリの更新を案内する', () => {
@@ -106,6 +114,15 @@ describe('settlementErrorMessage', () => {
       }
     }
     assert.ok(!DASHES.test(GROUP_DELETED_MESSAGE));
+  });
+});
+
+describe('withReloadFailure', () => {
+  it('断られた理由を捨てず、読み込みの失敗の文言と、空行を挟んで並べる', () => {
+    assert.equal(
+      withReloadFailure('先に10月分の精算を済ませてください。', 'データを読み込めませんでした。'),
+      '先に10月分の精算を済ませてください。\n\nデータを読み込めませんでした。',
+    );
   });
 });
 

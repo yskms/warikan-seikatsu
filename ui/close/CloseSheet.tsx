@@ -21,7 +21,12 @@ import { settlementService } from '../../platform/settlementService.ts';
 import { buildCloseConfirm } from '../../src/services/closeView.ts';
 import { formatMonthShort } from '../../src/services/dateFormat.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
-import { GROUP_DELETED_MESSAGE, settlementErrorMessage, shouldReloadAfter } from '../../src/services/settlementMessage.ts';
+import {
+  GROUP_DELETED_MESSAGE,
+  settlementErrorMessage,
+  shouldReloadAfter,
+  withReloadFailure,
+} from '../../src/services/settlementMessage.ts';
 import type { CloseFormData } from '../../src/services/settlementService.ts';
 import { TransferRow } from '../home/TransferRow.tsx';
 import { PrimaryButton } from '../PrimaryButton.tsx';
@@ -97,13 +102,14 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
     } catch (e) {
       const message = settlementErrorMessage(e, 'close');
       if (shouldReloadAfter(e)) {
-        // サーバーが断った: 確認の内容が古い。読み直して、文言を添える（読み直せなければ、読み込みの失敗の表示にする）
+        // サーバーが断った: 確認の内容が古い。読み直して、文言を添える。読み直せなければ、読み込みの失敗の表示にするが、
+        // 断られた理由（「先に10月分の精算を済ませてください」など、次にやることが分かる情報）は、捨てずに並べる
         try {
           const data = await settlementService.loadClose(groupId, month);
           setLoad({ status: 'ready', data });
           setError(message);
         } catch (reloadError) {
-          setLoad({ status: 'error', message: loadHomeErrorMessage(reloadError) });
+          setLoad({ status: 'error', message: withReloadFailure(message, loadHomeErrorMessage(reloadError)) });
         }
       } else {
         setError(message);
@@ -202,7 +208,8 @@ export function CloseSheet({ groupId, month }: CloseSheetProps) {
           </ScrollView>
 
           <View style={[styles.bottom, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
-            {error !== null ? (
+            {/* 他のメンバーが先に締めていたとき（`closed`）は、上の案内（`ALREADY_CLOSED_TEXT`）が同じことを言うので、断りの文言は出さない */}
+            {error !== null && model.state !== 'closed' ? (
               <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
                 {error}
               </Text>

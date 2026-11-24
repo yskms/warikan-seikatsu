@@ -538,6 +538,11 @@ describe('精算完了・繰越の確認の文言', () => {
     });
   });
 
+  it('繰り越せない理由は、脱退するメンバーと削除されたユーザーの両方に当てはまる言い方にする', () => {
+    assert.match(CARRY_BLOCKED_TEXT, /脱退するメンバー/);
+    assert.match(CARRY_BLOCKED_TEXT, /削除されたユーザー/);
+  });
+
   it('長いダッシュを含まない', () => {
     const texts = [settleConfirmText(line), carryConfirmText(line, '12月')].flatMap((text) => [text.title, text.message, text.confirmLabel]);
     for (const text of [...texts, CARRY_BLOCKED_TEXT]) assert.ok(!/[\u2014\u2015\u2E3A\u2E3B]/.test(text), text);

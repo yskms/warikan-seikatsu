@@ -15,6 +15,14 @@ export type SettlementAction = 'close' | 'settle' | 'carry';
 export const GROUP_DELETED_MESSAGE =
   '最後の1人が脱退したため、グループのデータをすべて削除しました。元に戻すことはできません。';
 
+/**
+ * 締めが断られたあと、確認の内容を読み直そうとして、読み直しも失敗したとき（読み込みの失敗の表示）の文言。断られた理由
+ * （「先に10月分の精算を済ませてください」など、次にやることが分かる情報）を捨てず、読み込みの失敗の文言と並べる。
+ */
+export function withReloadFailure(rejectionMessage: string, loadMessage: string): string {
+  return `${rejectionMessage}\n\n${loadMessage}`;
+}
+
 function codeOf(error: unknown): string {
   return error instanceof AuthError ? error.code : 'unexpected';
 }
@@ -48,10 +56,13 @@ export function settlementErrorMessage(error: unknown, action: SettlementAction)
   if (error instanceof SettlementRejectedError) {
     switch (error.reason) {
       case 'conflict':
-        // 読み直して1回やり直す、ということはしない（確認した内容が変わりうるため。docs/backend-design.md 9章）
+        // 読み直して1回やり直す、ということはしない（確認した内容が変わりうるため。docs/backend-design.md 9章）。
+        // 原因は、他のメンバーの操作とは限らない（脱退月が飛ばされた月の締めは、先に脱退を確定させて409にする。
+        // 最後の1人なら、グループごと消える）ので、誰かが操作したとは言わない。読み直せたか（締めのシートは読み直す。精算・
+        // 繰越は、ホームが読み直すが、失敗しても投げない）も、この文言では言わない。
         return action === 'close'
-          ? '他のメンバーが更新しました。内容を読み直しました。確認してから、もう一度締めてください。'
-          : '他のメンバーが更新しました。内容を読み直しました。もう一度お試しください。';
+          ? '内容が変わりました。確認してから、もう一度締めてください。'
+          : '内容が変わりました。画面を確認して、もう一度お試しください。';
       case 'month_closed':
         return 'この月は、すでに締められています。';
       case 'month_skipped':
@@ -67,7 +78,7 @@ export function settlementErrorMessage(error: unknown, action: SettlementAction)
         if (error.transferStatus === 'carried') return 'この送金は、すでに繰り越されています。';
         return 'この送金は、すでに処理されています。';
       case 'transfer_not_carryable':
-        return 'この送金は、脱退するメンバーが関わるため、繰り越せません。精算済みにしてください。';
+        return 'この送金は、脱退するメンバーや削除されたユーザーが関わるため、繰り越せません。精算済みにしてください。';
       case 'not_found':
         return action === 'close'
           ? 'このグループを確認できませんでした。メンバーでなくなったか、グループが削除された可能性があります。'

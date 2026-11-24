@@ -383,7 +383,7 @@ export function carryConfirmText(line: TransferLine, carryMonthLabel: string): C
 }
 
 /** 繰り越せない未処理の送金（脱退するメンバー・削除されたユーザーが関わる）に添える一言。 */
-export const CARRY_BLOCKED_TEXT = '脱退するメンバーとの精算は繰り越せません';
+export const CARRY_BLOCKED_TEXT = '脱退するメンバーや削除されたユーザーが関わる送金は、繰り越せません';
 
 // ---------------------------------------------------------------------------
 // 支出の一覧

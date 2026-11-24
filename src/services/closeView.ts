@@ -79,6 +79,7 @@ export function buildCloseConfirm({ group, months, summary }: CloseConfirmInput)
     midMonthNote: midMonth
       ? `まだ月の途中です。この月の残りの支出は、${following === null ? '次の月' : formatMonthShort(following)}分として登録します。`
       : null,
-    leaveNotes: leaving.map((member) => `${member.displayName}さんの脱退は、この月を締めると確定します。`),
+    // 自分が脱退を選んでいるときは、「あなた」と言う（自分の名前に「さん」を付けない）
+    leaveNotes: leaving.map((member) => `${member.isMe ? 'あなた' : `${member.displayName}さん`}の脱退は、この月を締めると確定します。`),
   };
 }

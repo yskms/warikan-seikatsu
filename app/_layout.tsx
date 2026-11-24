@@ -36,10 +36,12 @@ function RootNavigator() {
       <Stack.Protected guard={state.status === 'signed-in'}>
         <Stack.Screen name="(main)" />
         <Stack.Screen name="create-group" />
+        {/* シート（モーダル）は、`dangerouslySingular` で、同じ画面を2枚重ねない。開くボタンを素早く2回押すと、`router.push` が
+            2回通り、シートが2枚重なって、閉じても下のシートが残る（エミュレータで確かめた）。すでに開いていれば、その1枚を使う */}
         {/* 支出の登録・編集のシート。下から出る。入力中の破棄の確認を出すため、スワイプで閉じるのは止める（✕・戻る操作は確認する） */}
-        <Stack.Screen name="expense" options={{ presentation: 'modal', gestureEnabled: false }} />
+        <Stack.Screen name="expense" dangerouslySingular options={{ presentation: 'modal', gestureEnabled: false }} />
         {/* 月を締める前の確認のシート。締めている最中に閉じないよう、スワイプで閉じるのは止める（✕・戻る操作は、最中だけ止める） */}
-        <Stack.Screen name="close" options={{ presentation: 'modal', gestureEnabled: false }} />
+        <Stack.Screen name="close" dangerouslySingular options={{ presentation: 'modal', gestureEnabled: false }} />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'signed-out'}>
         <Stack.Screen name="login" />

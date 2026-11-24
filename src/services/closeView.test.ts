@@ -125,6 +125,18 @@ describe('buildCloseConfirm', () => {
     ]);
   });
 
+  it('自分が脱退を選んでいるときは、「あなた」と言う', () => {
+    const group: GroupDetail = {
+      ...baseGroup,
+      members: [member('m1', 'あなた', { leaveRequestedMonth: '2026-11' }), member('m2', '彼女', { leaveRequestedMonth: '2026-11' })],
+    };
+    const model = buildCloseConfirm({ group, months: monthList('2026-12'), summary: estimate() });
+    assert.deepEqual(model.leaveNotes, [
+      'あなたの脱退は、この月を締めると確定します。',
+      '彼女さんの脱退は、この月を締めると確定します。',
+    ]);
+  });
+
   it('いまは締められない月（サーバーの答え）は、理由を出して、締められない状態にする', () => {
     const model = buildCloseConfirm({
       group: baseGroup,
