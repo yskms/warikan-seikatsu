@@ -36,11 +36,16 @@ let started = false;
 export function startInviteLinks(): void {
   if (started) return;
   started = true;
-  // アプリの生きているあいだ受け取り続けるので、解除しない
-  Linking.addEventListener('url', ({ url }) => accept(url));
-  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), INITIAL_URL_TIMEOUT_MS));
-  Promise.race([Linking.getInitialURL(), timeout])
-    .then(accept)
-    .catch(() => {})
-    .finally(() => linksReady.set(true));
+  try {
+    // アプリの生きているあいだ受け取り続けるので、解除しない
+    Linking.addEventListener('url', ({ url }) => accept(url));
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), INITIAL_URL_TIMEOUT_MS));
+    Promise.race([Linking.getInitialURL(), timeout])
+      .then(accept)
+      .catch(() => {})
+      .finally(() => linksReady.set(true));
+  } catch {
+    // URLを受け取れなくても、アプリは起動する（招待URLを開いても、参加確認へは進まない）。スプラッシュを止め続けない
+    linksReady.set(true);
+  }
 }
