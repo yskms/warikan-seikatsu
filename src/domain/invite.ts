@@ -17,3 +17,18 @@ export interface IssuedInvite {
   id: string;
   token: string;
 }
+
+/**
+ * `GET /invites/:token`（招待内容の確認）の結果。開いただけでは何も変わらない。
+ * - `alreadyMember: true`: すでにそのグループに参加中（招待の状態によらない）。グループを開くだけにする。
+ * - `alreadyMember: false`: まだ参加していない。`groupFull` は、いま参加すると満員で断られるか（人数の数え方はサーバーの
+ *   判定で、アプリは書き写さない）。
+ */
+export type InvitePreview =
+  | { alreadyMember: true; groupId: string }
+  | { alreadyMember: false; groupName: string; invitedByDisplayName: string; groupFull: boolean };
+
+/** `POST /invites/:token/join` の結果。使うのは、参加したグループの `groupId` だけ。 */
+export interface JoinedInvite {
+  groupId: string;
+}

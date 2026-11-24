@@ -230,3 +230,162 @@ describe('revoke', () => {
     await rejectsWith(createInviteRepository(down).revoke(SESSION, 'i1'), 'network');
   });
 });
+
+describe('preview（招待内容の確認）', () => {
+  it('GET /invites/:token を呼び、グループ名・招待した人・満員かを読む', async () => {
+    const { fetchImpl, calls } = fakeFetch(() =>
+      reply(200, {
+        alreadyMember: false,
+        groupName: 'ふたりの生活費',
+        invitedByDisplayName: 'たろう',
+        expiresAt: 1790259200000,
+        groupFull: false,
+      }),
+    );
+    const result = await createInviteRepository(fetchImpl).preview(SESSION, TOKEN);
+    assert.equal(calls[0].url, `${API_ORIGIN}/invites/${TOKEN}`);
+    assert.equal(calls[0].init.method, 'GET');
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
+    assert.equal(calls[0].init.body, undefined);
+    assert.deepEqual(result, {
+      alreadyMember: false,
+      groupName: 'ふたりの生活費',
+      invitedByDisplayName: 'たろう',
+      groupFull: false,
+    });
+  });
+
+  it('満員（groupFull: true）でも、招待内容として読める', async () => {
+    const { fetchImpl } = fakeFetch(() =>
+      reply(200, { alreadyMember: false, groupName: 'g', invitedByDisplayName: 'i', expiresAt: 1, groupFull: true }),
+    );
+    const result = await createInviteRepository(fetchImpl).preview(SESSION, TOKEN);
+    assert.deepEqual(result, { alreadyMember: false, groupName: 'g', invitedByDisplayName: 'i', groupFull: true });
+  });
+
+  it('すでに参加中なら、グループのIDだけを読む（ほかの項目は要らない）', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(200, { alreadyMember: true, groupId: 'g1' }));
+    assert.deepEqual(await createInviteRepository(fetchImpl).preview(SESSION, TOKEN), {
+      alreadyMember: true,
+      groupId: 'g1',
+    });
+  });
+
+  it('トークンは、URLの部品として符号化する', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(200, { alreadyMember: true, groupId: 'g1' }));
+    await createInviteRepository(fetchImpl).preview(SESSION, 'a/b?c');
+    assert.equal(calls[0].url, `${API_ORIGIN}/invites/a%2Fb%3Fc`);
+  });
+
+  it('読み込みなので、使う項目の形が違えば invalid-response', async () => {
+    const bad: unknown[] = [
+      {},
+      { alreadyMember: 'no' },
+      { alreadyMember: true },
+      { alreadyMember: false, invitedByDisplayName: 'i', groupFull: false },
+      { alreadyMember: false, groupName: 'g', groupFull: false },
+      { alreadyMember: false, groupName: 'g', invitedByDisplayName: 'i' },
+      { alreadyMember: false, groupName: 'g', invitedByDisplayName: 'i', groupFull: 'yes' },
+      [],
+    ];
+    for (const body of bad) {
+      const { fetchImpl } = fakeFetch(() => reply(200, body));
+      await rejectsWith(createInviteRepository(fetchImpl).preview(SESSION, TOKEN), 'invalid-response');
+    }
+  });
+
+  it('使えない招待は 404 invite_unavailable（InviteRejectedError）。本文が読めなくても、断られたと分かる', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(404, { error: 'invite_unavailable' }));
+    await assert.rejects(createInviteRepository(fetchImpl).preview(SESSION, TOKEN), (e) => {
+      return e instanceof InviteRejectedError && e.status === 404 && e.reason === 'invite_unavailable' && e.groupId === null;
+    });
+    const { fetchImpl: html } = fakeFetch(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        json: async (): Promise<unknown> => {
+          throw new Error('JSONでない');
+        },
+      }),
+    );
+    await assert.rejects(createInviteRepository(html).preview(SESSION, TOKEN), (e) => {
+      return e instanceof InviteRejectedError && e.status === 404 && e.reason === null;
+    });
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network', async () => {
+    const { fetchImpl: unauthorized } = fakeFetch(() => reply(401, { error: 'unauthorized' }));
+    await rejectsWith(createInviteRepository(unauthorized).preview(SESSION, TOKEN), 'unauthorized');
+    const { fetchImpl: busy } = fakeFetch(() => reply(503));
+    await rejectsWith(createInviteRepository(busy).preview(SESSION, TOKEN), 'unavailable');
+    const { fetchImpl: down } = fakeFetch(() => new Error('offline'));
+    await rejectsWith(createInviteRepository(down).preview(SESSION, TOKEN), 'network');
+  });
+});
+
+describe('join（参加）', () => {
+  it('POST /invites/:token/join に表示名を送り、グループのIDだけを読む', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(201, { groupId: 'g1', memberId: 'm9', extra: 1 }));
+    const result = await createInviteRepository(fetchImpl).join(SESSION, TOKEN, 'はなこ');
+    assert.equal(calls[0].url, `${API_ORIGIN}/invites/${TOKEN}/join`);
+    assert.equal(calls[0].init.method, 'POST');
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
+    assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(calls[0].init.body ?? 'null'), { displayName: 'はなこ' });
+    assert.deepEqual(result, { groupId: 'g1' });
+  });
+
+  it('書き込みの応答は、使う項目（groupId）だけを検べる。memberId が無くても失敗にしない', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(201, { groupId: 'g1' }));
+    assert.deepEqual(await createInviteRepository(fetchImpl).join(SESSION, TOKEN, 'はなこ'), { groupId: 'g1' });
+  });
+
+  it('groupId が読めない応答は invalid-response（参加は済んでいるかもしれない）', async () => {
+    for (const body of [{}, { groupId: 1 }, { groupId: '' }, []]) {
+      const { fetchImpl } = fakeFetch(() => reply(201, body));
+      await rejectsWith(createInviteRepository(fetchImpl).join(SESSION, TOKEN, 'はなこ'), 'invalid-response');
+    }
+  });
+
+  it('すでに参加中は 409 already_member で、参加中のグループのIDが付く', async () => {
+    const { fetchImpl } = fakeFetch(() => reply(409, { error: 'already_member', groupId: 'g7' }));
+    await assert.rejects(createInviteRepository(fetchImpl).join(SESSION, TOKEN, 'はなこ'), (e) => {
+      return e instanceof InviteRejectedError && e.status === 409 && e.reason === 'already_member' && e.groupId === 'g7';
+    });
+  });
+
+  it('グループのIDが読めない断りは、groupId が null', async () => {
+    for (const body of [{ error: 'already_member' }, { error: 'already_member', groupId: 5 }, { error: 'already_member', groupId: 'a b' }]) {
+      const { fetchImpl } = fakeFetch(() => reply(409, body));
+      await assert.rejects(createInviteRepository(fetchImpl).join(SESSION, TOKEN, 'はなこ'), (e) => {
+        return e instanceof InviteRejectedError && e.reason === 'already_member' && e.groupId === null;
+      });
+    }
+  });
+
+  it('断られたら、理由つきの InviteRejectedError（満員・使えない招待・競合）', async () => {
+    const cases: [number, string][] = [
+      [409, 'group_full'],
+      [404, 'invite_unavailable'],
+      [409, 'conflict'],
+      [400, 'invalid_request'],
+    ];
+    for (const [status, error] of cases) {
+      const { fetchImpl } = fakeFetch(() => reply(status, { error }));
+      await assert.rejects(createInviteRepository(fetchImpl).join(SESSION, TOKEN, 'はなこ'), (e) => {
+        return e instanceof InviteRejectedError && e.status === status && e.reason === error && e.code === 'invalid-request';
+      });
+    }
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network。送り直さない', async () => {
+    const { fetchImpl: unauthorized, calls } = fakeFetch(() => reply(401, { error: 'unauthorized' }));
+    await rejectsWith(createInviteRepository(unauthorized).join(SESSION, TOKEN, 'はなこ'), 'unauthorized');
+    assert.equal(calls.length, 1);
+    const { fetchImpl: busy, calls: busyCalls } = fakeFetch(() => reply(500));
+    await rejectsWith(createInviteRepository(busy).join(SESSION, TOKEN, 'はなこ'), 'unavailable');
+    assert.equal(busyCalls.length, 1);
+    const { fetchImpl: down } = fakeFetch(() => new Error('offline'));
+    await rejectsWith(createInviteRepository(down).join(SESSION, TOKEN, 'はなこ'), 'network');
+  });
+});

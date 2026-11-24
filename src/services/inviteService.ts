@@ -3,8 +3,10 @@
 // `sessionAccess`（通知で包んだもの）を渡す。
 //
 // 書き込みは、やり直さない（断られたら、画面が読み直して、もう一度操作してもらう。`inviteMessage.ts`）。
+//
+// 招待を開いて参加する側（`preview`・`join`。参加確認の画面。`joinMessage.ts`）も、同じServiceに置く。
 import type { GroupDetail } from '../domain/group.ts';
-import type { Invite, IssuedInvite } from '../domain/invite.ts';
+import type { Invite, InvitePreview, IssuedInvite, JoinedInvite } from '../domain/invite.ts';
 import type { GroupRepository } from '../repositories/groupRepository.ts';
 import type { InviteRepository } from '../repositories/inviteRepository.ts';
 import type { SessionAccess } from './accountService.ts';
@@ -44,6 +46,19 @@ export function createInviteService({ groups, invites, access }: InviteServiceDe
     /** 招待を取り消す。すでに取り消し済みでも成功する（送り直してよい）。 */
     revoke(inviteId: string): Promise<void> {
       return access.withSession((session) => invites.revoke(session, inviteId));
+    },
+
+    /** 招待URLの内容を確認する（参加はしない）。 */
+    preview(token: string): Promise<InvitePreview> {
+      return access.withSession((session) => invites.preview(session, token));
+    },
+
+    /**
+     * 招待に応じて参加する。**送り直してよい**: 結果が分からない失敗のあとに送り直すと、参加が済んでいれば、サーバーが
+     * 409 `already_member`（`groupId` つき）で教える（`InviteRejectedError`。`joinMessage.ts` の `classifyJoinFailure`）。
+     */
+    join(token: string, displayName: string): Promise<JoinedInvite> {
+      return access.withSession((session) => invites.join(session, token, displayName));
     },
   };
 }

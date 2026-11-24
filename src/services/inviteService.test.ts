@@ -35,6 +35,14 @@ function setup(options: { session?: string; failWith?: Error } = {}) {
     async revoke(session: string, inviteId: string) {
       log.push(`revoke:${session}:${inviteId}`);
     },
+    async preview(session: string, token: string) {
+      log.push(`preview:${session}:${token}`);
+      return { alreadyMember: false, groupName: 'g', invitedByDisplayName: 'i', groupFull: false };
+    },
+    async join(session: string, token: string, displayName: string) {
+      log.push(`join:${session}:${token}:${displayName}`);
+      return { groupId: 'g1' };
+    },
   } as unknown as InviteRepository;
   let withSessionCalls = 0;
   const access: SessionAccess = {
@@ -89,12 +97,35 @@ describe('issue・revoke', () => {
   });
 });
 
+describe('preview・join（招待を開いて参加する側）', () => {
+  it('内容の確認は、トークンで呼ぶ', async () => {
+    const { service, log, withSessionCalls } = setup();
+    assert.deepEqual(await service.preview('T1'), {
+      alreadyMember: false,
+      groupName: 'g',
+      invitedByDisplayName: 'i',
+      groupFull: false,
+    });
+    assert.deepEqual(log, ['preview:S1:T1']);
+    assert.equal(withSessionCalls(), 1);
+  });
+
+  it('参加は、トークンと表示名で呼ぶ', async () => {
+    const { service, log, withSessionCalls } = setup();
+    assert.deepEqual(await service.join('T1', 'はなこ'), { groupId: 'g1' });
+    assert.deepEqual(log, ['join:S1:T1:はなこ']);
+    assert.equal(withSessionCalls(), 1);
+  });
+});
+
 describe('セッションが無いとき', () => {
   it('どの呼び出しも、withSession の失敗をそのまま画面へ届ける（Repositoryは呼ばない）', async () => {
     const { service, log } = setup({ failWith: new AuthError('not-signed-in') });
     await assert.rejects(service.load('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     await assert.rejects(service.issue('g1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     await assert.rejects(service.revoke('i1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    await assert.rejects(service.preview('T1'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
+    await assert.rejects(service.join('T1', 'はなこ'), (e) => e instanceof AuthError && e.code === 'not-signed-in');
     assert.deepEqual(log, []);
   });
 });

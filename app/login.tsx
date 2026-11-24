@@ -1,5 +1,6 @@
 // ログイン画面（docs/screens.md 2章）。AppleとGoogleの両方を、両OSで出す（iOSはAppleが上、AndroidはGoogleが上）。
-// 招待URLから来たときの案内と、ログイン後に参加確認へ進む処理は、招待・参加の画面を作るときに足す。
+// 招待URLから来たとき（`pendingInvite` を持っているとき）は、上部にログインが要る理由を出す。ログイン後は、`ui/GroupGate.tsx` が、
+// 持っている招待を見て、参加確認（`app/join.tsx`）へ進める（ここでは、招待を扱わない）。
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useEffect, useRef, useState } from 'react';
@@ -21,6 +22,7 @@ import { isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../s
 import { isAlreadySignedIn, signInErrorMessage } from '../src/services/signInMessage.ts';
 import { useAuth } from '../ui/AuthStateProvider.tsx';
 import { useColors } from '../ui/useColors.ts';
+import { usePendingInvite } from '../ui/usePendingInvite.ts';
 
 const PROVIDER_ORDER: readonly AuthProvider[] =
   Platform.OS === 'ios' ? ['apple', 'google'] : ['google', 'apple'];
@@ -33,6 +35,7 @@ const LEGAL_LINKS = [
 export default function LoginScreen() {
   const { state, markSignedIn } = useAuth();
   const colors = useColors();
+  const invited = usePendingInvite() !== null;
   // 進行中のログイン手段。あるあいだは、どのボタンも押せない。表示用の `busy` とは別に、`ref` でも持つ: `busy` は、
   // 再描画されるまで古いままなので、続けて2回押されると、どちらの押下も `null` を見て、各社の画面が2回開きうる。
   const [busy, setBusy] = useState<AuthProvider | null>(null);
@@ -59,6 +62,15 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
+      {/* 招待URLから来た人へ、上部に出す。ログイン後は、招待を持ったまま参加確認へ進む（上の説明） */}
+      {invited ? (
+        <Text
+          style={[styles.invited, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+          accessibilityRole="text"
+        >
+          ふたりで使うには、データ保護のためログインが必要です
+        </Text>
+      ) : null}
       <View style={styles.hero}>
         <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
           わりかん生活
@@ -214,6 +226,17 @@ const BUTTON_RADIUS = 12;
 
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 24 },
+  invited: {
+    marginTop: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    overflow: 'hidden',
+  },
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   title: { fontSize: 34, fontWeight: '700' },
   rule: { width: 40, height: 4, borderRadius: 2 },

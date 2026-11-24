@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { validateCreateGroupForm } from './groupForm.ts';
+import { validateCreateGroupForm, validateDisplayName } from './groupForm.ts';
 
 const valid = { name: 'ふたりの生活費', displayName: 'あなた', currencyCode: 'JPY' };
 
@@ -43,5 +43,27 @@ describe('validateCreateGroupForm', () => {
     assert.ok(!result.ok);
     assert.ok(result.errors.currencyCode);
     assert.ok(!validateCreateGroupForm({ ...valid, currencyCode: 'jpy' }).ok);
+  });
+});
+
+describe('validateDisplayName（参加でも使う）', () => {
+  it('前後の空白を落とした値を返す', () => {
+    assert.deepEqual(validateDisplayName('　はなこ '), { ok: true, value: 'はなこ' });
+  });
+
+  it('空・空白だけ・長すぎる・制御文字は、エラー', () => {
+    for (const text of ['', '   ', 'あ'.repeat(21), 'a\nb']) {
+      const result = validateDisplayName(text);
+      assert.ok(!result.ok, text);
+      assert.ok(result.error);
+    }
+    assert.deepEqual(validateDisplayName('あ'.repeat(20)), { ok: true, value: 'あ'.repeat(20) });
+  });
+
+  it('グループ作成の表示名と、同じ文言・同じ規則', () => {
+    const create = validateCreateGroupForm({ name: 'g', displayName: '', currencyCode: 'JPY' });
+    const single = validateDisplayName('');
+    assert.ok(!create.ok && !single.ok);
+    assert.equal(create.errors.displayName, single.error);
   });
 });

@@ -35,6 +35,22 @@ function checkLabel(text: string, maxLength: number, emptyMessage: string, longM
   return null;
 }
 
+export type DisplayNameResult = { ok: true; value: string } | { ok: false; error: string };
+
+/**
+ * 表示名（このグループの中での名前）の検査。グループの作成と、招待を受けての参加（`POST /invites/:token/join`）が、同じ規則を使う。
+ * 通ったときは、前後の空白を落とした値を返す（そのまま送れる）。
+ */
+export function validateDisplayName(displayName: string): DisplayNameResult {
+  const error = checkLabel(
+    displayName,
+    MAX_DISPLAY_NAME_LENGTH,
+    '表示名を入力してください。',
+    `表示名は${MAX_DISPLAY_NAME_LENGTH}文字までです。`,
+  );
+  return error === null ? { ok: true, value: displayName.trim() } : { ok: false, error };
+}
+
 /** 通ったときは、前後の空白を落とした値を返す（そのまま送れる）。 */
 export function validateCreateGroupForm(form: CreateGroupForm): CreateGroupFormResult {
   const errors: CreateGroupFormErrors = {};
@@ -45,13 +61,8 @@ export function validateCreateGroupForm(form: CreateGroupForm): CreateGroupFormR
     `グループ名は${MAX_GROUP_NAME_LENGTH}文字までです。`,
   );
   if (nameError) errors.name = nameError;
-  const displayNameError = checkLabel(
-    form.displayName,
-    MAX_DISPLAY_NAME_LENGTH,
-    '表示名を入力してください。',
-    `表示名は${MAX_DISPLAY_NAME_LENGTH}文字までです。`,
-  );
-  if (displayNameError) errors.displayName = displayNameError;
+  const displayNameResult = validateDisplayName(form.displayName);
+  if (!displayNameResult.ok) errors.displayName = displayNameResult.error;
   if (!CURRENCIES.some((currency) => currency.code === form.currencyCode)) {
     errors.currencyCode = '通貨を選んでください。';
   }
