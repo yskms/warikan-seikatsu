@@ -684,7 +684,7 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 | 409 | `currency_locked` | 通貨の変更：金額に関わるものがある |
 | 409 | `conflict` | 作成：他の人が使っている `id`。変更：他のリクエストの書き込みと競合した（8章） |
 
-アプリ側（`src/repositories/groupRepository.ts`）は、`GET /groups` と `POST /groups` だけ実装した。`PATCH` は、グループの設定の画面を作るときに足す（`src/repositories/apiClient.ts` の `ApiMethod` に `PATCH`・`DELETE` を足す）。失敗の分類は、アカウントと同じ `AuthError`（名前は認証用だが、HTTPの失敗の種類は共通。`authError.ts` はSingfolioのコピーなので、分けない）。通貨の表・色のキー・名前の長さの上限は `src/domain/group.ts` に持ち、`src/domain/group.test.ts` が、Workerのソース（`worker/src/` の `currencies.ts`・`membership.ts`・`limits.ts`）を読んで、食い違っていないかを確かめる（書き方が変わると、テストが失敗する。そのときは、テストの読み方を直す）。応答の読み方は、一覧（`GET /groups`）は全項目を検べ、**作成（`POST /groups`）は、書き込みの済んだ操作なので、グループの `id` だけを検べる**（形のずれで、作成が済んだものを失敗に見せない）。グループの詳細（`GET /groups/:id`。メンバーなど）の応答は、ホームがそれを使うときに読む。
+アプリ側（`src/repositories/groupRepository.ts`）は、`GET /groups`・`GET /groups/:id`・`POST /groups` だけ実装した。`PATCH` は、グループの設定の画面を作るときに足す（`src/repositories/apiClient.ts` の `ApiMethod` に `PATCH`・`DELETE` を足す）。失敗の分類は、アカウントと同じ `AuthError`（名前は認証用だが、HTTPの失敗の種類は共通。`authError.ts` はSingfolioのコピーなので、分けない）。通貨の表・色のキー・名前の長さの上限は `src/domain/group.ts` に持ち、`src/domain/group.test.ts` が、Workerのソース（`worker/src/` の `currencies.ts`・`membership.ts`・`limits.ts`）を読んで、食い違っていないかを確かめる（書き方が変わると、テストが失敗する。そのときは、テストの読み方を直す）。応答の読み方は、一覧（`GET /groups`）は全項目を検べ、**作成（`POST /groups`）は、書き込みの済んだ操作なので、グループの `id` だけを検べる**（形のずれで、作成が済んだものを失敗に見せない）。グループの詳細（`GET /groups/:id`。メンバーなど）も読み込みなので、全項目を検べる（ホームが使う）。
 
 ### 費目・負担割合・支出・固定費
 
@@ -970,6 +970,8 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 | 409 | `conflict` | 他のリクエストの書き込みと競合した（8章）。読み直してもらう |
 
 費目の設定が無い費目の `category` の支出が月にあると、集計できずに500になる（費目を作るときに、必ず月の設定と割合を書く。付録A-7）。
+
+アプリ側は、ホーム（screens.md 3章）が使う**読み込みだけ**を実装した: `src/repositories/monthRepository.ts`（`GET /groups/:id/months`・`GET .../summary`）、`expenseRepository.ts`（`GET /groups/:id/expenses?month=`）、`categoryRepository.ts`（`GET /groups/:id/categories`）。月締め・精算完了・繰越・支出の登録・編集・削除・費目の変更・負担割合は、その画面を作るときに足す（書き込みの応答は、使う項目だけを検べる。CLAUDE.md）。読み込みは全項目を検べ、形の違う応答は `invalid-response` にする。ただし、表示にしか使わない列挙値（月の一覧の `status`、`close.reason`、支出の `splitMethod`）は、知らない値を許す（サーバーが値を足しても、古い版のアプリのホームが全部失敗しないため。CLAUDE.md）。`summary` は、`closed` と `closing` の有無が食い違う応答（締めた月に締めの記録が無い、など）と、要求した月と違う月の結果を、`invalid-response` にする（支出の一覧も、要求した月と違う月の結果を同じく失敗にする）。締める前の月の送金（見込み）と、締めた月の送金（IDと状態つき）は、`closed` で型を分ける（`MonthTransfer`）。月・日付の形は、パスやクエリに入れる前にも検べる（`parse.ts`）。
 
 全APIで、認証・グループ所属・対象データのグループ一致・月の閲覧範囲・締め状態をWorker側で検証する。IDを知っているだけで他グループのデータにアクセスできないようにする。これらの判定は共通の関数にまとめる。Premiumの閲覧期間の制限（企画メモ10章）を導入するときも、同じ関数に足す。
 
