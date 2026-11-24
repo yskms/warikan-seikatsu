@@ -57,7 +57,7 @@ import {
   type CategoryDraft,
   type CategoryFormContext,
 } from '../../src/services/categoryForm.ts';
-import { categoryErrorMessage, shouldReloadAfter, type CategoryAction } from '../../src/services/categoryMessage.ts';
+import { categoryErrorMessage, shouldReloadAfter, unsavedChangesNote, type CategoryAction } from '../../src/services/categoryMessage.ts';
 import { createCategoryAdder } from '../../src/services/categoryCreate.ts';
 import type { CategorySettingsData } from '../../src/services/categoryService.ts';
 import { orderShareMembers } from '../../src/services/categoryView.ts';
@@ -157,11 +157,9 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
   const draft = load.status === 'ready' ? load.draft : null;
   dirty.current = draft !== null && baseline.current !== null && isDirty(draft, baseline.current);
 
-  /** 破棄・「使わない」で、捨てることになる入力の説明。名前などが保存済みなら、それは残ると伝える */
+  /** 破棄・「使わない」で、捨てることになる入力の説明（追加が済んでいる・名前などが保存済み、のときは、それを伝える） */
   function unsavedNote(): string {
-    return profileSaved.current
-      ? '先に保存した名前・アイコン・色は、そのまま残ります。ほかの入力した変更は保存されません。'
-      : '入力した変更は保存されません。';
+    return unsavedChangesNote({ created: adder.created(), profileSaved: profileSaved.current });
   }
 
   // 通信の最中は閉じない。変えた入力があるときは、破棄の確認を出す

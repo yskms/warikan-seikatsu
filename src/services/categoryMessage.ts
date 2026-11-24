@@ -65,6 +65,24 @@ export function resultUnknown(error: unknown): boolean {
 }
 
 export function categoryErrorMessage(error: unknown, action: CategoryAction): string {
+  const message = baseMessage(error, action);
+  // 追加で、作成は済んだあとの失敗: どの失敗でも、文の頭で、カテゴリは追加できたことを伝える（そうしないと、通信の失敗などで、
+  // 追加できなかったと思ってシートを閉じる。カテゴリは作られている）。すでに頭にある文言（競合・食い違い）は、重ねない
+  if (action === 'create-update' && !message.startsWith(FAILED['create-update'])) return `${FAILED['create-update']}${message}`;
+  return message;
+}
+
+/**
+ * 閉じる・「使わない」で、捨てることになる入力の説明。追加で作成が済んでいれば、カテゴリはもうできていて、名前などは追加した
+ * ときの内容のまま（直した内容は反映されていない）。編集で名前などが保存済みなら、それは残る。
+ */
+export function unsavedChangesNote(state: { created: boolean; profileSaved: boolean }): string {
+  if (state.created) return 'カテゴリは、すでに追加されています。入力した変更は保存されず、名前などは追加したときの内容のままです。';
+  if (state.profileSaved) return '先に保存した名前・アイコン・色は、そのまま残ります。ほかの入力した変更は保存されません。';
+  return '入力した変更は保存されません。';
+}
+
+function baseMessage(error: unknown, action: CategoryAction): string {
   if (error instanceof CategoryRejectedError) {
     switch (error.reason) {
       case 'conflict':

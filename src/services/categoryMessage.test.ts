@@ -5,7 +5,13 @@ import { describe, it } from 'node:test';
 
 import { AuthError } from '../repositories/authError.ts';
 import { CategoryRejectedError } from '../repositories/categoryRepository.ts';
-import { categoryErrorMessage, isCreateConflict, resultUnknown, shouldReloadAfter } from './categoryMessage.ts';
+import {
+  categoryErrorMessage,
+  isCreateConflict,
+  resultUnknown,
+  shouldReloadAfter,
+  unsavedChangesNote,
+} from './categoryMessage.ts';
 
 const rejected = (reason: string | null, detail: ConstructorParameters<typeof CategoryRejectedError>[1] = {}, status = 409) =>
   new CategoryRejectedError(status, { reason, ...detail });
@@ -121,5 +127,59 @@ describe('categoryErrorMessage（通信など）', () => {
 
   it('知らない失敗は、操作ごとの汎用の文言', () => {
     assert.equal(categoryErrorMessage(new Error('x'), 'reorder'), '並べ替えを保存できませんでした。時間をおいて、もう一度お試しください。');
+  });
+});
+
+describe('categoryErrorMessage（追加で、作成が済んだあとの失敗）', () => {
+  const LEAD = 'カテゴリは追加できましたが、入力した内容を反映できませんでした。';
+
+  it('どの失敗でも、文の頭で、カテゴリは追加できたことを伝える', () => {
+    const errors = [
+      new AuthError('network'),
+      new AuthError('unavailable'),
+      new AuthError('invalid-response'),
+      new AuthError('invalid-request'),
+      new AuthError('unauthorized'),
+      new AuthError('storage-failed'),
+      new Error('x'),
+      rejected('conflict'),
+      rejected('not_found', {}, 404),
+      rejected('forbidden', {}, 403),
+      rejected('invalid_request', {}, 400),
+      rejected(null, {}, 400),
+    ];
+    for (const error of errors) {
+      assert.ok(categoryErrorMessage(error, 'create-update').startsWith(LEAD), String(error));
+    }
+  });
+
+  it('頭の文言を重ねない（すでに頭にある失敗）。通信の失敗は、頭のあとに、通常の案内が続く', () => {
+    assert.equal(categoryErrorMessage(rejected('conflict'), 'create-update'), `${LEAD}もう一度お試しください。`);
+    assert.equal(
+      categoryErrorMessage(new AuthError('network'), 'create-update'),
+      `${LEAD}通信できませんでした。電波のよいところで、もう一度お試しください。`,
+    );
+    for (const error of [new AuthError('invalid-request'), new Error('x'), rejected(null, {}, 400)]) {
+      const message = categoryErrorMessage(error, 'create-update');
+      assert.equal(message.split(LEAD).length, 2, message);
+    }
+  });
+
+  it('ほかの操作の文言は、頭を足さない', () => {
+    for (const action of ['create', 'update', 'save-share', 'reorder'] as const) {
+      assert.ok(!categoryErrorMessage(new AuthError('network'), action).startsWith(LEAD), action);
+    }
+  });
+});
+
+describe('unsavedChangesNote', () => {
+  it('追加が済んでいれば、カテゴリはもうできていて、名前などは追加したときのままと伝える', () => {
+    assert.match(unsavedChangesNote({ created: true, profileSaved: false }), /すでに追加されています/);
+    assert.match(unsavedChangesNote({ created: true, profileSaved: false }), /追加したときの内容のまま/);
+  });
+
+  it('名前などが保存済みなら、それは残ると伝える。どちらでもなければ、保存されないとだけ', () => {
+    assert.match(unsavedChangesNote({ created: false, profileSaved: true }), /先に保存した名前・アイコン・色は、そのまま残ります/);
+    assert.equal(unsavedChangesNote({ created: false, profileSaved: false }), '入力した変更は保存されません。');
   });
 });

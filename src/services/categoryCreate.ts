@@ -30,6 +30,11 @@ export function createCategoryAdder({ createCategory, updateCategory, newId }: C
   let createdId: string | null = null;
 
   return {
+    /** 作成が済んだか（以降、画面を閉じても、カテゴリは残る。入力の反映だけが済んでいないことがある） */
+    created(): boolean {
+      return createdId !== null;
+    },
+
     /** 追加を送る。`body` は、そのときの入力。やり直しのたびに、いまの入力で呼ぶ。 */
     async submit(groupId: string, body: CategoryDraftBody): Promise<AddResult> {
       if (createdId === null) {

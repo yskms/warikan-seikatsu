@@ -111,6 +111,26 @@ describe('createCategoryAdder', () => {
     assert.deepEqual(log, ['create:g1:id1:a', 'create:g1:id1:b', 'create:g1:id2:c']);
   });
 
+  it('created(): 作成が済んだあとだけ true（PATCH が失敗しても true のまま。作成が失敗した間は false）', async () => {
+    const { adder } = setup({ create: [network(), rejected('too_many_categories')] });
+    assert.equal(adder.created(), false);
+    await adder.submit('g1', body('a'));
+    assert.equal(adder.created(), false);
+    await adder.submit('g1', body('a'));
+    assert.equal(adder.created(), false);
+    const third = await adder.submit('g1', body('a'));
+    assert.equal(third.ok, true);
+    assert.equal(adder.created(), true);
+  });
+
+  it('created(): 作成が済んで PATCH が失敗した間も true', async () => {
+    const { adder } = setup({ create: [network()], update: [network()] });
+    await adder.submit('g1', body('a'));
+    const second = await adder.submit('g1', body('b'));
+    assert.equal(second.ok === false && second.step, 'create-update');
+    assert.equal(adder.created(), true);
+  });
+
   it('作成が断られた失敗の種類は、そのまま返す（画面が文言を決める）', async () => {
     const error = rejected('too_many_categories');
     const { adder } = setup({ create: [error] });
