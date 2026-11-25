@@ -25,6 +25,7 @@
 - **`expo-secure-store` の config plugin を `app.json` に足さない。** `npx expo install expo-secure-store` は自動で足すので、足されていたら外す。足すと、Androidのバックアップ規則が `<include domain="sharedpref">` になり、将来、端末に置くデータ（ローカルDBなど）がバックアップから外れる。iOSには、使っていないFace IDの文言も足される。plugin のオプション（`configureAndroidBackup: false`・`faceIDPermission: false`）で、この2つは止められるが（plugin のソースで確認。ビルドでは未確認）、止めると何もしないので、足す理由が無い。`requireAuthentication` など、Face IDの文言が要る機能を使うときに見直す（docs/backend-design.md 9章の「アプリ側の認証の土台」）。
 - **AndroidのAppleログインのアプリ側。** `app/+native-intent.tsx` は外さない（戻りのURL `warikan-seikatsu://auth/apple?...` を expo-router に渡すと「画面が見つかりません」へ遷移する。起動時のURLには `null` ではなく `'/'` を返す: `null` だと、ルートから始める処理が飛ぶ）。`platform/authBrowser.ts` の `openBrowserAsync` のオプション（`createTask`・`useProxyActivity`・`showInRecents`）は、既定と同じ値を明示して固定している。外さない（旧来の経路は、アプリの外へ移ると Custom Tab を破棄し、SMSの確認コードを別のアプリで開く経路が壊れる）。`openAuthSessionAsync` は使わない。
 - **`expo-font` は、コードで使っていないが、SDKに合った版で直接の依存に固定している。外さない。** 外すと、`@expo/vector-icons` のpeer（`expo-font >=14.0.4`）の指定から、SDK 58用の版がhoistされ、Androidのネイティブビルドが Gradle の設定段階（autolinking の `publication` に `version` が無い）で失敗する。SDKを上げるときは、`npx expo install --fix` で一緒に上げる。
+- **ライセンスの一覧（設定の「このアプリについて」→「ライセンス」。docs/screens.md 6章）**: `src/legal/thirdPartyLicenses.ts` は**生成物**で、手で直さない。依存（`package.json`・ロックファイル・ネイティブ）を変えたら `node scripts/generate-licenses.mjs` で作り直す。スクリプトと `scripts/license-texts/`・`src/legal/reflowLicense.ts` は Singfolio のコピー（コピー元のcommitは先頭のコメント。Googleのサインイン関連は、まだ組み込んでいないので外してある）。載せるものは、`dependencies` を機械的にたどらず、実際にアプリに入るもの（JSバンドルのsourcemap・autolinking・Gradle・`Podfile.lock`・アセット）から決める。「`dependencies` から作る形に簡略化」しない（ビルドにしか使わないものが大量に入る）。許可していないライセンスや、把握していない依存が入ると生成が失敗する。黙って許可を足さず、条件を確認する。**アイコンは `@expo/vector-icons/<名前>` から import する**（ルートの `@expo/vector-icons` から import すると、使わないアイコンフォント19種が、すべてアプリに入り、生成が失敗する）。
 
 ## 設計上の注意（docs に詳細）
 
@@ -57,5 +58,5 @@
 ## コマンド
 
 - アプリ: `npm run typecheck`、`npm test`
-- リリース前（ストア用のビルド・提出の前）: `npm run release-check`。公開前の仮のURL（`.invalid`）が残っていると失敗する（法務・お問い合わせのページ、招待URLの置き場、`API_ORIGIN`）。普段の `npm test` には入らない
+- リリース前（ストア用のビルド・提出の前）: `npm run release-check`。公開前の仮のURL（`.invalid`）が残っていると失敗する（法務・お問い合わせのページ、招待URLの置き場、`API_ORIGIN`）。普段の `npm test` には入らない。あわせて `node scripts/generate-licenses.mjs --check`（ライセンスの一覧が、今の依存と同じこと。`android/`・`ios/` の `expo prebuild` 済みが前提。release のAPK・AABがあれば `--apk <APK・AAB>` も）
 - Worker（`worker/` で実行）: `npm run typecheck`、`npm test`（ルートの `npm test` には含まれない）
