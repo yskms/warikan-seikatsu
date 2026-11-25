@@ -23,6 +23,19 @@ describe('reflowLicense', () => {
     );
   });
 
+  it('`# ` で始まる行（Markdown の見出し）は、見出しとして残す（後ろの本文は詰める）', () => {
+    assert.equal(
+      reflowLicense('# Icons: Apache 2.0 (https://example.com)\nSome of the\nicons are.'),
+      '# Icons: Apache 2.0 (https://example.com)\nSome of the icons are.',
+    );
+    // 一覧にある Pictogrammers Free License（Material Design Icons）の `# Icons:` `# Fonts:` `# Code:`
+    const mdi = THIRD_PARTY_LICENSE_TEXTS.find((text) => text.startsWith('Pictogrammers Free License')) ?? '';
+    const reflowed = reflowLicense(mdi);
+    assert.ok(reflowed.includes('\n# Icons: Apache 2.0 (https://www.apache.org/licenses/LICENSE-2.0)\nSome of the icons'));
+    assert.ok(reflowed.includes('\n# Fonts: Apache 2.0 (https://www.apache.org/licenses/LICENSE-2.0)\nAll web and desktop fonts'));
+    assert.ok(reflowed.includes('\n# Code: MIT (https://opensource.org/licenses/MIT)\nThe MIT license applies'));
+  });
+
   it('大文字だけの本文（DISCLAIMER の文）は、見出しとみなさず、詰める', () => {
     assert.equal(
       reflowLicense('DISCLAIMER\nTHE FONT SOFTWARE IS PROVIDED "AS IS",\nWITHOUT WARRANTY OF ANY KIND,'),

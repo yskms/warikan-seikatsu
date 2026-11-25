@@ -8,6 +8,12 @@
 //     確認だけ）・MAVEN_FAMILIES の Google の2行・出力の `licenseUrl`。
 //     Googleのサインインを入れるときは、Singfolio側の同じ部分を取り込む
 //   - ICON_FONTS・LICENSE_FALLBACKS・MAVEN_FAMILIES など、アプリに入る依存で決まる設定は、このアプリの依存に合わせた
+//     （ICON_FONTS の「Material Design Icons」の全文 `scripts/license-texts/MaterialDesignIcons.txt` は、このアプリで
+//     新しく作った。Singfolio には無い）
+//   - **処理の追加**: `fontEntries` に、ICON_FONTS に挙げていないフォントがアプリに入ったら失敗にする検査を足した
+//     （`@expo/vector-icons` をルートから import すると、使わないフォントが19種入る。Singfolio は自前で同梱したフォント
+//     〔`assets/fonts`〕があるので、そのままは移せない。逆輸入するなら、それを除く形にする）
+//   - KNOWN_SO から `libexpo-sqlite`（このアプリには expo-sqlite が無い）を、下の「載せていないもの」から SQLite を外した
 //   - 一時ディレクトリの名前
 //
 //     node scripts/generate-licenses.mjs           # src/legal/thirdPartyLicenses.ts を作り直す
@@ -37,7 +43,7 @@
 //                 （`modules/`）は載せない。CocoaPods の trunk から入る Pod は、いまは無い（入ったら失敗にする）
 // 自前のコード（`modules/` のローカルモジュール）は、第三者ではないので載せない。
 // 載せていないもの: OS・NDK が提供する実行時のライブラリ（libc++ など。LLVM の例外で、バイナリでの表記は
-// 不要）、SQLite（パブリックドメイン）、OkHttp の public suffix のリスト（APK の中に出典とライセンスの
+// 不要）、OkHttp の public suffix のリスト（APK の中に出典とライセンスの
 // NOTICE がある）。上の Maven の成果物の中を、これ以上は掘り下げない。release の APK・AAB に、把握して
 // いない .so が入っていないかは、`--apk` で確かめる。
 //
@@ -233,6 +239,9 @@ const MAVEN_FAMILIES = [
 // `in` は Maven の成果物（nativeimagetranscoder → libnative-imagetranscoder.so、webpsupport → libstatic-webp.so、
 // animated-gif → libgifimage.so）。libpng は、Fresco のソースにあるが、libstatic-webp.so にはリンクされて
 // いない（符号・文字列が無い）。
+// 「APK の .so で確かめた」は、Singfolio の APK での確認（コピー元のコメント）。このアプリでは、debug の APK
+// （android/app/build/outputs/apk/debug。2026-11-25）の `lib/` に、同じ4つの .so があり、`--check --apk` が通ることだけ
+// 確かめた（Fresco・zstd-kmp の版が同じ）。release の APK・AAB では、まだ確かめていない。
 const MAVEN_EMBEDDED_LIBS = [
   { name: 'libjpeg-turbo', version: '2.1.5.1', license: 'IJG AND BSD-3-Clause AND Zlib', file: 'libjpeg-turbo.txt',
     source: 'https://github.com/libjpeg-turbo/libjpeg-turbo/blob/2.1.5.1/LICENSE.md',
@@ -253,7 +262,7 @@ const MAVEN_EMBEDDED_LIBS = [
 const KNOWN_SO = [
   /^libappmodules$/, /^libreact_codegen_.+$/, /^libreactnative$/, /^libjsi$/, /^libhermesvm$/, /^libhermestooling$/,
   /^libfbjni$/, // React Native・Hermes・fbjni（載せている）
-  /^libexpo-modules-core$/, /^libexpo-sqlite$/, /^libgesturehandler$/, /^libreanimated$/, /^librnscreens$/,
+  /^libexpo-modules-core$/, /^libgesturehandler$/, /^libreanimated$/, /^librnscreens$/,
   /^libworklets$/, /^libandroidx\.graphics\.path$/, // npm のパッケージ・AndroidX（載せている）
   /^libimagepipeline$/, /^libnative-filters$/, // Fresco 自身のコード（Fresco を載せている）
   /^libnative-imagetranscoder$/, /^libstatic-webp$/, /^libgifimage$/, /^libzstd-kmp$/, // MAVEN_EMBEDDED_LIBS
@@ -442,7 +451,7 @@ function bundledEntries(bundledHits, dirByName) {
 
 function fontEntries(assets, dirByName) {
   // アプリに入るフォントは、ICON_FONTS に挙げたものだけ。挙げていないフォントが入ったら失敗にする
-  // （`@expo/vector-icons` をルートから import すると、使わないアイコンフォント19種が、すべてアプリに入る。
+  // （`@expo/vector-icons` をルートから import すると、使わないものを含むアイコンフォント19種が、すべてアプリに入る。
   // アイコンは `@expo/vector-icons/<名前>` から import する）。
   const shipped = [...new Set(assets.match(/[^"]*\.(?:ttf|otf)/g) ?? [])];
   const unknown = shipped.filter((file) => !ICON_FONTS.some((font) => file.endsWith(`node_modules/${font.asset}`)));

@@ -1,5 +1,6 @@
 // コピー元: Singfolio の src/legal/reflowLicense.ts（c3a065e）。Singfolio側の修正は手で取り込む。変えたのは、この行と、
-// 下の説明が挙げるファイル名だけ（このアプリには、自前のフォントのライセンス `fontLicenses.ts` が無い）。
+// 下の説明が挙げるファイル名と、`# ` で始まる見出し行を詰めない規則（Pictogrammers Free License の `# Icons:` など。
+// Singfolio の全文には無く、Singfolio 側は未対応）。このアプリには、自前のフォントのライセンス `fontLicenses.ts` が無い。
 
 /**
  * ライセンスの全文（`thirdPartyLicenses.ts`）を、画面に出す形に詰め直す。元の文は、
@@ -8,7 +9,7 @@
  * Apache License は、題や条項を字下げしている）。次の行は、詰めずにそのまま残す。
  * - 罫線（`-----`）を含む段落（題の囲み）
  * - 続けて並ぶ `Copyright` で始まる行（共著の著作権表示は、1行ずつ残す）
- * - 段落の先頭の、短い大文字だけの行（`PREAMBLE` などの見出し）。その後ろの本文は詰める
+ * - 段落の先頭の、短い大文字だけの行（`PREAMBLE` などの見出し）か、`# ` で始まる行（Markdown の見出し）。その後ろの本文は詰める
  */
 export function reflowLicense(text: string): string {
   return text
@@ -17,7 +18,7 @@ export function reflowLicense(text: string): string {
       if (paragraph.split('\n').some((line) => /^-{3,}$/.test(line))) return paragraph;
       const lines = paragraph.split('\n').map((line) => line.trim());
       const [first = '', ...rest] = lines;
-      if (rest.length > 0 && /^[A-Z][A-Z &]{2,29}$/.test(first)) return `${first}\n${join(rest)}`;
+      if (rest.length > 0 && (/^[A-Z][A-Z &]{2,29}$/.test(first) || /^# /.test(first))) return `${first}\n${join(rest)}`;
       return join(lines);
     })
     .join('\n\n');
