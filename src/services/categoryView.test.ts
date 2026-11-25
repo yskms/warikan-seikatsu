@@ -10,6 +10,7 @@ import type { Category, MonthListItem } from '../domain/month.ts';
 import {
   buildCategoryRows,
   buildShareMonthOptions,
+  capTextOf,
   orderShareMembers,
   pickShareMonth,
   splitArchived,
@@ -151,6 +152,15 @@ describe('buildCategoryRows', () => {
     assert.equal(rows[1]?.capText, '月¥10,000まで自分、超えた分 0:10');
     assert.equal(rows[1]?.ratioText, null);
     assert.equal(rows[1]?.summary, '外食、月¥10,000まで自分、超えた分 0:10');
+  });
+
+  it('上限額つきで割合の行が空のときは、「超えた分」を付けない（末尾が欠けた文字にしない）', () => {
+    const empty = shares.categories[1]!;
+    const capped = { ...empty, shares: [] };
+    assert.equal(capTextOf(capped, ctx), '月¥10,000まで自分');
+    assert.equal(capTextOf({ ...capped, cap: null }, ctx), null);
+    // 割合の文字を渡したときは、それを使う
+    assert.equal(capTextOf(empty, ctx, '0:10（自分、相手の順）'), '月¥10,000まで自分、超えた分 0:10（自分、相手の順）');
   });
 
   it('その月に割合が無い費目（作る前の月）は、割合を出さない', () => {

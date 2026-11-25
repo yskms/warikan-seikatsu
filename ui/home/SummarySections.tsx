@@ -173,14 +173,15 @@ export function BreakdownSection({
               <Text style={[styles.breakdownHeading, { color: colors.textPrimary }]}>費目ごと</Text>
               {breakdown.categories.map((category) => {
                 // 費目の一覧に無い費目（`known` が false）は、開く先が無い
-                const open = onOpenCategory !== undefined && category.known ? () => onOpenCategory(category.categoryId) : null;
+                const openCategory =
+                  onOpenCategory !== undefined && category.known ? () => onOpenCategory(category.categoryId) : null;
                 const head = (
                   <>
                     <View style={styles.lineRow}>
                       {/* 押せる費目には、名前の横に矢印を出す（金額の列を、負担額の行と揃えるため、右端には置かない） */}
                       <View style={styles.categoryName}>
                         <Text style={[styles.lineLabel, { color: colors.textPrimary }]}>{category.name}</Text>
-                        {open !== null ? (
+                        {openCategory !== null ? (
                           <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
                         ) : null}
                       </View>
@@ -195,14 +196,14 @@ export function BreakdownSection({
                   <View key={category.categoryId} style={styles.categoryRow}>
                     <CategoryIcon icon={category.icon} color={category.color} size={28} />
                     <View style={styles.categoryBody}>
-                      {open !== null ? (
+                      {openCategory !== null ? (
                         // 見出し（費目・合計・割合）だけを押せる。負担額の行は、読み上げが隠れないよう、押せる範囲に入れない
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={[category.name, category.totalText, category.shareText].filter((t) => t !== null).join('、')}
                           accessibilityHint="この費目の負担割合などを編集します"
                           hitSlop={4}
-                          onPress={open}
+                          onPress={openCategory}
                           style={({ pressed }) => [styles.categoryHead, pressed && styles.pressed]}
                         >
                           {head}

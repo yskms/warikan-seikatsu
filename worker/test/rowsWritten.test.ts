@@ -269,6 +269,7 @@ describe('1回の操作の、読む行数・書く行数', () => {
       await measure(`${label}: グループの詳細`, (e) => groupsApi(e).getGroup(alice, screens.groupId));
       await measure(`${label}: 月の一覧`, (e) => monthApi(e).months(alice, screens.groupId));
       await measure(`${label}: 費目の一覧`, (e) => groupsApi(e).listCategories(alice, screens.groupId));
+      await measure(`${label}: 費目の負担割合`, (e) => groupsApi(e).getRules(alice, screens.groupId, '2026-11'));
       await measure(`${label}: 今月の支出の一覧`, (e) =>
         handleListExpenses(request('GET', `/groups/${screens.groupId}/expenses?month=2026-11`, alice.token), e, NOW, screens.groupId).then(read),
       );
@@ -323,12 +324,14 @@ const EXPECTED: Table = {
   '今月30件: グループの詳細': [8, 0],
   '今月30件: 月の一覧': [7, 0],
   '今月30件: 費目の一覧': [21, 0],
+  '今月30件: 費目の負担割合': [112, 0],
   '今月30件: 今月の支出の一覧': [97, 0],
   '今月30件: 今月の集計（summary）': [155, 0],
   '今月100件: グループの一覧': [6, 0],
   '今月100件: グループの詳細': [8, 0],
   '今月100件: 月の一覧': [7, 0],
   '今月100件: 費目の一覧': [21, 0],
+  '今月100件: 費目の負担割合': [112, 0],
   '今月100件: 今月の支出の一覧': [307, 0],
   '今月100件: 今月の集計（summary）': [295, 0],
 };

@@ -145,7 +145,7 @@ export function CategoryEditSheet({ groupId, categoryId, month }: CategoryEditSh
         if (cancelled) return;
         const ctx = contextOf(data, categoryId);
         if (ctx === null) {
-          setLoad({ status: 'error', message: 'このカテゴリを確認できませんでした。一覧に戻って、もう一度お試しください。' });
+          setLoad({ status: 'error', message: 'このカテゴリを確認できませんでした。戻って、もう一度お試しください。' });
           return;
         }
         const draft = initialDraft(data, ctx);

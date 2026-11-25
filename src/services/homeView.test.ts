@@ -408,6 +408,11 @@ describe('内訳', () => {
       assert.equal(build(sharesOf([capped])).categories[0]?.shareText, '月¥10,000まであなた、超えた分 0:10（あなた、彼女の順）');
     });
 
+    it('上限額つきで割合の行が空のときは、「超えた分」を付けない', () => {
+      const capped = shareRule({ shares: [], cap: { memberId: 'm1', capMinor: 10000 } });
+      assert.equal(build(sharesOf([capped])).categories[0]?.shareText, '月¥10,000まであなた');
+    });
+
     it('割合に入るメンバーが読めない（グループにいない）IDは、「不明なメンバー」にして、最後に付ける', () => {
       const rule = shareRule({ shares: [{ memberId: 'm1', basisPoints: 7000 }, { memberId: 'zzz', basisPoints: 3000 }] });
       assert.equal(build(sharesOf([rule], ['m1', 'zzz'])).categories[0]?.shareText, '割合 7:3（あなた、不明なメンバーの順）');

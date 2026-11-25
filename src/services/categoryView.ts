@@ -87,7 +87,7 @@ export function ratioOf(rule: CategoryShareRule, order: readonly string[]): stri
 
 /**
  * 上限額つきのときの説明（「月¥10,000まで自分、超えた分 0:10」）。無ければ `null`。`ratioText` は、「超えた分」の割合の文字
- * （省略すると `ratioOf`。ホームの内訳は、メンバーの並びを添えた文字を渡す）。
+ * （省略すると `ratioOf`。ホームの内訳は、メンバーの並びを添えた文字を渡す。空なら、「超えた分」は付けない）。
  */
 export function capTextOf(
   rule: CategoryShareRule,
@@ -95,7 +95,9 @@ export function capTextOf(
   ratioText: string = ratioOf(rule, ctx.memberOrder),
 ): string | null {
   if (rule.cap === null) return null;
-  return `月${ctx.money(rule.cap.capMinor)}まで${ctx.memberName(rule.cap.memberId)}、超えた分 ${ratioText}`;
+  const head = `月${ctx.money(rule.cap.capMinor)}まで${ctx.memberName(rule.cap.memberId)}`;
+  // 割合が空（割合の行が無い）のときは、「超えた分」を付けない（末尾が欠けた文字にしない）
+  return ratioText === '' ? head : `${head}、超えた分 ${ratioText}`;
 }
 
 /**
