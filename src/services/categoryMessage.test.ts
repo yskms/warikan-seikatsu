@@ -54,7 +54,7 @@ describe('shouldReloadAfter', () => {
 
 describe('見直しの確認（acknowledge-reset）', () => {
   it('サーバーが断った理由が、読み直せば解けるとき（競合・脱退が確定した403・メンバーでない404）は読み直す', () => {
-    // 読み直せば、お知らせが `editable` で消える。読み直さないと、押しても消えないお知らせが残る
+    // 読み直さないと、押しても消えないお知らせが残る（403は `editable` が false になって消え、404はホームの読み込みが失敗する。409は出し直す）
     for (const reason of ['conflict', 'forbidden', 'not_found']) {
       assert.equal(shouldReloadAfter(rejected(reason), 'acknowledge-reset'), true, reason);
     }
