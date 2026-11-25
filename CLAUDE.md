@@ -56,4 +56,5 @@
 ## コマンド
 
 - アプリ: `npm run typecheck`、`npm test`
+- リリース前（ストア用のビルド・提出の前）: `npm run release-check`。公開前の仮のURL（`.invalid`）が残っていると失敗する（法務・お問い合わせのページ、招待URLの置き場、`API_ORIGIN`）。普段の `npm test` には入らない
 - Worker（`worker/` で実行）: `npm run typecheck`、`npm test`（ルートの `npm test` には含まれない）

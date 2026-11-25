@@ -3,7 +3,7 @@
 //
 // **まだ、公開するページが無い**（docs/plan.md: 招待URL・プライバシーポリシー・アカウント削除の案内の静的なWebページ）。
 // そのあいだは仮の値（`.invalid`）にしてあり、画面は、仮の値のリンクを出さない（開いても、名前が引けないため）。
-// 公開したら、ここを実際のURLに置き換える。リリース前に、仮の値が残っていないことを確かめる。
+// 公開したら、ここを実際のURLに置き換える。リリース前に、`npm run release-check` で、仮の値が残っていないことを確かめる。
 export const PRIVACY_POLICY_URL = 'https://not-created-yet.invalid/privacy-policy';
 export const TERMS_OF_SERVICE_URL = 'https://not-created-yet.invalid/terms';
 // お問い合わせの窓口（静的なWebページのお問い合わせ案内。メールアドレスをこのリポジトリに書かないため、ページを置く前提）。

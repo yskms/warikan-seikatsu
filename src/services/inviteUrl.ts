@@ -8,7 +8,7 @@
 //   Webページが開くようにする（`app.json` の `associatedDomains`・`intentFilters` と、ドメインの
 //   `apple-app-site-association`・`assetlinks.json` が要る）。
 // - 道は `/invite/<token>` にする（`inviteUrl`）。トークンは、この道の最後の1区切り。
-// リリース前に、仮の値が残っていないことを確かめる（`legalUrls.ts` と同じ）。
+// リリース前に、`npm run release-check` で、仮の値が残っていないことを確かめる（`legalUrls.ts` と同じ）。
 import { isPlaceholderUrl } from '../legal/legalUrls.ts';
 
 export const INVITE_URL_ORIGIN = 'https://not-created-yet.invalid';

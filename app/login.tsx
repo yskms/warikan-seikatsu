@@ -19,7 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { accountService } from '../platform/accountService.ts';
 import type { AuthProvider } from '../src/domain/types.ts';
-import { isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../src/legal/legalUrls.ts';
+import { CONTACT_URL, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../src/legal/legalUrls.ts';
+import { buildLegalLinks } from '../src/services/aboutView.ts';
 import { isAlreadySignedIn, signInErrorMessage } from '../src/services/signInMessage.ts';
 import { useAuth } from '../ui/AuthStateProvider.tsx';
 import { clearLoginNotice, useLoginNotice } from '../ui/loginNotice.ts';
@@ -29,10 +30,12 @@ import { usePendingInvite } from '../ui/usePendingInvite.ts';
 const PROVIDER_ORDER: readonly AuthProvider[] =
   Platform.OS === 'ios' ? ['apple', 'google'] : ['google', 'apple'];
 
-const LEGAL_LINKS = [
-  { label: 'プライバシーポリシー', url: PRIVACY_POLICY_URL },
-  { label: '利用規約', url: TERMS_OF_SERVICE_URL },
-].filter((link) => !isPlaceholderUrl(link.url));
+// 表示名と「公開していないページは出さない」規則は、「このアプリについて」と共通（`src/services/aboutView.ts`）
+const LEGAL_LINKS = buildLegalLinks({
+  privacyPolicy: PRIVACY_POLICY_URL,
+  termsOfService: TERMS_OF_SERVICE_URL,
+  contact: CONTACT_URL,
+});
 
 export default function LoginScreen() {
   const { state, markSignedIn } = useAuth();

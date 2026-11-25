@@ -26,6 +26,14 @@ export function buildAboutLinks(urls: AboutUrls): AboutLink[] {
   return links.filter((link) => !isPlaceholderUrl(link.url));
 }
 
+/**
+ * ログイン画面に出す法務リンク（プライバシーポリシーと利用規約だけ。お問い合わせは、ログイン前には出さない）。
+ * 表示名と「仮の値を除く」規則は、`buildAboutLinks` と同じものを使う（2か所に書かない）。
+ */
+export function buildLegalLinks(urls: AboutUrls): AboutLink[] {
+  return buildAboutLinks(urls).filter((link) => link.key !== 'contact');
+}
+
 /** バージョンの表示。読めなかったとき（`null`・空）は、「不明」とする（行ごと消さず、報告の手がかりとして残す）。 */
 export function versionLabel(version: string | null | undefined): string {
   const trimmed = version?.trim();

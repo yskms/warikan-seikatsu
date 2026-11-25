@@ -3,8 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { CONTACT_URL, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../legal/legalUrls.ts';
-import { buildAboutLinks, versionLabel } from './aboutView.ts';
+import { buildAboutLinks, buildLegalLinks, versionLabel } from './aboutView.ts';
 
 const PUBLISHED = {
   privacyPolicy: 'https://example.com/privacy-policy',
@@ -31,11 +30,24 @@ describe('buildAboutLinks', () => {
       ['privacyPolicy', 'contact'],
     );
   });
+});
 
-  it('いまの設定値（すべて仮の値）では、1つも出ない', () => {
+describe('buildLegalLinks（ログイン画面の法務リンク）', () => {
+  it('プライバシーポリシーと利用規約だけを、同じ表示名で出す（お問い合わせは出さない）', () => {
     assert.deepEqual(
-      buildAboutLinks({ privacyPolicy: PRIVACY_POLICY_URL, termsOfService: TERMS_OF_SERVICE_URL, contact: CONTACT_URL }),
-      [],
+      buildLegalLinks(PUBLISHED).map((link) => [link.key, link.label]),
+      [
+        ['privacyPolicy', 'プライバシーポリシー'],
+        ['termsOfService', '利用規約'],
+      ],
+    );
+  });
+
+  it('仮の値のページは出さない', () => {
+    const links = buildLegalLinks({ ...PUBLISHED, privacyPolicy: 'https://not-created-yet.invalid/privacy-policy' });
+    assert.deepEqual(
+      links.map((link) => link.key),
+      ['termsOfService'],
     );
   });
 });
