@@ -6,8 +6,8 @@
 //
 // このアプリで変えたところ:
 // - Services ID・Return URL・戻り先のURLスキームの値（Workerの `wrangler.jsonc` の `vars` と、`worker/src/appleWeb.ts` と同じ。
-//   `worker/test/config.test.ts` が、一致を固定している）。Services ID と Return URL は、まだ作っていない（Apple Developerでの
-//   作成と、本番のドメインの決定が先）ので、仮の値（`not-created-yet` を含む）にしてある。仮の値のあいだは、ブラウザを開かず
+//   `worker/test/config.test.ts` が、一致を固定している）。Return URL は、本番のドメイン（`warikan-seikatsu.app`）に決まった。Services ID は、まだ作っていない（Apple Developerでの
+//   作成が先）ので、仮の値（`not-created-yet` を含む）にしてある。どちらかが仮の値のあいだは、ブラウザを開かず
 //   `provider-unavailable` で断る（Appleの「無効なクライアント」の画面を出して、利用者が閉じた（`cancelled`）ように
 //   見せないため）。
 // - 認可のURLの組み立てと、断る判定が、設定（`AppleWebConfig`）を受け取れる（Nodeのテストが、設定済みの状態を作れるように）。
@@ -27,7 +27,7 @@ import { AuthError } from './authError.ts';
 /** Apple の Services ID（Webのサインインの `client_id`）。Workerの `APPLE_SERVICES_ID` と同じ（Return URL を登録した名前）。 */
 export const APPLE_SERVICES_ID = '0-not-created-yet';
 /** Services ID の Return URL。Worker のコールバック。ここから、アプリのURLスキームへ 302 で戻る。Workerの `APPLE_CALLBACK_URL` と同じ。 */
-export const APPLE_CALLBACK_URL = 'https://not-created-yet.invalid/auth/apple/callback';
+export const APPLE_CALLBACK_URL = 'https://warikan-seikatsu.app/auth/apple/callback';
 /** Workerのコールバックが、アプリへ戻すURL。アプリのURLスキーム（app.json の `scheme`）で始まる。 */
 export const APP_RETURN_URL = 'warikan-seikatsu://auth/apple';
 

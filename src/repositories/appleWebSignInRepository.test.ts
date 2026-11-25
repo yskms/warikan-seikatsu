@@ -130,7 +130,7 @@ describe('parseReturnUrl', () => {
       'warikan-seikatsu://auth/apple2?code=x',
       'warikan-seikatsu://auth',
       'warikan-seikatsu://',
-      'https://not-created-yet.invalid/auth/apple/callback?code=x',
+      'https://warikan-seikatsu.app/auth/apple/callback?code=x',
       'other://auth/apple?code=x',
       '',
     ]) {

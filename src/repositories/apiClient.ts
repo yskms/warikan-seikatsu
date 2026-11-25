@@ -1,10 +1,10 @@
-// Worker（本番の独自ドメイン。まだ決めていない）への、JSONのHTTP。アカウント（authRepository）と、今後作る
+// Worker（本番の独自ドメイン `warikan-seikatsu.app`）への、JSONのHTTP。アカウント（authRepository）と、今後作る
 // グループ・支出などのRepositoryが共有する。画面・Serviceは、これを直接使わない。
 // Singfolio（src/repositories/apiClient.ts）からのコピー（コピー元: singfolio 99f5970）。Singfolio側を直したときは、
 // 差分を手で取り込む。
 //
 // このアプリで変えたところ:
-// - `API_ORIGIN` が、本番のドメインが決まるまでの仮の値（下記）。
+// - `API_ORIGIN` が、本番のドメイン（下記）。
 // - 共有するRepositoryの説明。
 // - `ApiMethod` は、いま使うものだけ（`PATCH`・`DELETE` は、支出のRepositoryの編集・削除で足した）。
 //
@@ -36,12 +36,12 @@ export type ApiFetchLike = (
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 /**
- * APIの置き場。本番のWorkerの独自ドメイン（まだ決めていない）。HTTPS以外は、Workerが403で拒否する。
- * 決まるまでは、実在しない仮の値（`.invalid` は、実在しないことが決まっているTLD）。そのあいだ、どの通信も、
- * 名前が引けず `network` で失敗する。決めたら置き換える。Workerの `wrangler.jsonc` の `APPLE_CALLBACK_URL` と、
- * 同じドメインにする（`worker/test/config.test.ts` が、origin の一致を固定している）。
+ * APIの置き場。本番のWorkerの独自ドメイン（Cloudflare Registrarで取得。Workerの `wrangler.jsonc` の `routes` で割り当てる）。
+ * HTTPS以外は、Workerが403で拒否する。Workerをデプロイするまでは、このドメインにDNSの記録が無く、どの通信も、
+ * 名前が引けず `network` で失敗する。Workerの `wrangler.jsonc` の `APPLE_CALLBACK_URL` と、同じドメインにする
+ * （`worker/test/config.test.ts` が、origin の一致を固定している）。
  */
-export const API_ORIGIN = 'https://not-created-yet.invalid';
+export const API_ORIGIN = 'https://warikan-seikatsu.app';
 /** 応答を待つ上限。超えたら `network`。 */
 export const DEFAULT_TIMEOUT_MS = 10_000;
 

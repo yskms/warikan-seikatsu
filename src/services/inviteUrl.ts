@@ -1,8 +1,10 @@
 // 招待URLと、共有する文面。
 //
-// **URLの置き場（`INVITE_URL_ORIGIN`）は、まだ決めていない**（docs/plan.md: 招待URL・プライバシーポリシー・アカウント削除の案内の
-// 静的なWebページ）。決まるまでは、実在しない仮の値（`.invalid`。`src/legal/legalUrls.ts`、`apiClient.ts` の `API_ORIGIN` と同じ
-// 扱い）。決めたら置き換える。決めるときの条件:
+// **URLの置き場は、本番のドメイン `warikan-seikatsu.app`（Workerの独自ドメインと同じ）に決めた。ただし `INVITE_URL_ORIGIN` は、
+// まだ仮の値（`.invalid`）のまま。置き換えるのは、そのドメインが、招待URLを実際に開けるようになってから**（Workerが
+// `/invite/<token>` の案内ページと、`apple-app-site-association`・`assetlinks.json` を返し、`app.json` に `associatedDomains`・
+// `intentFilters` を足したあと）。先に置き換えると、メンバーと招待の画面が、開けない招待URLをメッセージアプリへ送ってしまう
+// （`npm run release-check` は、`.invalid` が無いことしか見ないので、気づけない）。置き場の条件:
 // - **HTTPSの、メッセージアプリで押せるURL**にする（`warikan-seikatsu://` のような独自スキームは、LINEなどで押せない）。
 //   iOSのUniversal LinksとAndroidのApp Linksで、アプリが入っていれば直接アプリが開き、入っていなければ、ストアへ案内する
 //   Webページが開くようにする（`app.json` の `associatedDomains`・`intentFilters` と、ドメインの

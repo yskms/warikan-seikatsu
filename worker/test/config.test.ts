@@ -19,7 +19,8 @@ const GOOGLE_PLACEHOLDER = '0-not-created-yet.apps.googleusercontent.com';
 const APPLE_KEY_PLACEHOLDER = '0-not-created-yet';
 // Apple Developerで、Services ID を作るまでの、実在しない値（wrangler.jsonc）。
 const APPLE_SERVICES_PLACEHOLDER = '0-not-created-yet';
-// 本番の独自ドメインが決まるまでの、実在しない値（wrangler.jsonc）。`.invalid` は、実在しないことが決まっているTLD。
+// 本番の独自ドメインが決まる前の、実在しない値（いまの wrangler.jsonc は、本番のドメインに置き換え済み）。仮の値を見つける
+// 確認（`placeholderVars`）の検査にだけ使う。`.invalid` は、実在しないことが決まっているTLD。
 const APPLE_CALLBACK_PLACEHOLDER = 'https://not-created-yet.invalid/auth/apple/callback';
 
 describe('wrangler.jsonc', () => {
@@ -118,6 +119,17 @@ describe('wrangler.jsonc', () => {
     assert.equal(apiOrigin, new URL(String(vars.APPLE_CALLBACK_URL)).origin);
     // 仮の値のあいだは、どちらも、デプロイの確認とアプリが見分ける印を含む。
     assert.equal(apiOrigin.includes(PLACEHOLDER_MARKER), String(vars.APPLE_CALLBACK_URL).includes(PLACEHOLDER_MARKER));
+  });
+
+  // このアプリで足したテスト。入口は独自ドメイン1つ（Singfolioと同じ。`custom_domain: true` は、デプロイで、DNSの記録と証明書を作る）。
+  // `routes` のドメインと、Appleの Return URL（と、同じドメインにしている `API_ORIGIN`）がずれると、アプリが呼ぶ先に、
+  // Workerが付いていない。`pattern` にパスやワイルドカードを書かない（Custom Domainは、ホスト名だけを受け付ける）。
+  it('入口は独自ドメイン1つ（routes の Custom Domain）で、Appleの Return URL と同じホスト', () => {
+    const routes = (config.routes ?? []) as Array<{ pattern: string; custom_domain?: boolean }>;
+    assert.equal(routes.length, 1);
+    assert.equal(routes[0].custom_domain, true);
+    assert.match(routes[0].pattern, /^[a-z0-9-]+(\.[a-z0-9-]+)+$/);
+    assert.equal(routes[0].pattern, new URL(String(vars.APPLE_CALLBACK_URL)).host);
   });
 
   it('仮の値が vars に残ったままでは、デプロイできない（npm run deploy の前の確認）', () => {

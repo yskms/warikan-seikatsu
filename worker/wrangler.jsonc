@@ -8,9 +8,11 @@
   // 上げるときは、wranglerを上げて、動きが変わらないか確かめる。
   "compatibility_date": "2026-11-13",
 
-  // 本番の入口は、独自ドメインだけにする予定（workers.dev とプレビューのURLは出さない）。
+  // 本番の入口は、独自ドメイン `warikan-seikatsu.app`（Cloudflare Registrarで取得。Singfolioと同じアカウント）だけにする
+  // （workers.dev とプレビューのURLは出さない）。`custom_domain: true` は、次の `wrangler deploy` で、DNSの記録と証明書を自動で作る。
   "workers_dev": false,
   "preview_urls": false,
+  "routes": [{ "pattern": "warikan-seikatsu.app", "custom_domain": true }],
 
   // 定期処理（月初の脱退の確定など。docs/backend-design.md 7章）。1時間ごと。
   "triggers": {
@@ -46,14 +48,14 @@
   //
   // APPLE_SERVICES_ID・APPLE_CALLBACK_URL は、AndroidのAppleログイン（Web経由。src/appleWeb.ts）に要る。Apple Developerで
   // Services ID（予定の名前: com.yskms.warikanseikatsu.web。App IDとは別の識別子）を作り、Return URL に APPLE_CALLBACK_URL
-  // を登録する。APPLE_CALLBACK_URL は、本番の独自ドメイン（まだ決めていない）の `/auth/apple/callback`。Singfolioは、
-  // ドメインが決まっているので、コードの定数にしている（`APPLE_CALLBACK_URL`）。ここは、決まるまで置けないので vars にした。
-  // どちらも作るまでは仮の値で、そのあいだ、AndroidのAppleログインは通らない（`npm run deploy` の前の確認が、デプロイを止める。
-  // docs/backend-design.md 12章）。
+  // を登録する。APPLE_CALLBACK_URL は、本番の独自ドメイン `warikan-seikatsu.app` の `/auth/apple/callback`（`routes` と同じドメイン。
+  // `test/config.test.ts` が固定している）。Singfolioは、コードの定数にしている（`APPLE_CALLBACK_URL`）。ここは、ドメインが決まる前に
+  // vars にしたままにしてある。APPLE_SERVICES_ID は作るまで仮の値で、そのあいだ、AndroidのAppleログインは通らない
+  // （`npm run deploy` の前の確認が、デプロイを止める。docs/backend-design.md 12章）。
   "vars": {
     "APPLE_BUNDLE_ID": "com.yskms.warikanseikatsu",
     "APPLE_SERVICES_ID": "0-not-created-yet",
-    "APPLE_CALLBACK_URL": "https://not-created-yet.invalid/auth/apple/callback",
+    "APPLE_CALLBACK_URL": "https://warikan-seikatsu.app/auth/apple/callback",
     "APPLE_TEAM_ID": "3L2FPFG722",
     "APPLE_KEY_ID": "0-not-created-yet",
     "GOOGLE_WEB_CLIENT_ID": "0-not-created-yet.apps.googleusercontent.com"
