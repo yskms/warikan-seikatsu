@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { unstable_readConfig } from 'wrangler';
 import { isInviteToken } from '../src/invites.ts';
+import { MAX_MEMBERS_PER_GROUP } from '../src/limits.ts';
 import { APPLE_APP_SITE_ASSOCIATION, ASSET_LINKS, handleSite } from '../src/site.ts';
 import { workerDir } from './localDatabase.ts';
 
@@ -204,6 +205,48 @@ describe('worker/public/（静的アセット）', () => {
     const html = readFileSync(path.join(publicDir, 'privacy-policy.html'), 'utf8');
     assert.match(html, /id="account-deletion"/);
     assert.match(html, /アカウントを削除/);
+  });
+
+  // 文面のレビューで見つかった矛盾・誤りが、戻らないようにする（docs/backend-design.md 9章の「公開のWebページ」）。
+  it('プライバシーポリシー: お問い合わせの情報・請求の受け付け・国外の保存を書いている。人称と「子供」の表記が揃っている', () => {
+    const html = readFileSync(path.join(publicDir, 'privacy-policy.html'), 'utf8');
+    // メールで問い合わせを受けるので、「メールアドレスを受け取らない」と言い切らない（受け取るのは、お問い合わせの情報）。
+    assert.match(html, /<h3>お問い合わせの情報<\/h3>/);
+    assert.doesNotMatch(html, /メールアドレスと名前は、受け取らず/);
+    assert.match(html, /情報の確認・訂正・削除などの請求/);
+    assert.match(html, /日本の外にあるサーバー/);
+    // 削除したあとに、支出の内容（自由入力）が残ることへの対処（締めた月は編集できない）。
+    assert.match(html, /削除する前に、その支出を編集または削除してください/);
+    assert.match(html, /締めた月の記録は、編集も削除もできません/);
+    assert.doesNotMatch(html, /あなた/);
+    assert.doesNotMatch(html, /お子様/);
+  });
+
+  it('利用規約: 免責が軽過失の範囲を限定する形で、変更は事前の告知を伴い、仕様上できない行為を禁止していない', () => {
+    const html = readFileSync(path.join(publicDir, 'terms.html'), 'utf8');
+    assert.match(html, /軽過失があるにとどまるときは、運営者が賠償する損害は、直接かつ通常生じる損害に限ります/);
+    // 「法令で認められない場合は、その範囲で適用しない」の形（サルベージ条項）は、消費者契約法上、不明確とされる。
+    assert.doesNotMatch(html, /認められない場合/);
+    // 規約の変更は、変更の内容と施行日を、施行日より前に告知する（民法548条の4）。
+    assert.match(html, /変更の内容と施行日を、施行日より前に/);
+    // 参加は、本人が確認の画面で「参加する」を押さないとできない。他の人を、本人の同意なく参加させることはできない。
+    assert.doesNotMatch(html, /その人をグループに参加させる/);
+    assert.match(html, /サーバーに保存したデータを削除します/);
+  });
+
+  it('トップ: 人数の上限が、Workerの上限と同じ', () => {
+    const html = readFileSync(path.join(publicDir, 'index.html'), 'utf8');
+    assert.match(html, new RegExp(`最大${MAX_MEMBERS_PER_GROUP}人`));
+    // 繰越は送金ごと。「精算しきれない分」と書くと、一部だけ繰り越せるように読める。
+    assert.doesNotMatch(html, /精算しきれない/);
+  });
+
+  it('招待の案内ページ: URLの形が不正なときの案内が本文より前にあり、本文を隠せる。サインインの手順がある', () => {
+    const html = readFileSync(path.join(publicDir, 'invite.html'), 'utf8');
+    assert.ok(html.indexOf('id="invalid"') < html.indexOf('id="content"'), '不正な形の案内は、本文より前');
+    assert.match(readFileSync(path.join(publicDir, 'invite.js'), 'utf8'), /content\.hidden = true/);
+    // アプリのインストール後は、サインインのあとに参加確認が出る（docs/screens.md 2章。招待はメモリに持たれる）。
+    assert.match(html, /サインインすると、参加の確認の画面が出ます/);
   });
 
   it('_headers: 外部への通信と、スクリプトの外部読み込みを、CSPで禁止する', () => {
