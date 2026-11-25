@@ -11,6 +11,8 @@
 //     （`@expo/vector-icons` をルートから import すると、使わないものを含むフォント19種が入る。Singfolio は自前で同梱したフォント
 //     〔`assets/fonts`〕があるので、そのままは移せない。逆輸入するなら、それを除く形にする）
 //   - KNOWN_SO から `libexpo-sqlite`（このアプリには expo-sqlite が無い）を、下の「載せていないもの」から SQLite を外した
+//   - `findAar` の失敗の案内: Singfolio は `--refresh-dependencies` を勧めるが、`:app:dependencies` は AAR 本体を落とさない
+//     （コードからの推論。キャッシュが空の環境では試していない）ので、先にビルドする案内に直した。Singfolio 側は未修正
 //   - 一時ディレクトリの名前、出力・前提の説明の文
 //
 //     node scripts/generate-licenses.mjs           # src/legal/thirdPartyLicenses.ts を作り直す
@@ -21,7 +23,8 @@
 // 出力  src/legal/thirdPartyLicenses.ts（設定の「このアプリについて」→「ライセンス」が出す。手で編集しない。
 //       依存を更新・追加したら、必ず作り直す）
 // 前提  node_modules・ios/・android/ があること（`npx expo prebuild` 済み。Android の依存は Gradle で、iOS の Pod は
-//       Podfile.lock で調べる。どちらも gitignore されている。Googleのサインイン〔`modules/warikan-google-signin`〕を
+//       Podfile.lock で調べる。どちらも gitignore されている。Android は、AAR が Gradle のキャッシュにあること
+//       （一度ビルドしてある。`findAar`）。Googleのサインイン〔`modules/warikan-google-signin`〕を
 //       足した・上げたあとは、`npx expo prebuild --platform ios` で `ios/` を作り直す。古いと、iOS の Google の Pod が無く、
 //       生成が失敗する。`ios/` で `pod install` だけを実行しても通らない: prebuild のとき、`plugins/withGoogleSignIn.js` が
 //       Podfile に足す modular headers（GoogleUtilities・RecaptchaInterop）が無く、Swift の Pod の統合で失敗する）
@@ -761,7 +764,12 @@ function findAar(group, artifact, version) {
   const hash = existsSync(base)
     ? readdirSync(base).find((sub) => existsSync(path.join(base, sub, `${artifact}-${version}.aar`)))
     : undefined;
-  if (!hash) throw new Error(`${group}:${artifact}:${version} の AAR が Gradle のキャッシュに無い（--refresh-dependencies を試す）`);
+  if (!hash) {
+    throw new Error(
+      `${group}:${artifact}:${version} の AAR が Gradle のキャッシュに無い。\`:app:dependencies\` は、依存の一覧を解決するだけで、` +
+        'AAR 本体は落とさない。android/ で、先にビルド（`./gradlew :app:assembleDebug` など）を一度実行して、キャッシュに落とす',
+    );
+  }
   return path.join(base, hash, `${artifact}-${version}.aar`);
 }
 

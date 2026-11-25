@@ -48,6 +48,9 @@ export function LicensesScreen() {
         {openSource.map((item) => (
           <LicenseRow key={item.key} item={item} />
         ))}
+        {/* 見出しと説明の文は、「全文を持たないもの」が、Googleの Android SDK License の依存だけ、という前提で書いている
+            （生成のとき、その groupId にだけ `licenseUrl` を付ける。生成物のテストが、名前2つに固定している）。別の規約の依存を
+            足したら、このテストと一緒に、この文言を直す。 */}
         {terms.length > 0 ? (
           <>
             <Text style={[styles.section, { color: colors.textSecondary }]} accessibilityRole="header">
@@ -131,7 +134,11 @@ function TermsRow({ item }: { item: TermsItem }) {
         accessibilityState={{ expanded }}
         accessibilityLabel={`${item.name}、${item.detail}`}
         accessibilityHint={expanded ? '詳細を閉じます' : '含まれるものと規約を表示します'}
-        onPress={() => setExpanded((current) => !current)}
+        onPress={() => {
+          setExpanded((current) => !current);
+          // 閉じて開き直したときに、前の失敗の文言が、押していないのに残らないようにする。
+          setFailed(false);
+        }}
         style={({ pressed }) => [styles.itemHeader, pressed && styles.pressed]}
       >
         <View style={styles.titles}>
