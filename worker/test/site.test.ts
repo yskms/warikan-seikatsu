@@ -211,7 +211,7 @@ describe('worker/public/（静的アセット）', () => {
   it('プライバシーポリシー: お問い合わせの情報・請求の受け付け・国外の保存を書いている。人称と「子供」の表記が揃っている', () => {
     const html = readFileSync(path.join(publicDir, 'privacy-policy.html'), 'utf8');
     // メールで問い合わせを受けるので、「メールアドレスを受け取らない」と言い切らない（受け取るのは、お問い合わせの情報）。
-    assert.match(html, /<h3>お問い合わせの情報<\/h3>/);
+    assert.match(html, /<h3 id="contact-info">お問い合わせの情報<\/h3>/);
     assert.doesNotMatch(html, /メールアドレスと名前は、受け取らず/);
     assert.match(html, /情報の確認・訂正・削除などの請求/);
     assert.match(html, /日本の外にあるサーバー/);
@@ -220,6 +220,13 @@ describe('worker/public/（静的アセット）', () => {
     assert.match(html, /締めた月の記録は、編集も削除もできません/);
     assert.doesNotMatch(html, /あなた/);
     assert.doesNotMatch(html, /お子様/);
+    // ログイン状態の値の保存期間は、実装（最後の利用から約90日で期限切れ。worker/src/session.ts）と合わせる。
+    assert.match(html, /最後に使ってから約90日で期限が切れて/);
+    // メールはCloudflareに保管されない（Email Routing は転送だけ）。置き場は、運営者が使うメールサービス。
+    assert.match(html, /運営者が使うメールサービスに届き、そこに保管されます/);
+    assert.match(html, /メールは転送されるだけで、Cloudflareには保管されません/);
+    // 運営者の氏名・住所は、請求があれば遅滞なく答える（個人情報保護法の公表事項は、本人の求めに応じて遅滞なく回答する形でも足りる）。
+    assert.match(html, /氏名と住所は、ご請求があれば、遅滞なくお答えします/);
   });
 
   it('利用規約: 免責が軽過失の範囲を限定する形で、変更は事前の告知を伴い、仕様上できない行為を禁止していない', () => {
@@ -239,6 +246,10 @@ describe('worker/public/（静的アセット）', () => {
     assert.match(html, new RegExp(`最大${MAX_MEMBERS_PER_GROUP}人`));
     // 繰越は送金ごと。「精算しきれない分」と書くと、一部だけ繰り越せるように読める。
     assert.doesNotMatch(html, /精算しきれない/);
+    // 「ふたりから」と書くと、1人では使えないように読める（グループを作った直後は1人で使える）。
+    assert.doesNotMatch(html, /ふたりから/);
+    // 繰越は、できない場合がある（`canCarry`。脱退する人の送金など）。いつでも選べるように書かない。
+    assert.doesNotMatch(html, /送金ごとに、精算するか、次の月に繰り越すかを選べます/);
   });
 
   it('招待の案内ページ: URLの形が不正なときの案内が本文より前にあり、本文を隠せる。サインインの手順がある', () => {
