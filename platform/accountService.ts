@@ -5,9 +5,10 @@
 // - Apple: iOSはネイティブのサインイン（`expo-apple-authentication`。IDトークンを得る）。Androidは Web 経由
 //   （Custom Tab。認可コードを得て、IDトークンへの交換はWorkerがする）。どちらか1つだけを組み込む（`accountService` の
 //   `idTokenProviders` と `authCodeProviders`）。
-// - Google: まだ組み込まない（ネイティブのモジュールとクライアントIDがまだ無い）。`signIn('google')` は `provider-unavailable`。
-// - APIの置き場は、`createAuthRepository` の既定（`src/repositories/apiClient.ts` の `API_ORIGIN`。本番のドメインが決まるまで
-//   仮の値）のまま。開発でローカルのWorkerに向ける必要が出たら、ここで `options.origin` を渡す（`__DEV__` のときだけ、
+// - Google: 両OSで、自作のExpoモジュール（`modules/warikan-google-signin`。Googleの公式SDKだけを使う）でIDトークンを得る。
+//   クライアントIDは `app.json` の `plugins`（`plugins/withGoogleSignIn.js`）で、ネイティブの設定に入る。ネイティブ側が無いビルドでも、
+//   import では落ちず、呼んだときに `provider-unavailable` になる。
+// - APIの置き場は、`createAuthRepository` の既定（`src/repositories/apiClient.ts` の `API_ORIGIN`。本番のドメイン）のまま。開発でローカルのWorkerに向ける必要が出たら、ここで `options.origin` を渡す（`__DEV__` のときだけ、
 //   環境変数で上書きする、など）。Workerは、HTTP（平文）を `localhost`・`127.0.0.1`・`[::1]` のときだけ通す（`worker/src/https.ts`）。
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform } from 'react-native';
@@ -15,6 +16,7 @@ import { Platform } from 'react-native';
 import { createAppleSignInRepository } from '../src/repositories/appleSignInRepository.ts';
 import { createAppleWebSignInRepository } from '../src/repositories/appleWebSignInRepository.ts';
 import { createAuthRepository } from '../src/repositories/authRepository.ts';
+import { createGoogleSignInRepository } from '../src/repositories/googleSignInRepository.ts';
 import { createSessionRepository } from '../src/repositories/sessionRepository.ts';
 import {
   createAccountService,
@@ -22,6 +24,7 @@ import {
   type SessionAccess,
 } from '../src/services/accountService.ts';
 import { withSessionLostNotice } from '../src/services/sessionLost.ts';
+import { signInWithGoogle } from '../modules/warikan-google-signin/index.ts';
 import { authBrowser } from './authBrowser.ts';
 import { authCrypto } from './authCrypto.ts';
 import { installMarker } from './installMarker.ts';
@@ -32,7 +35,10 @@ const { access, ...account } = createAccountService({
   sessions: createSessionRepository(secureStorage),
   installMarker,
   sha256Base64Url: authCrypto.sha256Base64Url,
-  idTokenProviders: Platform.OS === 'ios' ? { apple: createAppleSignInRepository(AppleAuthentication) } : {},
+  idTokenProviders: {
+    google: createGoogleSignInRepository({ signInWithGoogle }),
+    ...(Platform.OS === 'ios' ? { apple: createAppleSignInRepository(AppleAuthentication) } : {}),
+  },
   authCodeProviders: Platform.OS === 'android' ? { apple: createAppleWebSignInRepository(authBrowser) } : {},
   randomVerifier: authCrypto.randomVerifier,
 });

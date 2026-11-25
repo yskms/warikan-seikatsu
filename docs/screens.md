@@ -526,7 +526,7 @@
 - 結果の読み上げ: Androidは `accessibilityLiveRegion` で読まれる。**iOSは読まれないので、`announceForAccessibility` で読み上げる**（削除の画面の失敗・削除は済んだ結果と、ログイン画面の上の案内）。
 - 実行中（本人確認の画面を待つあいだと通信）は、戻る矢印・Androidの戻る操作・iOSの端のスワイプを止める（`beforeRemove` と `gestureEnabled`）。招待URLによる参加確認への切り替えは遅らせる（`useHoldInviteSwap`）。確認ダイアログから削除を始めるので、画面が外れていれば何もしない（`useMounted`）。`app/_layout.tsx` の `delete-account` に `dangerouslySingular` を付けている（外さない。理由は、シートと同じ）。
 - 削除のあとも、最後に開いたグループの記憶（`platform/lastGroup.ts`）は消さない（ログアウトと同じ。1章）。
-- **Googleは、まだ組み込んでいない**ので、Googleのアカウントでの削除は `provider-unavailable`（その人は、そもそもログインできない）。
+- Googleのアカウントでの削除は、Googleのログイン（`modules/warikan-google-signin`）の組み込み後は、再認証のIDトークンを同じ部品で得る。**実機での確認は、まだ**。
 - **確かめたのは**、Androidのエミュレータ（API 36。debugビルド）で、アカウントの層（`getSignedInProvider`・`signIn`・`signOut`・`deleteAccount` と `withSession`）とグループ一覧のAPIを偽のものに差し替えた状態（保存はしない一時の差し替え。`withSessionLostNotice` の包みと画面は、本物のコード）。設定の行、説明、確認ダイアログ、実行中の表示（スピナー・説明文・戻る矢印が薄くなる・戻る操作が効かない）、取りやめ（何も出ない）、本人確認の失敗、結果が分からない失敗（`delete-unconfirmed`）の文言、401でログイン画面へ移り文言がその上に出ること、ログインで文言が消えること、端末のセッションを捨てられなかったときの結果と「ログアウト」、成功でログイン画面の上に2行（削除した・Appleの連携）が出ること、設定の行の2連打（`adb shell 'input tap … & input tap … & wait'`）のあとに、戻る操作1回で設定へ戻ること（`dangerouslySingular` を付けた状態。付ける前は試していない）、ダーク。**未確認**: 本物のWorker・Apple・Googleとの通信（`API_ORIGIN` が仮の値。本物の再認証の画面と、削除、Appleの失効）、iOS（端の戻るスワイプの無効化、Appleの設定からの連携解除の文言）、Android 14以下の実機、スクリーンリーダー、文字サイズを大きくしたとき、招待URLを開いたときに実行中の画面が外れないこと（`useHoldInviteSwap`。ほかの画面の遅らせる仕組みと同じ配線で、この画面では動かしていない）、Android のApple（Web経由）での本人確認で、Custom Tabから戻るURL（`warikan-seikatsu://auth/apple?...`）を受けたあとも、削除の画面が残って結果を受け取れること（`app/+native-intent.tsx` が、起動中は `null` を返す設計。本物のAppleで確かめるまで未確認。アプリのプロセスが本人確認の最中に終わると、起動時のURLとして届き、ルートから始まるので、削除の画面は失われる）、iOSの `announceForAccessibility` の読み上げ。
 
 ### このアプリについて

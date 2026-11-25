@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["WarikanGoogleSignInModule"],
+    "appDelegateSubscribers": ["WarikanGoogleSignInAppDelegateSubscriber"]
+  },
+  "android": {
+    "modules": ["com.yskms.warikanseikatsu.googlesignin.WarikanGoogleSignInModule"]
+  }
+}

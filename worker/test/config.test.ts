@@ -61,6 +61,19 @@ describe('wrangler.jsonc', () => {
     );
   });
 
+  // このアプリで足したテスト。Googleのトークンの `aud`（Worker）は、アプリがサインインに使うサーバー用（Web）のクライアントID
+  // （`app.json` の `plugins` の `plugins/withGoogleSignIn.js` の `webClientId`）と同じ。ずれると、すべてのGoogleログインが拒否される。
+  it('GOOGLE_WEB_CLIENT_ID が、アプリ（app.json の withGoogleSignIn の webClientId）と同じ', () => {
+    const app = JSON.parse(readFileSync(path.join(workerDir, '..', 'app.json'), 'utf8')) as {
+      expo: { plugins: Array<string | [string, Record<string, string>]> };
+    };
+    const entry = app.expo.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === './plugins/withGoogleSignIn.js');
+    assert.ok(Array.isArray(entry), 'app.json に withGoogleSignIn の設定が無い');
+    assert.equal(entry[1].webClientId, vars.GOOGLE_WEB_CLIENT_ID);
+    // iOSのクライアントは、Webのクライアントとは別のID（同じにすると、aud でどちらか区別できない）。
+    assert.notEqual(entry[1].iosClientId, entry[1].webClientId);
+  });
+
   it('Appleのトークンの失効に使う識別子（vars）の形', () => {
     // Team ID は10文字の英大文字・数字。Key ID は、Sign in with Apple の鍵を作るまでは、置き場所の値のまま
     // （仮の値でも、失効が行われないだけで、アカウントの削除は止まらない）。

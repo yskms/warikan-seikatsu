@@ -26,6 +26,13 @@
       ]
     },
     "plugins": [
+      [
+        "./plugins/withGoogleSignIn.js",
+        {
+          "iosClientId": "242809187595-8k66s1a1fpd3c244h27vf8jtetq14atc.apps.googleusercontent.com",
+          "webClientId": "242809187595-b2rls14sutpaf3difqblstoa7sj2ciq7.apps.googleusercontent.com"
+        }
+      ],
       "expo-router",
       "expo-apple-authentication"
     ],
