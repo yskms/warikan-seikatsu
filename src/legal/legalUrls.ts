@@ -6,6 +6,9 @@
 // 公開したら、ここを実際のURLに置き換える。リリース前に、仮の値が残っていないことを確かめる。
 export const PRIVACY_POLICY_URL = 'https://not-created-yet.invalid/privacy-policy';
 export const TERMS_OF_SERVICE_URL = 'https://not-created-yet.invalid/terms';
+// お問い合わせの窓口（静的なWebページのお問い合わせ案内。メールアドレスをこのリポジトリに書かないため、ページを置く前提）。
+// これも仮の値。`isPlaceholderUrl` は https のURLのホスト名で見分けるので、`mailto:` にするときは、その見分けも直す。
+export const CONTACT_URL = 'https://not-created-yet.invalid/contact';
 
 /** 仮の値（まだ公開していないページ）か。 */
 export function isPlaceholderUrl(url: string): boolean {

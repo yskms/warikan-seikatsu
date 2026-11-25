@@ -1,6 +1,5 @@
 // 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「固定費」・「メンバーと招待」・
-// 「グループの設定」と、「アプリの設定」のキーパッドの並び、「アカウント」のログアウト・アカウントを削除。このアプリについて（規約など）は、
-// まだ作っていない。作るときに、ここへ足す。
+// 「グループの設定」と、「アプリの設定」のキーパッドの並び、「アカウント」のログアウト・アカウントを削除、このアプリについて。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -108,6 +107,18 @@ export function SettingsScreen() {
             style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, busy && styles.dimmed, pressed && styles.pressed]}
           >
             <Text style={[styles.rowLabel, { color: colors.error }]}>アカウントを削除</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+
+        <View style={styles.section}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="このアプリについて"
+            onPress={() => router.push('/about')}
+            style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
+          >
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>このアプリについて</Text>
             <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
           </Pressable>
         </View>

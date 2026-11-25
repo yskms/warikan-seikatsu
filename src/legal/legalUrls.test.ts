@@ -3,11 +3,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from './legalUrls.ts';
+import { CONTACT_URL, isPlaceholderUrl, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from './legalUrls.ts';
 
 describe('legalUrls', () => {
-  it('どちらもHTTPSのURL', () => {
-    for (const url of [PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL]) {
+  it('すべてHTTPSのURL', () => {
+    for (const url of [PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL, CONTACT_URL]) {
       assert.equal(new URL(url).protocol, 'https:');
     }
   });
