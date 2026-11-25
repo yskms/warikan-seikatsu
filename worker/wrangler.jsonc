@@ -61,12 +61,13 @@
     "GOOGLE_WEB_CLIENT_ID": "242809187595-b2rls14sutpaf3difqblstoa7sj2ciq7.apps.googleusercontent.com"
   },
 
-  // 本番のD1を作るまでは、ローカル専用。database_id は、本番のD1を作ったときにそのIDに置き換える（秘密ではない）。
+  // 本番のD1（2026-11-25に作成。リージョンは APAC）。database_id は秘密ではない。ローカル（wrangler dev・テスト）は、
+  // このIDに関係なく、.wrangler/state のローカルDBを使う。
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "warikan-seikatsu",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "c3832fc2-b2e4-408a-993b-46d17ba8ca81",
       "migrations_dir": "migrations"
     }
   ]
