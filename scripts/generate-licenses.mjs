@@ -11,7 +11,7 @@
 //     （ICON_FONTS の「Material Design Icons」の全文 `scripts/license-texts/MaterialDesignIcons.txt` は、このアプリで
 //     新しく作った。Singfolio には無い）
 //   - **処理の追加**: `fontEntries` に、ICON_FONTS に挙げていないフォントがアプリに入ったら失敗にする検査を足した
-//     （`@expo/vector-icons` をルートから import すると、使わないフォントが19種入る。Singfolio は自前で同梱したフォント
+//     （`@expo/vector-icons` をルートから import すると、使わないものを含むフォント19種が入る。Singfolio は自前で同梱したフォント
 //     〔`assets/fonts`〕があるので、そのままは移せない。逆輸入するなら、それを除く形にする）
 //   - KNOWN_SO から `libexpo-sqlite`（このアプリには expo-sqlite が無い）を、下の「載せていないもの」から SQLite を外した
 //   - 一時ディレクトリの名前
