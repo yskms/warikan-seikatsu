@@ -36,9 +36,9 @@
   // （アプリに埋め込まれる、またはAppleの設定画面で付けた名前）。Googleのクライアントの `client_secret` は使わない。
   // APPLE_BUNDLE_ID は app.json の ios.bundleIdentifier と同じ（test/config.test.ts が固定している）。
   //
-  // GOOGLE_WEB_CLIENT_ID は、まだ作っていない（Google Cloudで、サーバー用（Web）のクライアントIDを作る）。
-  // 作るまでは、実在しない値にしてあり、どのGoogleのIDトークンも aud が合わず拒否される（Googleログインは通らない）。
-  // 作ったら置き換える（docs/backend-design.md 12章）。
+  // GOOGLE_WEB_CLIENT_ID は、Google Cloud（プロジェクト warikan-seikatsu）で作った、サーバー用（Web）のクライアントID。
+  // iOS・Androidのクライアントのトークンも、アプリが Web のクライアントIDを指定してサインインするので、aud はこの値になる
+  // （docs/backend-design.md 9章の「認証API」）。
   //
   // APPLE_TEAM_ID・APPLE_KEY_ID は、アカウントの削除（POST /auth/delete）で、iOSの認可コードを交換し、Appleのトークンを失効させるときの
   // `client_secret`（ES256のJWT）に入れる識別子。Team ID はアプリの署名にも入り、Key ID は秘密鍵（.p8。APPLE_PRIVATE_KEY。秘密情報）が
@@ -58,7 +58,7 @@
     "APPLE_CALLBACK_URL": "https://warikan-seikatsu.app/auth/apple/callback",
     "APPLE_TEAM_ID": "3L2FPFG722",
     "APPLE_KEY_ID": "D7C2DVY2Q9",
-    "GOOGLE_WEB_CLIENT_ID": "0-not-created-yet.apps.googleusercontent.com"
+    "GOOGLE_WEB_CLIENT_ID": "242809187595-b2rls14sutpaf3difqblstoa7sj2ciq7.apps.googleusercontent.com"
   },
 
   // 本番のD1を作るまでは、ローカル専用。database_id は、本番のD1を作ったときにそのIDに置き換える（秘密ではない）。
