@@ -1,14 +1,16 @@
 // 設定（docs/screens.md 6章）。いま作ってあるのは、「このグループ」の「カテゴリと負担割合」・「固定費」・「メンバーと招待」・
-// 「グループの設定」と、「アカウント」のログアウト・アカウントを削除。アプリの設定（キーパッドの並び）・このアプリについて（規約など）は、
+// 「グループの設定」と、「アプリの設定」のキーパッドの並び、「アカウント」のログアウト・アカウントを削除。このアプリについて（規約など）は、
 // まだ作っていない。作るときに、ここへ足す。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { keypadLayoutLabel } from '../../src/services/keypadLayout.ts';
 import { useCurrentGroup } from '../CurrentGroup.tsx';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
+import { useKeypadLayout } from '../useKeypadLayout.ts';
 import { useSignOut } from '../useSignOut.ts';
 
 export function SettingsScreen() {
@@ -16,6 +18,7 @@ export function SettingsScreen() {
   const router = useRouter();
   const group = useCurrentGroup();
   const { confirmSignOut, busy, error } = useSignOut();
+  const keypadLayout = keypadLayoutLabel(useKeypadLayout());
   return (
     <SafeAreaView edges={['top']} style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -67,6 +70,25 @@ export function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={[styles.heading, { color: colors.textSecondary }]} accessibilityRole="header">
+            アプリの設定（この端末だけ）
+          </Text>
+          {/* 現在の並びを、行の右に出す（選ぶ画面は、2つの並びの小さな図つき） */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`キーパッドの並び、${keypadLayout}`}
+            onPress={() => router.push('/keypad-layout')}
+            style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
+          >
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>キーパッドの並び</Text>
+            <View style={styles.rowValue}>
+              <Text style={[styles.rowValueText, { color: colors.textSecondary }]}>{keypadLayout}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+            </View>
+          </Pressable>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.heading, { color: colors.textSecondary }]} accessibilityRole="header">
             アカウント
           </Text>
           {error ? (
@@ -102,6 +124,8 @@ const styles = StyleSheet.create({
   heading: { fontSize: 13, fontWeight: '600' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth },
   rowLabel: { fontSize: 16, fontWeight: '600' },
+  rowValue: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rowValueText: { fontSize: 15 },
   error: { fontSize: 14, lineHeight: 20 },
   pressed: { opacity: 0.7 },
   dimmed: { opacity: 0.5 },

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { startInviteLinks } from '../platform/inviteLink.ts';
+import { keypadLayoutPreference } from '../platform/keypadLayout.ts';
 import { AuthStateProvider, useAuth } from '../ui/AuthStateProvider.tsx';
 import { useColors } from '../ui/useColors.ts';
 import { useInviteSwapHeld } from '../ui/inviteHold.ts';
@@ -19,6 +20,11 @@ export default function RootLayout() {
   // （Androidで、新しいActivityが作られ、ルートがマウントし直されたとき、`url` イベントが届かないため。`platform/inviteLink.ts`）。
   useEffect(() => {
     startInviteLinks();
+  }, []);
+  // 覚えているキーパッドの並びを読む（アプリの設定。1回だけ。金額を入力する画面は、ログインのあとにしか開けないので、それまでに読み終わる）。
+  // 読めなくても、スマホの並びで使える（`src/services/keypadLayoutPreference.ts`）
+  useEffect(() => {
+    void keypadLayoutPreference.start();
   }, []);
   return (
     <AuthStateProvider>
@@ -71,6 +77,9 @@ function RootNavigator() {
         {/* グループの設定も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。画面ごとに入力と「保存の最中」を持つので、
             重なると、下の画面は、上の画面の保存を知らず、戻ったときに同じ入力を保存し直せてしまう */}
         <Stack.Screen name="group-settings" dangerouslySingular />
+        {/* キーパッドの並びも、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。状態は端末の設定（メモリ）で共有しているので、
+            重なっても壊れないが、素早く2回押すと同じ画面が2枚重なり、戻る操作が2回要る */}
+        <Stack.Screen name="keypad-layout" dangerouslySingular />
         {/* アカウントの削除も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。画面ごとに「実行中」を持つので、重なると、
             下の画面は、上の画面の実行中を知らず、戻る操作で下の画面が見えたときに、続けて削除を始められる。付けた状態で、設定の行を
             2連打して、戻る操作1回で設定へ戻ることを、エミュレータで確かめた（付ける前は試していない） */}
