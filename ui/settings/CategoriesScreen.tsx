@@ -15,8 +15,9 @@
 //     ので、一覧へ戻ると思う）。並びを変えていれば、破棄の確認を出す。通信の最中は、戻る操作が効かない。止めているのは
 //     `beforeRemove` で、セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`CategoryEditSheet.tsx`
 //     と同じ）。招待URLによる参加確認への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
-//   - **読み直しの最中は、「並べ替え」に入れない**（`refreshing`。入ると、読み直す前の並びで始まり、応答が届いたあとに、並びが古い・
-//     変えていないのに「変えた」扱いになる）。並べ替えの状態では、読み直しは起きない（画面にフォーカスが戻るときだけ読み直し、
+//   - **読み直しの最中は、「並べ替え」に入れず、月も切り替えられない**（`refreshing`。入ると、読み直す前の並びで始まり、応答が届いた
+//     あとに、並びが古い・変えていないのに「変えた」扱いになる。月の切り替えは、読み直しの応答を捨て、カテゴリを読み直す前のまま
+//     にする）。並べ替えの状態では、読み直しは起きない（画面にフォーカスが戻るときだけ読み直し、
 //     その状態では、行を押しても別の画面へ行けない）。
 //   - 失敗のあとの扱いは `reorderFailureOutcome`（`src/services/categoryMessage.ts`）: 他のメンバーの操作で費目が変わったと断られたら
 //     （`categories_changed`）、並べ替えをやめて読み直す。送り直しても通らない失敗（脱退が確定している・見つからない）は、並べ替え
@@ -114,11 +115,11 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   );
 
   async function selectMonth(month: string) {
-    if (load.status !== 'ready' || month === shownMonth.current) return;
+    // 読み直しの最中は切り替えない（切り替えは、割合だけを読み、カテゴリは持っているものを使う。読み直しの応答を捨てると、
+    // 編集する前のカテゴリのまま、一覧も並べ替えも出る）
+    if (load.status !== 'ready' || switching || refreshing || month === shownMonth.current) return;
     const seq = (requestSeq.current += 1);
     setSwitching(true);
-    // 読み直しの応答は、この切り替えが捨てる（`requestSeq`）ので、その「読み直し中」も、ここで終える
-    setRefreshing(false);
     setMonthError(null);
     try {
       const shares = await categoryService.loadShares(groupId, month);
@@ -157,7 +158,11 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
 
   reorderingRef.current = reorder !== null;
 
-  // 通信の最中は戻らない。並べ替えの状態の戻る操作は、画面を出ずに、並べ替えをやめる（並びを変えていれば、破棄の確認を出す）
+  // 通信の最中は戻らない。並べ替えの状態の戻る操作は、画面を出ずに、並べ替えをやめる（並びを変えていれば、破棄の確認を出す）。
+  // **この画面が `beforeRemove` を通って外されるのは、ユーザーの戻る操作のときだけ、という前提**（いまは、セッション切れ・招待による
+  // 切り替え〔`Stack.Protected`〕と、グループの切り替え〔`key` の作り直し〕は通らず、並べ替えの状態では別の画面へ移れない）。
+  // 別の画面からこの画面を開く導線（ホームの「内訳を見る」など）を足すときは、置き換え（`dangerouslySingular` など）で、この画面が
+  // `beforeRemove` を通って外されないか確かめる（止められると、画面が切り替わらないまま、並べ替えだけが終わる）。
   useEffect(() => {
     return navigation.addListener('beforeRemove', (event) => {
       if (savingRef.current) {
@@ -358,7 +363,7 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
                       <Chips
                         options={view.months.map((option) => ({ key: option.month, label: option.label }))}
                         selected={data.month}
-                        disabled={switching}
+                        disabled={switching || refreshing}
                         onSelect={(month) => void selectMonth(month)}
                       />
                     ) : null}
