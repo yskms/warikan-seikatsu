@@ -463,6 +463,7 @@ describe('費目と月ごとの負担割合のAPI', () => {
           sourceMonth: '2026-11',
           shares: [{ memberId: alice.memberId, basisPoints: 7000 }, { memberId: bob.memberId, basisPoints: 3000 }],
           cap: { memberId: alice.memberId, capMinor: 20000 },
+          memberChangedAt: null,
           archived: false,
         },
       ]);
@@ -530,6 +531,7 @@ describe('費目と月ごとの負担割合のAPI', () => {
           sourceMonth: '2026-10',
           shares: [{ memberId: alice.memberId, basisPoints: 7000 }, { memberId: bob.memberId, basisPoints: 3000 }].sort((a, b) => (a.memberId < b.memberId ? -1 : 1)),
           cap: null,
+          memberChangedAt: null,
         },
         overriddenMonths: [],
       });

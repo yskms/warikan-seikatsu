@@ -3,6 +3,7 @@ import { handleAppleNotification } from './appleNotification.ts';
 import { handleAppleCallback, handleAppleWebLogin } from './appleWeb.ts';
 import { handleLogin, handleLogout, handleNonce } from './auth.ts';
 import {
+  handleAcknowledgeSharesReset,
   handleCreateCategory,
   handleGetCategoryRules,
   handleListCategories,
@@ -44,6 +45,7 @@ const GROUP_ME_PATH = /^\/groups\/([^/]+)\/members\/me$/;
 const GROUP_CATEGORIES_PATH = /^\/groups\/([^/]+)\/categories$/;
 const GROUP_CATEGORIES_ORDER_PATH = /^\/groups\/([^/]+)\/categories\/order$/;
 const CATEGORY_PATH = /^\/categories\/([^/]+)$/;
+const GROUP_SHARES_RESET_PATH = /^\/groups\/([^/]+)\/category-shares\/acknowledge-reset$/;
 const GROUP_CATEGORY_RULES_PATH = /^\/groups\/([^/]+)\/months\/([^/]+)\/category-shares$/;
 const GROUP_CATEGORY_RULE_PATH = /^\/groups\/([^/]+)\/months\/([^/]+)\/category-shares\/([^/]+)$/;
 const GROUP_EXPENSES_PATH = /^\/groups\/([^/]+)\/expenses$/;
@@ -124,6 +126,14 @@ export default {
       if (!isId(categoryId)) return notFound();
       if (request.method === 'PATCH') return handleUpdateCategory(request, env, now, categoryId);
       return methodNotAllowed('PATCH');
+    }
+
+    const sharesReset = GROUP_SHARES_RESET_PATH.exec(pathname);
+    if (sharesReset !== null) {
+      const groupId = sharesReset[1]!;
+      if (!isId(groupId)) return notFound();
+      if (request.method === 'POST') return handleAcknowledgeSharesReset(request, env, now, groupId);
+      return methodNotAllowed('POST');
     }
 
     const categoryRules = GROUP_CATEGORY_RULES_PATH.exec(pathname);

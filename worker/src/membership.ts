@@ -113,6 +113,8 @@ export function participantIds(members: readonly MemberInfo[], month: string): s
  * **締めた月には使わない**（締めた月の割合は確定している）。呼び出し側が、未締めの月を渡す。
  * 費目はアーカイブ済みも含めて全部書く（あとで戻された費目が、古い割合に戻らないように）。
  * メンバーが0人なら何もしない（その月を使う人がいない）。
+ *
+ * 書いた行には、`member_changed_at = now` を入れる（見直しのお知らせの印。まだ見直されていない。マイグレーション0007）。
  */
 export function resetSharesStatements(
   db: D1Database,
@@ -121,6 +123,7 @@ export function resetSharesStatements(
   month: string,
   categoryIds: readonly string[],
   memberIds: readonly string[],
+  now: number,
 ): D1PreparedStatement[] {
   if (memberIds.length === 0 || categoryIds.length === 0) return [];
   const shares = allocateEqually(BASIS_POINTS_TOTAL, memberIds);
@@ -136,8 +139,8 @@ export function resetSharesStatements(
       token,
       groupId,
       'category_month_settings',
-      ['group_id', 'category_id', 'target_month', 'cap_member_id', 'cap_minor'],
-      categoryIds.map((categoryId) => [groupId, categoryId, month, null, null]),
+      ['group_id', 'category_id', 'target_month', 'cap_member_id', 'cap_minor', 'member_changed_at'],
+      categoryIds.map((categoryId) => [groupId, categoryId, month, null, null, now]),
     ),
     ...insertRowsGuarded(
       db,
@@ -208,10 +211,12 @@ export function resetMonthsStatements(
     categoryIds: readonly string[];
     baseMonths: readonly string[];
     ruleMonths: readonly string[];
+    /** 戻した時刻（見直しのお知らせの印。`resetSharesStatements`）。 */
+    now: number;
   },
 ): D1PreparedStatement[] {
   return monthsToReset(input.baseMonths, input.ruleMonths).flatMap((month) =>
-    resetSharesStatements(db, token, groupId, month, input.categoryIds, participantIds(input.members, month)),
+    resetSharesStatements(db, token, groupId, month, input.categoryIds, participantIds(input.members, month), input.now),
   );
 }
 
@@ -348,7 +353,7 @@ export function confirmLeaveStatements(
       )
       .bind(groupId, ...dueIds, groupId, token),
     // 脱退月の翌月に参加しているのは、脱退を選んだメンバーを除く、そのとき参加している全員。それより後の月の行も直す。
-    ...resetMonthsStatements(db, token, groupId, { members, categoryIds, baseMonths, ruleMonths }),
+    ...resetMonthsStatements(db, token, groupId, { members, categoryIds, baseMonths, ruleMonths, now }),
     ...revokeInvitesStatement(db, token, groupId, now, dueIds),
     ...pauseRecurringStatements(db, token, groupId, now, { payerMemberIds: dueIds, memberChanged: true }),
   ];

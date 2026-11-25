@@ -92,6 +92,18 @@ export function parseCategoryOrder(body: Record<string, unknown>): ParseResult<s
 }
 
 /**
+ * 割合の見直しの確認の本文: `{ through }`（0以上の整数。Unixエポックのミリ秒）。アプリが見た、最も新しい
+ * `memberChangedAt`。それより新しい印は消さない（`handleAcknowledgeSharesReset`）。
+ */
+export function parseResetAcknowledgement(body: Record<string, unknown>): ParseResult<number> {
+  const extra = unknownKey(body, ['through']);
+  if (extra !== null) return fail(extra);
+  const through = body.through;
+  if (typeof through !== 'number' || !Number.isSafeInteger(through) || through < 0) return fail('through');
+  return { ok: true, value: through };
+}
+
+/**
  * 負担割合の本文: `{ shares: [{ memberId, basisPoints }], cap?: { memberId, capMinor } | null }`。
  * 割合は0〜10000で、合計は10000（2章）。上限額つきでなければ `cap` は無いか null。上限額は1〜10^12。`currencyCode` は任意。
  * 上限を負担する人が、割合の中にいること（3章）は、メンバーを知っている呼び出し側で見る前に、ここでも見る。

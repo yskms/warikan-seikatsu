@@ -31,6 +31,8 @@ export interface CategoryRuleSource {
   sourceMonth: string;
   /** 費目をアーカイブしているか。月締めで設定を引き継いで書くとき、使っていないアーカイブ済みの費目は書かない。 */
   archived: boolean;
+  /** メンバーの増減で割合を戻した時刻（まだ見直されていなければ）。月締めで引き継いで書くとき、そのまま写す。 */
+  memberChangedAt: number | null;
   rule: CategoryRule;
 }
 
@@ -105,7 +107,7 @@ export async function loadMonthState(db: D1Database, groupId: string, month: str
     db
       .prepare(
         `SELECT s.category_id AS category_id, s.target_month AS source_month, c.archived_at IS NOT NULL AS archived,
-                s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor
+                s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor, s.member_changed_at AS member_changed_at
            FROM categories c
            JOIN category_month_settings s ON s.category_id = c.id AND s.target_month = ${currentRule}
           WHERE c.group_id = ?1`,
@@ -178,10 +180,12 @@ export async function loadMonthState(db: D1Database, groupId: string, month: str
     archived: number;
     cap_member_id: string | null;
     cap_minor: number | null;
+    member_changed_at: number | null;
   }[]) {
     rules.set(row.category_id, {
       sourceMonth: row.source_month,
       archived: row.archived === 1,
+      memberChangedAt: row.member_changed_at,
       rule: {
         categoryId: row.category_id,
         shares: shareMap.get(row.category_id) ?? [],

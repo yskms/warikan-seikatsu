@@ -373,6 +373,7 @@ export async function handleJoin(request: Request, env: Env, now: number, token:
       categoryIds,
       baseMonths: [resetMonth],
       ruleMonths,
+      now,
     }),
     // `category` 以外の固定費は、自動登録を止める（5章）。
     ...pauseRecurringStatements(db, writeToken, groupId, now, { payerMemberIds: [], memberChanged: true }),

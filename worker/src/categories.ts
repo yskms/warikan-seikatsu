@@ -19,6 +19,7 @@ import {
   parseCategoryOrder,
   parseCategoryRule,
   parseCreateCategory,
+  parseResetAcknowledgement,
   parseUpdateCategory,
   type CategoryRuleInput,
 } from './categoryInput.ts';
@@ -28,6 +29,7 @@ import {
   forbidden,
   invalidRequest,
   json,
+  noContent,
   notFound,
   readJsonObject,
   unauthorized,
@@ -381,6 +383,11 @@ interface RuleJson {
   sourceMonth: string;
   shares: { memberId: string; basisPoints: number }[];
   cap: { memberId: string; capMinor: number } | null;
+  /**
+   * メンバーの増減で、この割合を均等に戻した時刻（Unixエポックのミリ秒）。まだ誰も見直していなければ入る。見直した
+   * （割合を保存した、または見直しの確認をした）ら null。ホームのお知らせ「メンバーが増減した」の元（5章の「参加」・12章）。
+   */
+  memberChangedAt: number | null;
 }
 
 /** 費目ごとの、その月の割合（その月以前で最も新しい月の行）。割合が1つも無い費目（作る前の月）は含めない。 */
@@ -395,7 +402,8 @@ async function loadRules(
       .prepare(
         `SELECT c.id AS id, c.group_id AS group_id, c.name AS name, c.icon AS icon, c.color AS color,
                 c.sort_order AS sort_order, c.archived_at AS archived_at, c.created_at AS created_at,
-                s.target_month AS source_month, s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor
+                s.target_month AS source_month, s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor,
+                s.member_changed_at AS member_changed_at
            FROM categories c
            JOIN category_month_settings s ON s.category_id = c.id AND s.target_month = ${currentRule}
           WHERE c.group_id = ?1 ORDER BY c.sort_order, c.id`,
@@ -422,6 +430,7 @@ async function loadRules(
       source_month: string;
       cap_member_id: string | null;
       cap_minor: number | null;
+      member_changed_at: number | null;
     })[]
   ).map((row) => ({
     category: row,
@@ -430,6 +439,7 @@ async function loadRules(
       sourceMonth: row.source_month,
       shares: sharesByCategory.get(row.id) ?? [],
       cap: row.cap_member_id === null ? null : { memberId: row.cap_member_id, capMinor: row.cap_minor! },
+      memberChangedAt: row.member_changed_at,
     },
   }));
 }
@@ -566,7 +576,53 @@ export async function handlePutCategoryRule(
       sourceMonth: month,
       shares: [...input.shares].sort((a, b) => (a.memberId < b.memberId ? -1 : 1)),
       cap: input.cap,
+      // 保存した行は書き直すので、見直しの印は消える（`member_changed_at` を入れない）。
+      memberChangedAt: null,
     },
     overriddenMonths: outcome.value.overriddenMonths,
   });
+}
+
+// POST /groups/:id/category-shares/acknowledge-reset
+
+/**
+ * 「メンバーが変わったため、割合を均等に戻した」お知らせを、見直し済みにする（`member_changed_at` の印を一括で消す）。
+ * 割合は変えない。ホームのお知らせの「確認した」。形は9章の「費目・負担割合API」。
+ *
+ * 本文の `through` は、アプリが見た最も新しい印の時刻。それより新しい印（確認を押すまでに、別のメンバーの参加などで、
+ * 割合を戻したもの）は、見ていないので消さない。同じ確認を何度送っても同じ（印が無ければ何も変わらない）ので、
+ * 競合は、読み直して1回やり直してよい（`writeToGroupWithRetry`）。
+ */
+export async function handleAcknowledgeSharesReset(
+  request: Request,
+  env: Env,
+  now: number,
+  groupId: string,
+): Promise<Response> {
+  const session = await authenticateRequest(request, env.DB, now);
+  if (session === null) return unauthorized();
+  const body = await readJsonObject(request, MAX_BODY_BYTES);
+  if (!body.ok) return body.response;
+  const parsed = parseResetAcknowledgement(body.body);
+  if (!parsed.ok) return invalidRequest(parsed.field === '' ? undefined : parsed.field);
+  const through = parsed.value;
+  const db = env.DB;
+
+  const outcome = await writeToGroupWithRetry<null, Response>(db, groupId, async () => {
+    const access = await loadGroupAccess(db, session.userId, groupId);
+    if (access === null) return { reject: notFound() };
+    if (!canEditGroupSettings(access, now)) return { reject: forbidden() };
+    return {
+      write: (token: string) => [
+        db
+          .prepare(
+            `UPDATE category_month_settings SET member_changed_at = NULL
+              WHERE group_id = ? AND member_changed_at IS NOT NULL AND member_changed_at <= ? AND EXISTS (${GROUP_WRITE_GUARD})`,
+          )
+          .bind(groupId, through, groupId, token),
+      ],
+      value: null,
+    };
+  });
+  return outcome.status === 'written' ? noContent() : writeFailure(outcome);
 }

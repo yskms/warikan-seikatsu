@@ -235,6 +235,7 @@ function anonymizeStatements(
         categoryIds: plan.categoryIds,
         baseMonths,
         ruleMonths: plan.ruleMonths,
+        now,
       }),
       ...revokeInvitesStatement(db, token, plan.groupId, now, [plan.memberId]),
       ...pauseRecurringStatements(db, token, plan.groupId, now, { payerMemberIds: [plan.memberId], memberChanged: true }),

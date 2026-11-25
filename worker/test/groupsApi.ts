@@ -1,5 +1,6 @@
 // グループ・費目・月ごとの負担割合のAPIのテストで使う、呼び出しの道具（monthApi.ts と同じ作り）。
 import {
+  handleAcknowledgeSharesReset,
   handleCreateCategory,
   handleGetCategoryRules,
   handleListCategories,
@@ -46,6 +47,14 @@ export function groupsApi(defaultEnv: Env) {
           ...opts(options),
           groupId,
           month,
+        ),
+      ),
+    acknowledgeReset: async (who: Person | null, groupId: string, body: unknown, options: Options = {}): Promise<ApiResult> =>
+      read(
+        await handleAcknowledgeSharesReset(
+          request('POST', `/groups/${groupId}/category-shares/acknowledge-reset`, token(who), body),
+          ...opts(options),
+          groupId,
         ),
       ),
     putRule: async (
