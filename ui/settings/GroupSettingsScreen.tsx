@@ -14,7 +14,8 @@
 // - グループ名を変えたら、所属グループの一覧を読み直す（`reloadGroups`。ホームの上部・グループの切り替えに出る名前が、古いままにならない）。
 //   名前を送った呼び出しが、済んだか分からない失敗（通信が切れた、など）で終わったときも読み直す（やり直さずに戻っても、古い名前が残らない）。
 // - グループが無い（404）と分かったら、保存を押せなくし、戻る操作の破棄の確認も出さない（この画面から先へは進めない。`GroupGate` が、
-//   別のグループか、グループの作成へ切り替える）。
+//   別のグループか、グループの作成へ切り替える）。入力欄・通貨・色も操作できなくする（入力を変えると、保存できない理由の文言が消え、
+//   理由が分からないまま、保存だけが押せない状態になる）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -115,6 +116,8 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
     };
   }, [groupId, attempt]);
 
+  // 入力を受け付けない: 保存の最中と、グループが無くなったあと
+  const frozen = busy || lost;
   const dirty = load.status === 'ready' && isDirty(load.draft, load.context);
   // 破棄の確認を出す・スワイプで戻らせないのは、保存できる入力があるあいだだけ（グループが無くなったあとの入力は、保存できない）
   const unsaved = dirty && !lost;
@@ -273,7 +276,7 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
                 value={load.draft.name}
                 onChangeText={(name) => update({ ...load.draft, name })}
                 error={fieldErrors.name}
-                editable={!busy && load.context.access.canEditGroup}
+                editable={!frozen && load.context.access.canEditGroup}
                 returnKeyType="done"
               />
               {!load.context.access.canEditGroup ? (
@@ -289,7 +292,7 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
                   options={CURRENCIES.map((currency) => ({ key: currency.code, label: currency.name }))}
                   selected={load.draft.currencyCode}
                   onSelect={(currencyCode) => update({ ...load.draft, currencyCode })}
-                  disabled={busy || !load.context.access.canEditCurrency}
+                  disabled={frozen || !load.context.access.canEditCurrency}
                 />
                 {fieldErrors.currencyCode ? (
                   <Text style={[styles.note, { color: colors.error }]} accessibilityRole="alert">
@@ -314,7 +317,7 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
                 value={load.draft.displayName}
                 onChangeText={(displayName) => update({ ...load.draft, displayName })}
                 error={fieldErrors.displayName}
-                editable={!busy}
+                editable={!frozen}
                 returnKeyType="done"
               />
 
@@ -330,13 +333,13 @@ export function GroupSettingsScreen({ groupId }: { groupId: string }) {
                           key={key}
                           accessibilityRole="radio"
                           accessibilityLabel={categoryColorLabel(key)}
-                          accessibilityState={{ selected, disabled: busy }}
-                          disabled={busy}
+                          accessibilityState={{ selected, disabled: frozen }}
+                          disabled={frozen}
                           onPress={() => update({ ...load.draft, color: key })}
                           style={[
                             styles.swatch,
                             { backgroundColor: paletteColor(key), borderColor: selected ? colors.textPrimary : 'transparent' },
-                            busy && styles.dimmed,
+                            frozen && styles.dimmed,
                           ]}
                         >
                           {selected ? <MaterialCommunityIcons name="check" size={22} color="#17171A" /> : null}
