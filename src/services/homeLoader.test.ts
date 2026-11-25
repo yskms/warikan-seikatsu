@@ -46,6 +46,7 @@ function monthData(month: string, totalMinor = 0): HomeMonthData {
   return {
     summary: { month, totalMinor } as MonthView,
     expenses: { month, closed: false, expenses: [] } as ExpenseList,
+    shares: null,
   };
 }
 
@@ -362,7 +363,7 @@ describe('currentMonthData', () => {
     assert.equal(currentMonthData(state({ group, selected: null, monthData: data })), null);
     assert.equal(currentMonthData(state({ group, selected: '2026-11', monthData: null })), null);
     // 集計は選んだ月でも、支出の月が違うデータは出さない
-    const mixed: HomeMonthData = { summary: data.summary, expenses: { ...data.expenses, month: '2026-10' } };
+    const mixed: HomeMonthData = { summary: data.summary, expenses: { ...data.expenses, month: '2026-10' }, shares: null };
     assert.equal(currentMonthData(state({ group, selected: '2026-11', monthData: mixed })), null);
   });
 });

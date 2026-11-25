@@ -129,8 +129,17 @@ export function MemberBurdens({ items }: { items: MemberBurden[] }) {
   );
 }
 
-/** 内訳（折りたたみ）。メンバーごとの支払額・負担額・差額・繰越と、費目ごとの合計・負担額。 */
-export function BreakdownSection({ breakdown }: { breakdown: Breakdown }) {
+/**
+ * 内訳（折りたたみ）。メンバーごとの支払額・負担額・差額・繰越と、費目ごとの合計・負担割合・負担額。`onOpenCategory` を渡すと
+ * （締めていない月）、費目の見出しを押して、その費目の編集を開ける。
+ */
+export function BreakdownSection({
+  breakdown,
+  onOpenCategory,
+}: {
+  breakdown: Breakdown;
+  onOpenCategory?: (categoryId: string) => void;
+}) {
   const colors = useColors();
   const [open, setOpen] = useState(false);
   return (
@@ -162,23 +171,55 @@ export function BreakdownSection({ breakdown }: { breakdown: Breakdown }) {
           {breakdown.categories.length > 0 ? (
             <View style={[styles.breakdownBlock, styles.categoriesBlock, { borderColor: colors.border }]}>
               <Text style={[styles.breakdownHeading, { color: colors.textPrimary }]}>費目ごと</Text>
-              {breakdown.categories.map((category) => (
-                <View key={category.categoryId} style={styles.categoryRow}>
-                  <CategoryIcon icon={category.icon} color={category.color} size={28} />
-                  <View style={styles.categoryBody}>
+              {breakdown.categories.map((category) => {
+                // 費目の一覧に無い費目（`known` が false）は、開く先が無い
+                const open = onOpenCategory !== undefined && category.known ? () => onOpenCategory(category.categoryId) : null;
+                const head = (
+                  <>
                     <View style={styles.lineRow}>
-                      <Text style={[styles.lineLabel, { color: colors.textPrimary }]}>{category.name}</Text>
+                      {/* 押せる費目には、名前の横に矢印を出す（金額の列を、負担額の行と揃えるため、右端には置かない） */}
+                      <View style={styles.categoryName}>
+                        <Text style={[styles.lineLabel, { color: colors.textPrimary }]}>{category.name}</Text>
+                        {open !== null ? (
+                          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
+                        ) : null}
+                      </View>
                       <Text style={[styles.lineValue, { color: colors.textPrimary }]}>{category.totalText}</Text>
                     </View>
-                    {category.burdens.map((burden) => (
-                      <View key={burden.memberId} style={styles.lineRow}>
-                        <Text style={[styles.lineLabel, { color: colors.textSecondary }]}>{burden.name}の負担</Text>
-                        <Text style={[styles.lineValue, { color: colors.textSecondary }]}>{burden.burdenText}</Text>
-                      </View>
-                    ))}
+                    {category.shareText !== null ? (
+                      <Text style={[styles.shareText, { color: colors.textSecondary }]}>{category.shareText}</Text>
+                    ) : null}
+                  </>
+                );
+                return (
+                  <View key={category.categoryId} style={styles.categoryRow}>
+                    <CategoryIcon icon={category.icon} color={category.color} size={28} />
+                    <View style={styles.categoryBody}>
+                      {open !== null ? (
+                        // 見出し（費目・合計・割合）だけを押せる。負担額の行は、読み上げが隠れないよう、押せる範囲に入れない
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={[category.name, category.totalText, category.shareText].filter((t) => t !== null).join('、')}
+                          accessibilityHint="この費目の負担割合などを編集します"
+                          hitSlop={4}
+                          onPress={open}
+                          style={({ pressed }) => [styles.categoryHead, pressed && styles.pressed]}
+                        >
+                          {head}
+                        </Pressable>
+                      ) : (
+                        <View style={styles.categoryHead}>{head}</View>
+                      )}
+                      {category.burdens.map((burden) => (
+                        <View key={burden.memberId} style={styles.lineRow}>
+                          <Text style={[styles.lineLabel, { color: colors.textSecondary }]}>{burden.name}の負担</Text>
+                          <Text style={[styles.lineValue, { color: colors.textSecondary }]}>{burden.burdenText}</Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           ) : null}
         </View>
@@ -228,4 +269,7 @@ const styles = StyleSheet.create({
   lineValue: { fontSize: 14, fontWeight: '600' },
   categoryRow: { flexDirection: 'row', gap: 10 },
   categoryBody: { flex: 1, gap: 2 },
+  categoryHead: { gap: 2 },
+  categoryName: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, gap: 2 },
+  shareText: { fontSize: 13, lineHeight: 18 },
 });

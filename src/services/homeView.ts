@@ -1,7 +1,8 @@
 // ホーム（docs/screens.md 3章）に出す内容を、サーバーの応答から組み立てる（画面は、ここの結果を並べるだけ）。
 // **負担・精算の計算はしない**（Workerの `computeMonthFromState` だけが計算する。CLAUDE.md）。ここでやるのは、応答の値を
 // 表示する形にすること（名前の引き当て、金額の文字列、状態の文言）と、お知らせの出し分けだけ。
-import type { GroupDetail } from '../domain/group.ts';
+import type { CategoryShareRule, CategoryShares } from '../domain/categoryShare.ts';
+import type { GroupDetail, GroupMember } from '../domain/group.ts';
 import type {
   Category,
   CloseState,
@@ -12,6 +13,7 @@ import type {
   MonthView,
   TransferStatus,
 } from '../domain/month.ts';
+import { capTextOf, orderShareMembers, ratioOf } from './categoryView.ts';
 import { formatExpenseDate, formatMonth, formatMonthShort, nextMonth, previousMonth } from './dateFormat.ts';
 import { formatMoney, formatSignedMoney } from './money.ts';
 
@@ -225,9 +227,38 @@ export interface Breakdown {
     icon: string;
     color: string;
     totalText: string;
+    /**
+     * その月の負担割合の説明（「割合 7:3（あなた、彼女の順）」「割合 均等」「月¥10,000まであなた、超えた分 0:10（…）」）。
+     * 割合が読めなかった・その月に割合が無い費目は `null`。サーバーの値を文字にするだけで、計算はしない。
+     */
+    shareText: string | null;
+    /** 費目の一覧にある費目か（`false` なら、編集のシートを開く先が無い） */
+    known: boolean;
     /** メンバーごとの負担額（負担額が0のメンバーは、応答に行が無いことがある） */
     burdens: { memberId: string; name: string; burdenText: string }[];
   }[];
+}
+
+/** 割合の文字に、並び（誰の割合か）を添える。均等と、1人だけのときは、添えない。 */
+function ratioWithOrder(rule: CategoryShareRule, order: readonly string[], lookup: MemberLookup): string {
+  const ratio = ratioOf(rule, order);
+  if (ratio === '均等') return ratio;
+  const names = order.filter((memberId) => rule.shares.some((share) => share.memberId === memberId)).map(lookup.name);
+  return names.length < 2 ? ratio : `${ratio}（${names.join('、')}の順）`;
+}
+
+/** 内訳の費目の、負担割合の説明（`Breakdown.categories[].shareText`） */
+function shareTextOf(
+  rule: CategoryShareRule | undefined,
+  order: readonly string[],
+  lookup: MemberLookup,
+  money: MoneyFormatter,
+): string | null {
+  if (rule === undefined) return null;
+  const ratio = ratioWithOrder(rule, order, lookup);
+  const cap = capTextOf(rule, { memberOrder: order, memberName: lookup.name, money }, ratio);
+  if (cap !== null) return cap;
+  return ratio === '' ? null : `割合 ${ratio}`;
 }
 
 export function buildBreakdown(
@@ -235,8 +266,12 @@ export function buildBreakdown(
   lookup: MemberLookup,
   categories: readonly Category[],
   formatters: { money: MoneyFormatter; signed: SignedMoneyFormatter },
+  /** その月の費目の負担割合（読めなければ `null`）と、グループのメンバー（割合の並びを、自分が先にするため） */
+  shareContext: { shares: CategoryShares | null; members: readonly GroupMember[] },
 ): Breakdown {
   const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const rules = new Map((shareContext.shares?.categories ?? []).map((rule) => [rule.categoryId, rule]));
+  const order = orderShareMembers(shareContext.shares?.memberIds ?? [], shareContext.members);
   return {
     members: summary.members.map((member) => ({
       memberId: member.memberId,
@@ -254,6 +289,8 @@ export function buildBreakdown(
         icon: category?.icon ?? 'more',
         color: category?.color ?? 'gray',
         totalText: formatters.money(row.totalMinor),
+        shareText: shareTextOf(rules.get(row.categoryId), order, lookup, formatters.money),
+        known: category !== undefined,
         burdens: row.burdens.map((burden) => ({
           memberId: burden.memberId,
           name: lookup.name(burden.memberId),

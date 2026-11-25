@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import type { CategoryShareRule, CategoryShares } from '../domain/categoryShare.ts';
 import type { GroupDetail, GroupMember } from '../domain/group.ts';
 import type { Category, CloseState, Expense, MonthListItem, MonthMember, MonthView } from '../domain/month.ts';
 import {
@@ -296,6 +297,26 @@ describe('総額・メンバー別の負担額', () => {
   });
 });
 
+const noShares = { shares: null, members: group.members };
+
+function shareRule(patch: Partial<CategoryShareRule> = {}): CategoryShareRule {
+  return {
+    categoryId: 'c1',
+    sourceMonth: '2026-10',
+    shares: [
+      { memberId: 'm1', basisPoints: 7000 },
+      { memberId: 'm2', basisPoints: 3000 },
+    ],
+    cap: null,
+    archived: false,
+    ...patch,
+  };
+}
+
+function sharesOf(categoriesOfShares: CategoryShareRule[], memberIds = ['m2', 'm1']): CategoryShares {
+  return { month: '2026-11', closed: false, editable: true, memberIds, categories: categoriesOfShares };
+}
+
 describe('内訳', () => {
   it('メンバーごとの支払額・負担額・差額・繰越と、費目ごとの合計・負担額', () => {
     const summary = view({
@@ -308,7 +329,7 @@ describe('内訳', () => {
         { categoryId: 'zzz', totalMinor: 100, burdens: [{ memberId: 'm2', burdenMinor: 100 }] },
       ],
     });
-    const breakdown = buildBreakdown(summary, memberLookup(group), categories, { money, signed });
+    const breakdown = buildBreakdown(summary, memberLookup(group), categories, { money, signed }, noShares);
     assert.deepEqual(breakdown.members[0], {
       memberId: 'm1',
       name: 'あなた',
@@ -328,8 +349,82 @@ describe('内訳', () => {
   });
 
   it('繰越が0なら、繰越を出さない', () => {
-    const breakdown = buildBreakdown(view(), memberLookup(group), categories, { money, signed });
+    const breakdown = buildBreakdown(view(), memberLookup(group), categories, { money, signed }, noShares);
     assert.equal(breakdown.members[0]?.carriedInText, null);
+  });
+
+  describe('費目の負担割合の説明（shareText）', () => {
+    const summary = view({
+      categories: [{ categoryId: 'c1', totalMinor: 14000, burdens: [{ memberId: 'm1', burdenMinor: 9800 }] }],
+    });
+    const build = (shares: CategoryShares | null) =>
+      buildBreakdown(summary, memberLookup(group), categories, { money, signed }, { shares, members: group.members });
+
+    it('割合が読めなかった（null）、またはその費目の割合が無い月は、出さない', () => {
+      assert.equal(build(null).categories[0]?.shareText, null);
+      assert.equal(build(sharesOf([])).categories[0]?.shareText, null);
+      assert.equal(build(sharesOf([shareRule({ categoryId: 'other' })])).categories[0]?.shareText, null);
+    });
+
+    it('割合は、自分が先の並びで出し、誰の割合かを添える（サーバーの memberIds の順に依らない）', () => {
+      // memberIds は ['m2', 'm1']（サーバーの順）。表示は、自分（m1）が先
+      assert.equal(build(sharesOf([shareRule()])).categories[0]?.shareText, '割合 7:3（あなた、彼女の順）');
+    });
+
+    it('10%単位でない2人の割合・3人以上の割合にも、並びを添える', () => {
+      const two = shareRule({ shares: [{ memberId: 'm1', basisPoints: 6500 }, { memberId: 'm2', basisPoints: 3500 }] });
+      assert.equal(build(sharesOf([two])).categories[0]?.shareText, '割合 65% : 35%（あなた、彼女の順）');
+      const three = shareRule({
+        shares: [
+          { memberId: 'm1', basisPoints: 5000 },
+          { memberId: 'm2', basisPoints: 3000 },
+          { memberId: 'm3', basisPoints: 2000 },
+        ],
+      });
+      assert.equal(
+        build(sharesOf([three], ['m1', 'm2', 'm3'])).categories[0]?.shareText,
+        '割合 50% / 30% / 20%（あなた、彼女、脱退した人の順）',
+      );
+    });
+
+    it('均等と、1人だけの割合には、並びを添えない', () => {
+      const equal = shareRule({
+        shares: [
+          { memberId: 'm1', basisPoints: 3334 },
+          { memberId: 'm2', basisPoints: 3333 },
+          { memberId: 'm3', basisPoints: 3333 },
+        ],
+      });
+      assert.equal(build(sharesOf([equal], ['m1', 'm2', 'm3'])).categories[0]?.shareText, '割合 均等');
+      const alone = shareRule({ shares: [{ memberId: 'm1', basisPoints: 10000 }] });
+      assert.equal(build(sharesOf([alone], ['m1'])).categories[0]?.shareText, '割合 100%');
+    });
+
+    it('上限額つきは、割合だけの文字の代わりに、上限の説明（超えた分の割合つき）を出す', () => {
+      const capped = shareRule({
+        shares: [{ memberId: 'm1', basisPoints: 0 }, { memberId: 'm2', basisPoints: 10000 }],
+        cap: { memberId: 'm1', capMinor: 10000 },
+      });
+      assert.equal(build(sharesOf([capped])).categories[0]?.shareText, '月¥10,000まであなた、超えた分 0:10（あなた、彼女の順）');
+    });
+
+    it('割合に入るメンバーが読めない（グループにいない）IDは、「不明なメンバー」にして、最後に付ける', () => {
+      const rule = shareRule({ shares: [{ memberId: 'm1', basisPoints: 7000 }, { memberId: 'zzz', basisPoints: 3000 }] });
+      assert.equal(build(sharesOf([rule], ['m1', 'zzz'])).categories[0]?.shareText, '割合 7:3（あなた、不明なメンバーの順）');
+    });
+  });
+
+  it('費目の一覧にある費目だけ、編集を開ける印（known）を付ける', () => {
+    const summary = view({
+      categories: [
+        { categoryId: 'c1', totalMinor: 100, burdens: [] },
+        { categoryId: 'c2', totalMinor: 100, burdens: [] },
+        { categoryId: 'zzz', totalMinor: 100, burdens: [] },
+      ],
+    });
+    const breakdown = buildBreakdown(summary, memberLookup(group), categories, { money, signed }, noShares);
+    // アーカイブした費目（c2）も、一覧の編集から開けるので known
+    assert.deepEqual(breakdown.categories.map((category) => category.known), [true, true, false]);
   });
 });
 

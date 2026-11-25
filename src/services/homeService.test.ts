@@ -4,11 +4,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import type { CategoryShares } from '../domain/categoryShare.ts';
 import type { GroupDetail } from '../domain/group.ts';
 import type { Category, ExpenseList, MonthList, MonthView } from '../domain/month.ts';
 import type { RecurringExpense } from '../domain/recurring.ts';
 import { AuthError } from '../repositories/authError.ts';
 import type { CategoryRepository } from '../repositories/categoryRepository.ts';
+import type { CategorySharesRepository } from '../repositories/categorySharesRepository.ts';
 import type { ExpenseRepository } from '../repositories/expenseRepository.ts';
 import type { GroupRepository } from '../repositories/groupRepository.ts';
 import type { MonthRepository } from '../repositories/monthRepository.ts';
@@ -22,8 +24,11 @@ const categoryList: Category[] = [{ id: 'c1', name: '食費', icon: 'cart', colo
 const recurringList = [{ id: 'r1' }] as RecurringExpense[];
 const summary = { month: '2026-11' } as MonthView;
 const expenseList: ExpenseList = { month: '2026-11', closed: false, expenses: [] };
+const sharesList: CategoryShares = { month: '2026-11', closed: false, editable: true, memberIds: ['m1', 'm2'], categories: [] };
 
-function setup(options: { session?: string; failWith?: Error; failRepository?: 'summary'; failRecurring?: Error } = {}) {
+function setup(
+  options: { session?: string; failWith?: Error; failRepository?: 'summary'; failRecurring?: Error; failShares?: Error } = {},
+) {
   const log: string[] = [];
   const groups = {
     async get(session: string, groupId: string) {
@@ -54,6 +59,13 @@ function setup(options: { session?: string; failWith?: Error; failRepository?: '
       return categoryList;
     },
   } as unknown as CategoryRepository;
+  const categoryShares = {
+    async get(session: string, groupId: string, month: string) {
+      log.push(`shares:${session}:${groupId}:${month}`);
+      if (options.failShares) throw options.failShares;
+      return sharesList;
+    },
+  } as unknown as CategorySharesRepository;
   const recurring = {
     async list(session: string, groupId: string) {
       log.push(`recurring:${session}:${groupId}`);
@@ -71,7 +83,7 @@ function setup(options: { session?: string; failWith?: Error; failRepository?: '
     },
   };
   return {
-    service: createHomeService({ groups, months, expenses, categories, recurring, access }),
+    service: createHomeService({ groups, months, expenses, categories, categoryShares, recurring, access }),
     log,
     withSessionCalls: () => withSessionCalls,
   };
@@ -112,11 +124,28 @@ describe('homeService', () => {
     await assert.rejects(service.loadGroup('g1'), (error) => error instanceof AuthError && error.code === 'unauthorized');
   });
 
-  it('loadMonth は、1回の withSession の中で、月の集計と支出を、同じ月で読む', async () => {
+  it('loadMonth は、1回の withSession の中で、月の集計・支出・費目の負担割合を、同じ月で読む', async () => {
     const { service, log, withSessionCalls } = setup({ session: 'SESSION' });
-    assert.deepEqual(await service.loadMonth('g1', '2026-11'), { summary, expenses: expenseList });
+    assert.deepEqual(await service.loadMonth('g1', '2026-11'), { summary, expenses: expenseList, shares: sharesList });
     assert.equal(withSessionCalls(), 1);
-    assert.deepEqual(log.slice(1).sort(), ['expenses:SESSION:g1:2026-11', 'summary:SESSION:g1:2026-11']);
+    assert.deepEqual(log.slice(1).sort(), [
+      'expenses:SESSION:g1:2026-11',
+      'shares:SESSION:g1:2026-11',
+      'summary:SESSION:g1:2026-11',
+    ]);
+  });
+
+  it('費目の負担割合だけが読めなくても、ホームは失敗にしない（内訳の割合が出ないだけ。shares は null）', async () => {
+    // 参加前の月の403（`invalid-request` になる）、通信・5xx・応答の形の崩れ
+    for (const code of ['invalid-request', 'network', 'unavailable', 'invalid-response'] as const) {
+      const { service } = setup({ failShares: new AuthError(code) });
+      assert.deepEqual(await service.loadMonth('g1', '2026-11'), { summary, expenses: expenseList, shares: null }, code);
+    }
+  });
+
+  it('費目の負担割合の読み込みが 401 のときは、握りつぶさずに投げる（セッション切れを伝える層へ届く）', async () => {
+    const { service } = setup({ failShares: new AuthError('unauthorized') });
+    await assert.rejects(service.loadMonth('g1', '2026-11'), (error) => error instanceof AuthError && error.code === 'unauthorized');
   });
 
   it('セッションの失敗は、Repository を呼ばず、そのまま画面へ届く', async () => {

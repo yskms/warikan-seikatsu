@@ -99,7 +99,10 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
     return {
       total: buildTotal(current.summary, formatters.money),
       burdens: buildMemberBurdens(current.summary, lookup, formatters.money),
-      breakdown: buildBreakdown(current.summary, lookup, groupData.categories, formatters),
+      breakdown: buildBreakdown(current.summary, lookup, groupData.categories, formatters, {
+        shares: current.shares,
+        members: groupData.group.members,
+      }),
       settlement: buildSettlement(current.summary, lookup, formatters.money),
       rows: buildExpenseRows(current.expenses.expenses, groupData.categories, lookup, formatters.money),
     };
@@ -199,7 +202,17 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
             ) : null}
             <TotalCard total={view.total} />
             <MemberBurdens items={view.burdens} />
-            <BreakdownSection breakdown={view.breakdown} />
+            <BreakdownSection
+              breakdown={view.breakdown}
+              // 締めていない月（`open`）だけ、費目のタップでその月のカテゴリの編集を開く（締めた月・飛ばした月は、割合を直せない。
+              // 実際に直せるかは、シートが読んだ割合の `editable` で決まる）
+              onOpenCategory={
+                months.find((item) => item.month === selected)?.status === 'open'
+                  ? (categoryId) =>
+                      router.push({ pathname: '/category-edit', params: { groupId, categoryId, month: selected } })
+                  : undefined
+              }
+            />
             <SettlementCard
               model={view.settlement}
               onClose={() => router.push({ pathname: '/close', params: { groupId, month: selected } })}

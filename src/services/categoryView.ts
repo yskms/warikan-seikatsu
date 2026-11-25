@@ -78,15 +78,24 @@ export interface CategoryRowContext {
   money(amountMinor: number): string;
 }
 
-function ratioOf(rule: CategoryShareRule, order: readonly string[]): string {
+/** その月の割合の文字（「7:3」「均等」。`order` の表示順）。 */
+export function ratioOf(rule: CategoryShareRule, order: readonly string[]): string {
   const byMember = new Map(rule.shares.map((share) => [share.memberId, share.basisPoints]));
   // 表示順のメンバーの割合を並べる。割合に無いメンバーは出さない（`PUT` は、全員を送らないと断られるので、通常は全員いる）
   return formatShareRatio(order.filter((memberId) => byMember.has(memberId)).map((memberId) => byMember.get(memberId)!));
 }
 
-function capTextOf(rule: CategoryShareRule, ctx: CategoryRowContext): string | null {
+/**
+ * 上限額つきのときの説明（「月¥10,000まで自分、超えた分 0:10」）。無ければ `null`。`ratioText` は、「超えた分」の割合の文字
+ * （省略すると `ratioOf`。ホームの内訳は、メンバーの並びを添えた文字を渡す）。
+ */
+export function capTextOf(
+  rule: CategoryShareRule,
+  ctx: Pick<CategoryRowContext, 'money' | 'memberName'> & { memberOrder: readonly string[] },
+  ratioText: string = ratioOf(rule, ctx.memberOrder),
+): string | null {
   if (rule.cap === null) return null;
-  return `月${ctx.money(rule.cap.capMinor)}まで${ctx.memberName(rule.cap.memberId)}、超えた分 ${ratioOf(rule, ctx.memberOrder)}`;
+  return `月${ctx.money(rule.cap.capMinor)}まで${ctx.memberName(rule.cap.memberId)}、超えた分 ${ratioText}`;
 }
 
 /**

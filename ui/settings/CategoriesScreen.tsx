@@ -161,8 +161,9 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   // 通信の最中は戻らない。並べ替えの状態の戻る操作は、画面を出ずに、並べ替えをやめる（並びを変えていれば、破棄の確認を出す）。
   // **この画面が `beforeRemove` を通って外されるのは、ユーザーの戻る操作のときだけ、という前提**（いまは、セッション切れ・招待による
   // 切り替え〔`Stack.Protected`〕と、グループの切り替え〔`key` の作り直し〕は通らず、並べ替えの状態では別の画面へ移れない）。
-  // 別の画面からこの画面を開く導線（ホームの「内訳を見る」など）を足すときは、置き換え（`dangerouslySingular` など）で、この画面が
-  // `beforeRemove` を通って外されないか確かめる（止められると、画面が切り替わらないまま、並べ替えだけが終わる）。
+  // 別の画面からこの画面を開く導線を足すときは、置き換え（`dangerouslySingular` など）で、この画面が `beforeRemove` を通って
+  // 外されないか確かめる（止められると、画面が切り替わらないまま、並べ替えだけが終わる）。ホームの「内訳を見る」のカテゴリは、
+  // この画面ではなく、編集のシート（`category-edit`）だけを開く（この画面は、開いているあいだ、ホームの上に積まれている）。
   useEffect(() => {
     return navigation.addListener('beforeRemove', (event) => {
       if (savingRef.current) {
