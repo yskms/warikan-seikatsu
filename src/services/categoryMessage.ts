@@ -64,6 +64,14 @@ export function resultUnknown(error: unknown): boolean {
   return !(error instanceof CategoryRejectedError);
 }
 
+/**
+ * 並べ替えを保存する前に、画面の並びが、読み込んだ費目と合わなくなっていたとき（読み直しで、費目が増えた・アーカイブした・
+ * 戻した）の文言。サーバーに送れば `categories_changed` で断られる場合と同じなので、同じ文言にする（送らずに、画面が読み直す）。
+ */
+export function staleReorderMessage(): string {
+  return categoryErrorMessage(new CategoryRejectedError(409, { reason: 'categories_changed' }), 'reorder');
+}
+
 export function categoryErrorMessage(error: unknown, action: CategoryAction): string {
   const message = baseMessage(error, action);
   // 追加で、作成は済んだあとの失敗: どの失敗でも、文の頭で、カテゴリは追加できたことを伝える（そうしないと、通信の失敗などで、

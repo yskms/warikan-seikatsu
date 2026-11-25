@@ -10,6 +10,7 @@ import {
   isCreateConflict,
   resultUnknown,
   shouldReloadAfter,
+  staleReorderMessage,
   unsavedChangesNote,
 } from './categoryMessage.ts';
 
@@ -169,6 +170,13 @@ describe('categoryErrorMessage（追加で、作成が済んだあとの失敗�
     for (const action of ['create', 'update', 'save-share', 'reorder'] as const) {
       assert.ok(!categoryErrorMessage(new AuthError('network'), action).startsWith(LEAD), action);
     }
+  });
+});
+
+describe('staleReorderMessage', () => {
+  it('サーバーが費目の食い違い（categories_changed）で断ったときと同じ文言', () => {
+    assert.equal(staleReorderMessage(), categoryErrorMessage(rejected('categories_changed'), 'reorder'));
+    assert.match(staleReorderMessage(), /カテゴリが変わった/);
   });
 });
 

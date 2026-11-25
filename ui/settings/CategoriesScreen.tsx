@@ -7,11 +7,19 @@
 // - 画面を開いたとき・編集のシートから戻ったときに、読み直す（`useFocusEffect`）。読み直しの失敗は、表示中の内容を残して知らせる。
 // - 月を切り替えるのは、その月の割合だけを読み直す。失敗したら、前の月のまま、失敗を知らせる（前の月の割合を、切り替えた月の
 //   ものとして出さない）。
-// - **まだ作っていない**: 並べ替え（`categoryRepository.reorder` は作ってある。長押しのドラッグか、上下の操作）。
+// - 並べ替えは、「並べ替え」ボタンで入る専用の状態（上下の矢印で動かして、「保存」で1回だけ送る。長押しのドラッグは、ネイティブの
+//   依存を足すので作らず、スクリーンリーダーでも使える上下の操作にした）。並びの組み立ては `src/services/categoryReorder.ts`
+//   （`npm test` で守る）。送るのは、アーカイブした費目も含む全費目（使っている費目の枠だけを入れ替える）。**その状態では、
+//   行を押しても編集のシートは開かず、月の切り替え・追加・使わない費目は出さない**（保存の最中に、読み直しや別の画面が割り込まない）。
+//   - 通信の最中は、戻る操作が効かない。並びを変えたあとの戻る操作は、破棄の確認を出す。止めているのは `beforeRemove` で、セッション
+//     切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`CategoryEditSheet.tsx` と同じ）。招待URLによる参加確認
+//     への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
+//   - 他のメンバーの操作で費目が変わったと断られたら（`categories_changed`）、並べ替えをやめて読み直す。それ以外の失敗は、並びを
+//     残して、もう一度押してもらう（同じ並びを送り直しても、同じ結果になる）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { categoryService } from '../../platform/categoryService.ts';
@@ -24,12 +32,16 @@ import {
   splitArchived,
   type CategoryRow,
 } from '../../src/services/categoryView.ts';
+import { categoryErrorMessage, shouldReloadAfter, staleReorderMessage } from '../../src/services/categoryMessage.ts';
+import { applyReorder, buildReorderIds, isReordered, moveCategory, type MoveDirection } from '../../src/services/categoryReorder.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
 import { memberLookup, moneyFormatters } from '../../src/services/homeView.ts';
 import { Chips } from '../expense/Chips.tsx';
 import { CategoryIcon } from '../home/CategoryIcon.tsx';
+import { useHoldInviteSwap } from '../inviteHold.ts';
 import { PrimaryButton } from '../PrimaryButton.tsx';
 import { useColors } from '../useColors.ts';
+import { useMounted } from '../useMounted.ts';
 
 type LoadState =
   | { status: 'loading' }
@@ -39,6 +51,7 @@ type LoadState =
 export function CategoriesScreen({ groupId }: { groupId: string }) {
   const colors = useColors();
   const router = useRouter();
+  const navigation = useNavigation();
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   // 読み直しの失敗（表示中の内容は残す）と、月の切り替えの失敗
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -49,6 +62,17 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   const requestSeq = useRef(0);
   // 表示できる内容があるか（読み直しの失敗を、読み込みの失敗の表示にするか、表示中の内容を残して知らせるかの分かれ目）
   const hasData = useRef(false);
+  // 並べ替え: 並べ替え中の、使っているカテゴリのID（並べ替えの状態でないときは `null`）、保存の最中か、保存の失敗の文言
+  const [reorder, setReorder] = useState<string[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+  // 保存の最中は、招待URLによる参加確認への切り替えを遅らせる（`ui/inviteHold.ts`）
+  useHoldInviteSwap(saving);
+  // 外れたあとに、開いたままの破棄の確認から、画面を戻す操作を始めない（`ui/useMounted.ts`）
+  const mounted = useMounted();
+  const savingRef = useRef(false);
+  const changedRef = useRef(false);
+  const leaving = useRef(false);
 
   const reload = useCallback(async () => {
     const seq = (requestSeq.current += 1);
@@ -110,13 +134,116 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
       active: active.map((category) => byId.get(category.id)!),
       archived: archived.map((category) => byId.get(category.id)!),
       months: buildShareMonthOptions(data.months.months, data.month),
+      byId,
     };
   }, [load]);
+
+  // 並べ替えを始めたときの並び（使っているカテゴリ）と、変えたか
+  const activeIds = useMemo(() => view?.active.map((row) => row.categoryId) ?? [], [view]);
+  const changed = reorder !== null && isReordered(activeIds, reorder);
+  changedRef.current = changed;
+
+  // 通信の最中は戻らない。並びを変えたあとの戻る操作は、破棄の確認を出す
+  useEffect(() => {
+    return navigation.addListener('beforeRemove', (event) => {
+      if (leaving.current) return;
+      if (savingRef.current) {
+        event.preventDefault();
+        return;
+      }
+      if (!changedRef.current) return;
+      event.preventDefault();
+      Alert.alert('並べ替えを破棄しますか？', '変えた並びは保存されません。', [
+        { text: '並べ替えを続ける', style: 'cancel' },
+        {
+          text: '破棄する',
+          style: 'destructive',
+          onPress: () => {
+            if (!mounted.current) return;
+            leaving.current = true;
+            navigation.dispatch(event.data.action);
+          },
+        },
+      ]);
+    });
+  }, [navigation]);
+
+  function startReorder() {
+    if (load.status !== 'ready' || switching || saving || activeIds.length < 2) return;
+    setReorder(activeIds);
+    setReorderError(null);
+    setRefreshError(null);
+    setMonthError(null);
+  }
+
+  function cancelReorder() {
+    if (saving) return;
+    setReorder(null);
+    setReorderError(null);
+  }
+
+  function move(index: number, direction: MoveDirection) {
+    if (saving || reorder === null) return;
+    const next = moveCategory(reorder, index, direction);
+    if (!isReordered(reorder, next)) return;
+    setReorder(next);
+    setReorderError(null);
+    // 動かした行は、押したボタンの位置から離れる。スクリーンリーダーには、移った位置を伝える
+    const row = view?.active.find((candidate) => candidate.categoryId === reorder[index]);
+    if (row !== undefined) {
+      AccessibilityInfo.announceForAccessibility(`${row.name}を${next.indexOf(row.categoryId) + 1}番目に移しました`);
+    }
+  }
+
+  /** 読み直して、並べ替えをやめる。断られた理由（`message`）は、読み直しの失敗があれば、それより先に並べる。 */
+  async function reloadWithNotice(message: string) {
+    setReorder(null);
+    await reload();
+    setRefreshError((previous) => (previous === null ? message : `${message}\n\n${previous}`));
+  }
+
+  async function saveReorder() {
+    if (load.status !== 'ready' || reorder === null || saving || savingRef.current) return;
+    const ids = buildReorderIds(load.data.categories, reorder);
+    if (ids === null) {
+      // 並べ替えているあいだに、読み込んだ費目が変わった（送っても、断られる）
+      await reloadWithNotice(staleReorderMessage());
+      return;
+    }
+    if (!isReordered(activeIds, reorder)) {
+      setReorder(null);
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setReorderError(null);
+    try {
+      await categoryService.reorderCategories(groupId, ids);
+      // 済んだ並びを、そのまま画面に持つ（読み直さない）。次に画面を開いたときの読み直しで、サーバーの値になる
+      setLoad((current) =>
+        current.status === 'ready'
+          ? { status: 'ready', data: { ...current.data, categories: applyReorder(current.data.categories, ids) } }
+          : current,
+      );
+      setReorder(null);
+      AccessibilityInfo.announceForAccessibility('並べ替えを保存しました');
+    } catch (e) {
+      const message = categoryErrorMessage(e, 'reorder');
+      if (shouldReloadAfter(e, 'reorder')) await reloadWithNotice(message);
+      else {
+        setReorderError(message);
+        AccessibilityInfo.announceForAccessibility(message);
+      }
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
 
   function openEdit(categoryId: string | null) {
     // 月の切り替えの最中は開かない（まだ前の月の割合を持っていて、シートが前の月で開く。戻ったときの読み直しが、切り替えの
     // 応答を捨てて、選んだ月が前の月に戻ることもある）
-    if (load.status !== 'ready' || switching) return;
+    if (load.status !== 'ready' || switching || reorder !== null) return;
     const params: Record<string, string> = { groupId };
     if (categoryId !== null) params.categoryId = categoryId;
     if (load.data.month !== null) params.month = load.data.month;
@@ -137,7 +264,7 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
           <MaterialCommunityIcons name="chevron-left" size={30} color={colors.textPrimary} />
         </Pressable>
         <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
-          カテゴリと負担割合
+          {reorder !== null ? '並べ替え' : 'カテゴリと負担割合'}
         </Text>
       </View>
 
@@ -153,67 +280,112 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
           <PrimaryButton label="もう一度" onPress={() => void reload()} />
         </View>
       ) : data !== null && view !== null ? (
-        <ScrollView contentContainerStyle={styles.content}>
-          {refreshError !== null ? (
-            <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
-              {refreshError}
-            </Text>
-          ) : null}
-
-          {data.month === null ? (
-            <Text style={[styles.note, { color: colors.textSecondary }]}>
-              締めていない月がないため、負担割合は変えられません。カテゴリの名前などは、変えられます。
-            </Text>
-          ) : (
-            <View style={styles.monthBlock}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]} accessibilityRole="header">
-                {formatMonth(data.month)}の負担割合
+        <>
+          <ScrollView contentContainerStyle={styles.content}>
+            {refreshError !== null ? (
+              <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                {refreshError}
               </Text>
-              {view.months.length > 1 ? (
-                <Chips
-                  options={view.months.map((option) => ({ key: option.month, label: option.label }))}
-                  selected={data.month}
-                  disabled={switching}
-                  onSelect={(month) => void selectMonth(month)}
-                />
-              ) : null}
-              {monthError !== null ? (
-                <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
-                  {monthError}
+            ) : null}
+
+            {reorder !== null ? (
+              <>
+                <Text style={[styles.note, { color: colors.textSecondary }]}>
+                  上下の矢印で、並びを変えます。この並びは、支出を登録するときのカテゴリの並びになります（グループのみんなで共通です）。
                 </Text>
-              ) : null}
-              {data.shares !== null && !data.shares.editable ? (
-                <Text style={[styles.note, { color: colors.textSecondary }]}>この月の割合は、変えられません。</Text>
-              ) : null}
-            </View>
-          )}
+                {reorderError !== null ? (
+                  <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                    {reorderError}
+                  </Text>
+                ) : null}
+                <View style={[styles.list, saving && styles.dimmed]}>
+                  {reorder.flatMap((categoryId, index) => {
+                    const row = view.byId.get(categoryId);
+                    return row === undefined
+                      ? []
+                      : [
+                          <ReorderRowView
+                            key={categoryId}
+                            row={row}
+                            first={index === 0}
+                            last={index === reorder.length - 1}
+                            disabled={saving}
+                            onMove={(direction) => move(index, direction)}
+                          />,
+                        ];
+                  })}
+                </View>
+              </>
+            ) : (
+              <>
+                {data.month === null ? (
+                  <Text style={[styles.note, { color: colors.textSecondary }]}>
+                    締めていない月がないため、負担割合は変えられません。カテゴリの名前などは、変えられます。
+                  </Text>
+                ) : (
+                  <View style={styles.monthBlock}>
+                    <Text style={[styles.sectionLabel, { color: colors.textSecondary }]} accessibilityRole="header">
+                      {formatMonth(data.month)}の負担割合
+                    </Text>
+                    {view.months.length > 1 ? (
+                      <Chips
+                        options={view.months.map((option) => ({ key: option.month, label: option.label }))}
+                        selected={data.month}
+                        disabled={switching}
+                        onSelect={(month) => void selectMonth(month)}
+                      />
+                    ) : null}
+                    {monthError !== null ? (
+                      <Text style={[styles.error, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                        {monthError}
+                      </Text>
+                    ) : null}
+                    {data.shares !== null && !data.shares.editable ? (
+                      <Text style={[styles.note, { color: colors.textSecondary }]}>この月の割合は、変えられません。</Text>
+                    ) : null}
+                  </View>
+                )}
 
-          <View style={[styles.list, switching && styles.dimmed]}>
-            {view.active.map((row) => (
-              <CategoryRowView key={row.categoryId} row={row} disabled={switching} onPress={() => openEdit(row.categoryId)} />
-            ))}
-          </View>
+                <View style={[styles.list, switching && styles.dimmed]}>
+                  {view.active.map((row) => (
+                    <CategoryRowView key={row.categoryId} row={row} disabled={switching} onPress={() => openEdit(row.categoryId)} />
+                  ))}
+                </View>
 
-          <PrimaryButton label="カテゴリを追加" variant="secondary" disabled={switching} onPress={() => openEdit(null)} />
+                <PrimaryButton label="カテゴリを追加" variant="secondary" disabled={switching} onPress={() => openEdit(null)} />
+                {view.active.length >= 2 ? (
+                  <PrimaryButton label="並べ替え" variant="secondary" disabled={switching} onPress={startReorder} />
+                ) : null}
 
-          {view.archived.length > 0 ? (
-            <View style={styles.archivedBlock}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]} accessibilityRole="header">
-                使わないカテゴリ
-              </Text>
-              <View style={styles.list}>
-                {view.archived.map((row) => (
-                  <CategoryRowView key={row.categoryId} row={row} disabled={switching} onPress={() => openEdit(row.categoryId)} />
-                ))}
-              </View>
+                {view.archived.length > 0 ? (
+                  <View style={styles.archivedBlock}>
+                    <Text style={[styles.sectionLabel, { color: colors.textSecondary }]} accessibilityRole="header">
+                      使わないカテゴリ
+                    </Text>
+                    <View style={styles.list}>
+                      {view.archived.map((row) => (
+                        <CategoryRowView key={row.categoryId} row={row} disabled={switching} onPress={() => openEdit(row.categoryId)} />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                <Text style={[styles.note, { color: colors.textSecondary }]}>
+                  負担割合の変更は、選んだ月とそれ以降の月に反映されます。締めた月は変わりません。
+                  メンバーが増えたり減ったりして均等に戻した月は、そのままです。
+                </Text>
+              </>
+            )}
+          </ScrollView>
+
+          {reorder !== null ? (
+            // 下端に置く（カテゴリが多いと、一覧の下までスクロールしないと届かなくなる）。文字を大きくしたときのため、縦に並べる
+            <View style={[styles.bar, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+              <PrimaryButton label="保存" busy={saving} disabled={!changed} onPress={() => void saveReorder()} />
+              <PrimaryButton label="キャンセル" variant="secondary" disabled={saving} onPress={cancelReorder} />
             </View>
           ) : null}
-
-          <Text style={[styles.note, { color: colors.textSecondary }]}>
-            負担割合の変更は、選んだ月とそれ以降の月に反映されます。締めた月は変わりません。
-            メンバーが増えたり減ったりして均等に戻した月は、そのままです。
-          </Text>
-        </ScrollView>
+        </>
       ) : null}
     </SafeAreaView>
   );
@@ -250,6 +422,48 @@ function CategoryRowView({ row, disabled, onPress }: { row: CategoryRow; disable
   );
 }
 
+function ReorderRowView({
+  row,
+  first,
+  last,
+  disabled,
+  onMove,
+}: {
+  row: CategoryRow;
+  first: boolean;
+  last: boolean;
+  disabled: boolean;
+  onMove(direction: MoveDirection): void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={[styles.row, { borderBottomColor: colors.border }]}>
+      <CategoryIcon icon={row.icon} color={row.color} size={40} />
+      <Text style={[styles.rowName, styles.rowBody, { color: colors.textPrimary }]} numberOfLines={1}>
+        {row.name}
+      </Text>
+      <MoveButton label={`${row.name}を上へ`} icon="chevron-up" disabled={disabled || first} onPress={() => onMove('up')} />
+      <MoveButton label={`${row.name}を下へ`} icon="chevron-down" disabled={disabled || last} onPress={() => onMove('down')} />
+    </View>
+  );
+}
+
+function MoveButton({ label, icon, disabled, onPress }: { label: string; icon: 'chevron-up' | 'chevron-down'; disabled: boolean; onPress(): void }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.move, pressed && styles.pressed, disabled && styles.moveDisabled]}
+    >
+      <MaterialCommunityIcons name={icon} size={28} color={colors.textPrimary} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingTop: 4, paddingBottom: 4, gap: 4 },
@@ -269,6 +483,9 @@ const styles = StyleSheet.create({
   message: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
   error: { fontSize: 14, lineHeight: 20 },
   note: { fontSize: 13, lineHeight: 19 },
+  move: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  moveDisabled: { opacity: 0.3 },
+  bar: { gap: 10, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, borderTopWidth: StyleSheet.hairlineWidth },
   pressed: { opacity: 0.7 },
   dimmed: { opacity: 0.55 },
 });
