@@ -2,11 +2,16 @@
 // 飛ばす）。仮の値のままでも、アプリは動く（リンクの行が出ないだけ）ので、置き換え漏れは、画面を見ても気づけない。ストア用のビルド・
 // 提出の前に実行して、失敗が無いことを確かめる。
 //
-// 仮の値が残っているあいだ失敗するのが正しい動作（`npm test` には入れない理由）。確かめているのは、次の4つ。
+// 仮の値が残っているあいだ失敗するのが正しい動作（`npm test` には入れない理由）。確かめているのは、次の3種類（値は5つ）。
 // - プライバシーポリシー・利用規約・お問い合わせのページ（`src/legal/legalUrls.ts`）。ストアの掲載情報にも同じURLを入れる
 // - 招待URLの置き場（`src/services/inviteUrl.ts` の `INVITE_URL_ORIGIN`）。Universal Links / App Links の設定も要る
 // - APIの置き場（`src/repositories/apiClient.ts` の `API_ORIGIN`）。Workerの `APPLE_CALLBACK_URL` と同じドメインにする
 // お問い合わせを、Webページ以外の窓口にすると決めたときは、ここの確認も、その形に合わせて直す。
+//
+// **見ているのは、`.invalid` が残っていないことだけ**。開発用のドメイン（`workers.dev` やローカルのURLなど）に置き換えたまま
+// 出しても、通る。Workerの設定（`worker/wrangler.jsonc`）は見ない: ただし、`API_ORIGIN` と `APPLE_CALLBACK_URL` が同じ origin か
+// は、Workerのテスト（`worker/test/config.test.ts`。`worker/` の `npm test`。ルートの `npm test` には入らない）が見ているので、
+// 片方だけ置き換えると、そちらで失敗する。本番のドメインを決めるときに、見る範囲を見直す。
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
