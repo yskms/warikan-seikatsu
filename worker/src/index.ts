@@ -37,6 +37,7 @@ import { handleCancelLeave, handleRequestLeave } from './leave.ts';
 import { handleListMonths } from './monthList.ts';
 import { isMonth } from './months.ts';
 import { handleCreateRecurring, handleDeleteRecurring, handleListRecurring, handleUpdateRecurring } from './recurring.ts';
+import { handleSite } from './site.ts';
 import { handleProcessTransfer } from './transfers.ts';
 
 const GROUPS_PATH = /^\/groups$/;
@@ -68,6 +69,9 @@ export default {
 
     const { pathname } = new URL(request.url);
     const now = Date.now();
+    // 公開のWeb（招待URLの案内ページ・Universal Links / App Links の設定ファイル）。APIの規則（セッション・JSON）とは別なので、先に見る。
+    const site = await handleSite(request, env);
+    if (site !== null) return site;
 
     // 認証（docs/backend-design.md 9章の「認証API」）。セッションを要らない入口はここだけ（招待の確認以降は要る）。
     if (pathname === '/auth/nonce') return handleNonce(request, env, now);

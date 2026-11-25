@@ -1,14 +1,14 @@
 // アプリから開く、法務のページのURL。ストアの掲載情報に入れるURLと同じにする（App Store Review Guidelines 5.1.1(i) は、
 // プライバシーポリシーへのリンクを、ストアの掲載情報とアプリの中の両方に求める）。
 //
-// **まだ、公開するページが無い**（docs/plan.md: 招待URL・プライバシーポリシー・アカウント削除の案内の静的なWebページ）。
-// そのあいだは仮の値（`.invalid`）にしてあり、画面は、仮の値のリンクを出さない（開いても、名前が引けないため）。
-// 公開したら、ここを実際のURLに置き換える。リリース前に、`npm run release-check` で、仮の値が残っていないことを確かめる。
-export const PRIVACY_POLICY_URL = 'https://not-created-yet.invalid/privacy-policy';
-export const TERMS_OF_SERVICE_URL = 'https://not-created-yet.invalid/terms';
-// お問い合わせの窓口（静的なWebページのお問い合わせ案内。メールアドレスをこのリポジトリに書かないため、ページを置く前提）。
-// これも仮の値。`isPlaceholderUrl` は https のURLのホスト名で見分けるので、`mailto:` にするときは、その見分けも直す。
-export const CONTACT_URL = 'https://not-created-yet.invalid/contact';
+// ページは、Workerの静的アセット（`worker/public/`。本番のドメイン `warikan-seikatsu.app`）。デプロイするまで、開けない。
+// 画面は、仮の値（`.invalid`）のリンクを出さない仕組みのまま残してある（`isPlaceholderUrl`）。リリース前に、`npm run release-check` で、
+// 仮の値が残っていないことを確かめる。
+export const PRIVACY_POLICY_URL = 'https://warikan-seikatsu.app/privacy-policy';
+export const TERMS_OF_SERVICE_URL = 'https://warikan-seikatsu.app/terms';
+// お問い合わせの窓口（静的なWebページ。窓口のメールアドレスは、そのページに書いてある）。`isPlaceholderUrl` は https のURLの
+// ホスト名で見分けるので、`mailto:` にするときは、その見分けも直す。
+export const CONTACT_URL = 'https://warikan-seikatsu.app/contact';
 
 /** 仮の値（まだ公開していないページ）か。 */
 export function isPlaceholderUrl(url: string): boolean {

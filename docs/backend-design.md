@@ -997,6 +997,25 @@ Webからのアカウント削除依頼（Google Play向け）の本人確認は
 
 ---
 
+### 公開のWebページ（`worker/public/`・`worker/src/site.ts`）
+
+本番のドメイン（`warikan-seikatsu.app`）で、アプリのAPIのほかに、次の公開のWebを返す。
+
+| パス | 内容 | 返すもの |
+|---|---|---|
+| `/` | トップ | 静的アセット（`public/index.html`） |
+| `/privacy-policy`・`/terms`・`/contact` | プライバシーポリシー・利用規約・お問い合わせ。アプリの「このアプリについて」（`src/legal/legalUrls.ts`）と、ストアの掲載情報が、これを指す | 静的アセット |
+| `/invite/<トークン>` | 招待URLの案内ページ（アプリが入っていない端末・開けなかったとき用。入っている端末では、OSがアプリを直接開く） | Worker（`handleSite`）が、`public/invite.html` を `ASSETS` から返す |
+| `/.well-known/apple-app-site-association`・`/.well-known/assetlinks.json` | Universal Links（iOS）・App Links（Android）の設定 | Worker（`src/site.ts` の定数。`.well-known` はドットで始まる名前なので、静的アセットに置かない） |
+
+- **静的アセットは、Workerより先に返る**（`wrangler.jsonc` の `assets`。`run_worker_first` は指定しない）。`public/` に、APIの最初の区切り（`auth`・`groups` など）と同じ名前のファイルを置かない（置くと、Workerに届かなくなる。`worker/test/site.test.ts` が見ている）。
+- **招待のトークンは、案内ページの外へ出さない。** `/invite/<トークン>` の応答は `no-store`・`Referrer-Policy: no-referrer`。ページのスクリプト（`invite.js`）は、URLからトークンを読んで、「アプリで開く」のリンク（`warikan-seikatsu://invite/<トークン>`）にするだけで、通信も保存もしない。`public/_headers` のCSPは、`default-src 'none'` で、`connect-src` を足さない（足すとトークンを外へ送れる）。トークンの形（43字のbase64url）でないものは、案内ページを返さず404。
+- **iOS（`appIDs` は `<Team ID>.<バンドルID>`、道は `/invite/*` だけ）・Android（`package_name` と、署名の証明書のSHA-256）。** アプリ側は `app.json` の `associatedDomains`・`intentFilters`（`autoVerify`）。一致は `worker/test/site.test.ts` が固定している。**`ASSET_LINKS` のSHA-256は、いまは debug の署名だけ**（Expoのテンプレートの debug.keystore。誰でも持っている公開の鍵）。**リリース前に、debug のものを外し、Play App Signing の鍵（Playからインストールされたアプリは、この鍵で署名し直される）のSHA-256に置き換える**（`npm run release-check` が、debug のものが残っていれば失敗にする）。EASなどで別の鍵で署名したビルドを配るときは、その鍵のSHA-256も足す。
+- **法務ページの内容は、実装の事実に合わせる**（保存する情報、削除したときの扱い、広告・解析を使っていないこと、データの置き場所。`public/privacy-policy.html`）。実装を変えて、これが変わるとき（広告や解析の導入、保存する項目の追加、削除の挙動の変更など）は、**先に**ページを直す。ストアのデータの安全性・データ削除の申告も、同じ内容にする。
+- **お問い合わせの窓口は、`support@warikan-seikatsu.app`**（CloudflareのEmail Routingで、運営者のふだんのメールへ転送する。転送先のアドレスは、リポジトリに書かない）。
+- **Webからのアカウント削除の依頼は、受けられない。** 運営者は、メールの依頼から、アカウントを引けない（メールアドレスも名前も保存しない。`sub` は利用者が知らない）。ページには、そのまま書いてある（アプリ内で削除する。サインインできないときは、同じAppleまたはGoogleのアカウントでサインインし直して削除する）。Google Playの「アカウント削除のWebの案内」の申告が、これで足りるかは、提出のときに確かめる（Singfolioは、同じ方針で提出している。docs/plan.md 8章は、Webからの依頼に対応する、と書いているが、本人確認の手段が無いので、作っていない）。未使用のアカウントの自動削除は、まだ作っていない（12章）。ページには、書いていない。
+- **デプロイの前に、ページの文面（とくに、プライバシーポリシー・利用規約）を、運営者が読んで確認する**（草案として作った。法律の専門家の確認は受けていない）。
+
 ## 10. マイグレーションの分割案
 
 最初から巨大なSQLを1本にせず、変更のまとまりごとに分ける。外部キーの参照先を先に作る。

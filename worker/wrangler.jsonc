@@ -14,6 +14,12 @@
   "preview_urls": false,
   "routes": [{ "pattern": "warikan-seikatsu.app", "custom_domain": true }],
 
+  // 公開のWebページ（トップ・プライバシーポリシー・利用規約・お問い合わせ・招待URLの案内ページ）。`public/` のファイルを、静的アセットとして
+  // 返す。既定（`run_worker_first` を指定しない）では、ファイルに当たるパスはWorkerを呼ばずに返し、当たらないパス（APIなど）はWorkerへ
+  // 渡る。招待URL（`/invite/<トークン>`）は、パスが毎回違うので、Workerが受けて、案内ページ（`public/invite.html`）を `ASSETS` から返す
+  // （`src/site.ts`）。`public/` にAPIと同じパスのファイルを置かない（置くと、Workerに届かず、静的ファイルが返る）。
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
   // 定期処理（月初の脱退の確定など。docs/backend-design.md 7章）。1時間ごと。
   "triggers": {
     "crons": ["0 * * * *"]

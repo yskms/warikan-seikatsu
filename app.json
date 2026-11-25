@@ -10,6 +10,7 @@
     "backgroundColor": "#FFFFFF",
     "ios": {
       "bundleIdentifier": "com.yskms.warikanseikatsu",
+      "associatedDomains": ["applinks:warikan-seikatsu.app"],
       "config": {
         "usesNonExemptEncryption": false
       }
@@ -17,6 +18,14 @@
     "android": {
       "package": "com.yskms.warikanseikatsu",
       "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "warikan-seikatsu.app", "pathPrefix": "/invite/" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",

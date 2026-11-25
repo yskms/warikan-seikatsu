@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>わりかん生活への招待</title>
+    <link rel="stylesheet" href="/site.css" />
+  </head>
+  <body>
+    <main>
+      <h1>わりかん生活への招待</h1>
+      <p class="lead">グループに、招待されています。</p>
+
+      <p>
+        わりかん生活は、一緒に暮らす人の生活費を、決めた割合で、月ごとに精算するアプリです。
+        このURLから、グループに参加できます。
+      </p>
+
+      <h2>アプリが入っているとき</h2>
+      <p>下のボタンで、アプリを開くと、参加の確認の画面が出ます。ボタンを押しても開かないときは、アプリを、更新してみてください。</p>
+      <a id="open-app" class="button" href="warikan-seikatsu://invite" hidden>アプリで開く</a>
+
+      <h2>アプリが入っていないとき</h2>
+      <p>
+        iPhone の App Store、または、Android の Google Play で、「わりかん生活」を、インストールしてください。
+        インストールしたあとで、もう一度、このURLを開くと、参加の確認の画面が出ます。
+      </p>
+
+      <div class="note">
+        <p class="muted">
+          このURLは、招待された人のためのものです。他の人に、見せないでください。
+          使えるのは、1人が、1回だけで、発行から3日で、無効になります。
+        </p>
+      </div>
+
+      <p id="invalid" class="muted" hidden>このURLの形が、正しくありません。招待してくれた人に、もう一度、URLを送ってもらってください。</p>
+
+      <script src="/invite.js"></script>
+    </main>
+  </body>
+</html>

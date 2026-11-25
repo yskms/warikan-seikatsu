@@ -14,6 +14,7 @@
 // 片方だけ置き換えると、そちらで失敗する。本番のドメインを決めるときに、見る範囲を見直す。
 /// <reference types="node" />
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { API_ORIGIN } from '../repositories/apiClient.ts';
@@ -35,4 +36,17 @@ describe('リリース前の確認（仮の値が残っていないこと）', {
       assert.equal(isPlaceholderUrl(value), false, `${name}（${file}）が、仮の値（${value}）のまま`);
     });
   }
+
+  // debug.keystore（Expoのテンプレートのもの。誰でも持っている公開の鍵）のSHA-256が、App Links の設定（assetlinks.json。`worker/src/site.ts`
+  // の `ASSET_LINKS`）に残っていないこと。残すと、同じパッケージ名で debug 鍵の署名のアプリが、招待URLの検証に通る。リリース前に、
+  // Play App Signing の鍵のSHA-256に置き換える。
+  it('assetlinks.json（worker/src/site.ts）に、debug の署名のSHA-256が残っていない', () => {
+    const DEBUG_SHA256 = 'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C';
+    const source = readFileSync(new URL('../../worker/src/site.ts', import.meta.url), 'utf8');
+    assert.equal(
+      source.includes(DEBUG_SHA256),
+      false,
+      'worker/src/site.ts の ASSET_LINKS に、debug 鍵のSHA-256が残っている（Play App Signing の鍵のSHA-256に置き換える）',
+    );
+  });
 });
