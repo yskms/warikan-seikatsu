@@ -1,9 +1,8 @@
 // このアプリについて（設定の最後の行。docs/screens.md 6章）。プライバシーポリシー・利用規約・お問い合わせのページへのリンクと、
-// アプリの版を出す。
+// アプリの版と、ライセンス（使っているオープンソースの一覧。`ui/settings/LicensesScreen.tsx`）への行を出す。
 //
 // リンクは、外のブラウザで開く（ログイン画面と同じ。`app/login.tsx`）。**公開していないページ（仮の値）の行は出さない**
 // （`src/services/aboutView.ts`）。開けなかったときは、画面に出す（押しても何も起きないと、壊れて見える）。
-// ライセンス（使っているオープンソースの一覧）は、まだ作っていない（docs/screens.md 6章）。
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -66,6 +65,15 @@ export function AboutScreen() {
               <MaterialCommunityIcons name="open-in-new" size={20} color={colors.textSecondary} />
             </Pressable>
           ))}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ライセンス"
+            onPress={() => router.push('/licenses')}
+            style={({ pressed }) => [styles.row, { borderBottomColor: colors.border }, pressed && styles.pressed]}
+          >
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>ライセンス</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+          </Pressable>
           {/* 押せない行。読み上げは、「バージョン、0.1.0」の1つにまとめる */}
           <View
             accessible
