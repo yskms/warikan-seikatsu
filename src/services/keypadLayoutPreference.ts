@@ -3,6 +3,7 @@
 //
 // - **メモリが先**: 選んだ並びは、すぐ画面へ反映する（`choose`）。端末へ書くのに失敗しても、何も起こさない（起動中は選んだ並びのまま。
 //   次の起動で、初期値に戻るだけ）。便利のための設定で、金額の入力そのものは妨げないため。
+// - **端末への保存は、選んだ順に直列に行う**（`save` が呼んだ順に終わる前提に頼らない。保存先を非同期のものに替えても、最後に選んだ並びが残る）。
 // - **起動時の読み込み（`start`）は、1回だけ**。読み込みが終わる前に選ばれていたら、読んだ値を捨てる（古い値で、いま選んだ並びを
 //   上書きしない）。読めない・知らない値は、初期値のまま。
 import { createValueStore, type ValueStore } from './valueStore.ts';
@@ -26,6 +27,8 @@ export function createKeypadLayoutPreference(storage: KeypadLayoutStorage): Keyp
   const store = createValueStore<KeypadLayout>(DEFAULT_KEYPAD_LAYOUT);
   let started: Promise<void> | null = null;
   let chosen = false;
+  /** 直前の保存（終わったら解決する。失敗しない） */
+  let saving: Promise<void> = Promise.resolve();
   return {
     get: store.get,
     subscribe: store.subscribe,
@@ -44,11 +47,19 @@ export function createKeypadLayoutPreference(storage: KeypadLayoutStorage): Keyp
     async choose(layout) {
       chosen = true;
       store.set(layout);
-      try {
-        await storage.save(layout);
-      } catch {
-        // 覚えられなくても、この起動中は、選んだ並びで使える
-      }
+      // 端末への保存は、選んだ順に1つずつ行う（前の保存が終わってから、次を始める）。続けて選んだとき、保存先が本当に非同期だと、
+      // 先の保存があとから終わり、古い並びが残って、次の起動で戻ってしまう。メモリは待たずに、すぐ最後の選択になっている。
+      // `mine` は失敗しない（失敗は握りつぶす）ので、前の保存の失敗が、次の保存を止めることはない。
+      const previous = saving;
+      const mine = previous.then(async () => {
+        try {
+          await storage.save(layout);
+        } catch {
+          // 覚えられなくても、この起動中は、選んだ並びで使える
+        }
+      });
+      saving = mine;
+      await mine;
     },
   };
 }

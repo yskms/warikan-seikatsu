@@ -19,7 +19,11 @@ import {
 import { useColors } from '../useColors.ts';
 import { useKeypadLayout } from '../useKeypadLayout.ts';
 
-/** 並びの小さな図。読み上げには含めない（選択肢の名前と説明で足りる）。 */
+/**
+ * 並びの小さな図。読み上げには含めない（選択肢の名前と説明で足りる）。
+ * **下の段は、いつも `00` で描く**（`keypadRows(layout, 0)`）。この設定は端末のもので、グループの通貨には依らないので、図を通貨に合わせない。
+ * 小数のある通貨のグループでは、実物のキーパッドの `00` が `.` になる（数字の並びは、図と実物で同じ）。
+ */
 function LayoutFigure({ layout }: { layout: KeypadLayout }) {
   const colors = useColors();
   return (

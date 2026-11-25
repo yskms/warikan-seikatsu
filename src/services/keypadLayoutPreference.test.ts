@@ -115,4 +115,56 @@ describe('キーパッドの並びの設定', () => {
     await started;
     assert.equal(pref.get(), 'calculator');
   });
+
+  it('続けて選んだとき、端末への保存は、選んだ順に1つずつ行う（前の保存が終わってから、次を始める）', async () => {
+    const started: KeypadLayout[] = [];
+    const finished: KeypadLayout[] = [];
+    const release: Array<() => void> = [];
+    const pref = createKeypadLayoutPreference({
+      load: async () => null,
+      save: (value) => {
+        started.push(value);
+        return new Promise<void>((resolve) => {
+          release.push(() => {
+            finished.push(value);
+            resolve();
+          });
+        });
+      },
+    });
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    const first = pref.choose('calculator');
+    const second = pref.choose('phone');
+    // メモリは、保存を待たずに、すぐ最後に選んだ並びになる
+    assert.equal(pref.get(), 'phone');
+    await flush();
+    assert.deepEqual(started, ['calculator']);
+
+    release[0]!();
+    await first;
+    await flush();
+    assert.deepEqual(started, ['calculator', 'phone']);
+
+    release[1]!();
+    await second;
+    assert.deepEqual(finished, ['calculator', 'phone']);
+  });
+
+  it('前の保存が失敗しても、次の保存は行う', async () => {
+    const saved: KeypadLayout[] = [];
+    let calls = 0;
+    const pref = createKeypadLayoutPreference({
+      load: async () => null,
+      save: async (value) => {
+        calls += 1;
+        if (calls === 1) throw new Error('書けない');
+        saved.push(value);
+      },
+    });
+    await pref.choose('calculator');
+    await pref.choose('phone');
+    assert.deepEqual(saved, ['phone']);
+    assert.equal(pref.get(), 'phone');
+  });
 });
