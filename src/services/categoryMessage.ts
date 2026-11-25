@@ -38,6 +38,10 @@ function codeOf(error: unknown): string {
 export function shouldReloadAfter(error: unknown, action: CategoryAction): boolean {
   if (action === 'create' || action === 'create-update') return false;
   if (!(error instanceof CategoryRejectedError)) return false;
+  // 見直しの確認は、サーバーが断った理由が、読み直せば解ける（競合、脱退が確定して直せない403、メンバーでない404 は、読み直すと、
+  // お知らせが `editable` で消える）。読み直さないと、押しても消えないお知らせが残る。
+  // 同じ確認の送り直しは、結果が同じ（印が無いだけ）。形の違い（400。`reason` が無い）は、読み直しても同じ
+  if (action === 'acknowledge-reset') return error.reason === 'conflict' || error.reason === 'forbidden' || error.reason === 'not_found';
   // 並べ替えは、費目の顔ぶれが違う（`categories_changed`）ときだけ。`conflict`（書き込みの競合が2回続いた）は、費目が変わったという
   // 意味ではなく、作った並びはそのまま有効なので、読み直さず、同じ並びを送り直してもらう。メンバーの増減・月が締まった、は
   // 並べ替えでは起きない

@@ -310,13 +310,13 @@ describe('put', () => {
 });
 
 describe('acknowledgeReset', () => {
-  it('POST /groups/:id/category-shares/acknowledge-reset に、through を送る。204の本文は読まない', async () => {
+  it('POST /groups/:id/category-shares/acknowledge-reset に、見た月と through を送る。204の本文は読まない', async () => {
     const { fetchImpl, calls } = fakeFetch(() => Promise.resolve({ ok: true, status: 204, json: async () => Promise.reject(new Error('no body')) }));
-    const result = await createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g/1', 1_795_057_200_000);
+    const result = await createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g/1', '2026-11', 1_795_057_200_000);
     assert.equal(result, undefined);
     assert.equal(calls[0].url, `${API_ORIGIN}/groups/g%2F1/category-shares/acknowledge-reset`);
     assert.equal(calls[0].init.method, 'POST');
-    assert.deepEqual(JSON.parse(calls[0].init.body!), { through: 1_795_057_200_000 });
+    assert.deepEqual(JSON.parse(calls[0].init.body!), { month: '2026-11', through: 1_795_057_200_000 });
     assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
   });
 
@@ -327,15 +327,21 @@ describe('acknowledgeReset', () => {
       [409, 'conflict'],
     ] as const) {
       const error = await rejectedWith(
-        createCategorySharesRepository(fakeFetch(() => reply(status, { error: reason })).fetchImpl).acknowledgeReset(SESSION, 'g1', 1),
+        createCategorySharesRepository(fakeFetch(() => reply(status, { error: reason })).fetchImpl).acknowledgeReset(SESSION, 'g1', '2026-11', 1),
       );
       assert.equal(error.status, status);
       assert.equal(error.reason, reason);
     }
   });
 
+  it('月の形が違えば、送らずに invalid-response', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(204));
+    await rejectsWith(createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g1', '2026-13', 1), 'invalid-response');
+    assert.equal(calls.length, 0);
+  });
+
   it('401 は unauthorized、5xx は unavailable、通信の失敗は network', async () => {
-    const send = (fetchImpl: CategorySharesFetchLike) => createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g1', 1);
+    const send = (fetchImpl: CategorySharesFetchLike) => createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g1', '2026-11', 1);
     await rejectsWith(send(fakeFetch(() => reply(401)).fetchImpl), 'unauthorized');
     await rejectsWith(send(fakeFetch(() => reply(503)).fetchImpl), 'unavailable');
     await rejectsWith(send(fakeFetch(() => new Error('offline')).fetchImpl), 'network');

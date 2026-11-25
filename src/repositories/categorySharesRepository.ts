@@ -107,14 +107,15 @@ export function createCategorySharesRepository(
 
     /**
      * `POST /groups/:id/category-shares/acknowledge-reset`（204）。「メンバーが変わったため、割合を均等に戻した」お知らせを、
-     * 見直し済みにする（割合は変えない）。`through` は、画面が見た最も新しい `memberChangedAt`（それより新しい印は、見て
-     * いないので消えない）。本文は読まない。断られたら `CategoryRejectedError`。
+     * 見直し済みにする（割合は変えない）。`targetMonth` は、画面が割合を見た月（サーバーは、その月で使われている行の印だけを
+     * 消す。ほかの月の印は、その月を開くまで残る）。`through` は、画面が見た最も新しい `memberChangedAt`（それより新しい印は、
+     * 見ていないので消えない）。本文は読まない。断られたら `CategoryRejectedError`。
      */
-    async acknowledgeReset(session: string, groupId: string, through: number): Promise<void> {
+    async acknowledgeReset(session: string, groupId: string, targetMonth: string, through: number): Promise<void> {
       await client.request(
         'POST',
         `/groups/${encodeURIComponent(groupId)}/category-shares/acknowledge-reset`,
-        { session, json: { through }, rejected: categoryRejection },
+        { session, json: { month: month(targetMonth), through }, rejected: categoryRejection },
         async () => undefined,
       );
     },

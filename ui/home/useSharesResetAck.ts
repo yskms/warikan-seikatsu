@@ -1,9 +1,9 @@
 // お知らせ「メンバーが増減した」の「確認した」（docs/screens.md 3章）。割合は変えず、見直し済みの印だけを消して、ホームを読み直す。
 // 通信の最中は、次の操作を始めない。
 //
-// 失敗したとき: 文言を出す（`categoryErrorMessage`）。サーバーに断られて、画面の内容が古い（競合・メンバーの増減）ときは、
-// 読み直す（`shouldReloadAfter`）。通信の失敗では、読み直さない。同じ確認を送り直しても、二重にはならない
-// （印が無いだけ）。
+// 失敗したとき: 文言を出す（`categoryErrorMessage`）。サーバーが断ったときは、画面の内容が古い（競合・脱退が確定して直せなく
+// なった・メンバーでなくなった）ので、読み直す（`shouldReloadAfter`。読み直せば、お知らせは `editable` で消える。読み直さないと、
+// 押しても消えないお知らせが残る）。通信の失敗では、読み直さない。同じ確認を送り直しても、二重にはならない（印が無いだけ）。
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { categoryService } from '../../platform/categoryService.ts';
@@ -30,13 +30,13 @@ export function useSharesResetAck({ groupId, reload, month }: UseSharesResetAckO
   }, [month]);
 
   const acknowledge = useCallback(
-    async (through: number) => {
+    async (targetMonth: string, through: number) => {
       if (running.current || !mounted.current) return;
       running.current = true;
       setBusy(true);
       setError(null);
       try {
-        await categoryService.acknowledgeSharesReset(groupId, through);
+        await categoryService.acknowledgeSharesReset(groupId, targetMonth, through);
         await reload();
       } catch (e) {
         setError(categoryErrorMessage(e, 'acknowledge-reset'));

@@ -142,6 +142,8 @@ export function buildNotices(selectedMonth: string, months: readonly MonthListIt
 
 export interface SharesResetNotice {
   message: string;
+  /** 「確認した」で送る月。この画面が割合を見た月（サーバーは、その月で使われている行の印だけを消す） */
+  month: string;
   /** 「確認した」で送る値。この画面が見た、最も新しい `memberChangedAt`（それより新しい印は、見ていないので消さない） */
   through: number;
 }
@@ -163,6 +165,7 @@ export function buildSharesResetNotice(shares: CategoryShares | null): SharesRes
   if (!marked.some((rule) => !rule.archived)) return null;
   return {
     message: 'メンバーが変わったため、負担割合を均等に戻しました。見直してください',
+    month: shares.month,
     through: Math.max(...marked.map((rule) => rule.memberChangedAt!)),
   };
 }

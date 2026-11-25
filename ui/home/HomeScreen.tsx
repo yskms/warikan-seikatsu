@@ -145,7 +145,7 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
                 hint: 'このお知らせを閉じます。負担割合は変わりません',
                 busy: sharesAck.busy,
                 error: sharesAck.error,
-                onPress: () => void sharesAck.acknowledge(sharesReset.through),
+                onPress: () => void sharesAck.acknowledge(sharesReset.month, sharesReset.through),
               },
             },
           ];

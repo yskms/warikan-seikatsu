@@ -75,11 +75,11 @@ export function createCategoryService({ groups, months, categories, shares, acce
     },
 
     /**
-     * 「メンバーが増減した」お知らせを、見直し済みにする（`through` は、画面が見た最も新しい `memberChangedAt`）。割合は変えない。
-     * 同じ確認を送り直しても同じ結果。
+     * 「メンバーが増減した」お知らせを、見直し済みにする。`month` は、画面が割合を見た月（その月で使われている行の印だけが消える）、
+     * `through` は、画面が見た最も新しい `memberChangedAt`。割合は変えない。同じ確認を送り直しても同じ結果。
      */
-    acknowledgeSharesReset(groupId: string, through: number): Promise<void> {
-      return access.withSession((session) => shares.acknowledgeReset(session, groupId, through));
+    acknowledgeSharesReset(groupId: string, month: string, through: number): Promise<void> {
+      return access.withSession((session) => shares.acknowledgeReset(session, groupId, month, through));
     },
 
     /** 費目を作る。`input.id` は、呼び出し側が最初の1回だけ作り、やり直しでも使い回す。 */

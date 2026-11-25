@@ -586,12 +586,16 @@ export async function handlePutCategoryRule(
 // POST /groups/:id/category-shares/acknowledge-reset
 
 /**
- * 「メンバーが変わったため、割合を均等に戻した」お知らせを、見直し済みにする（`member_changed_at` の印を一括で消す）。
- * 割合は変えない。ホームのお知らせの「確認した」。形は9章の「費目・負担割合API」。
+ * 「メンバーが変わったため、割合を均等に戻した」お知らせを、見直し済みにする（`member_changed_at` の印を消す）。割合は変えない。
+ * ホームのお知らせの「確認した」。形は9章の「費目・負担割合API」。
  *
- * 本文の `through` は、アプリが見た最も新しい印の時刻。それより新しい印（確認を押すまでに、別のメンバーの参加などで、
- * 割合を戻したもの）は、見ていないので消さない。同じ確認を何度送っても同じ（印が無ければ何も変わらない）ので、
- * 競合は、読み直して1回やり直してよい（`writeToGroupWithRetry`）。
+ * **消すのは、本文の `month` で使われている行だけ**（費目ごとに、その月以前で最も新しい行。`loadRules` が返す行と同じ）。
+ * アプリが見ていない月の印は、消さない（6月に参加があり、6月がまだ締まっていないうちに、7月へ移る脱退が確定したとき、
+ * 7月で確認しても、6月の印は、6月を開くまで残る）。後の月が、その行を引き継いでいれば、一緒に直る（同じ行）。
+ * 本文の `through` は、アプリが見た最も新しい印。それより新しい印（確認を押すまでに、別のメンバーの参加などで、割合を
+ * 戻したもの）は、見ていないので消さない。
+ * 同じ確認を何度送っても同じ（印が無ければ何も変わらない）ので、競合は、読み直して1回やり直す（`writeToGroupWithRetry`）。
+ * 参加前の月は403（割合を読めない月）。権限は割合の変更と同じ。
  */
 export async function handleAcknowledgeSharesReset(
   request: Request,
@@ -605,21 +609,26 @@ export async function handleAcknowledgeSharesReset(
   if (!body.ok) return body.response;
   const parsed = parseResetAcknowledgement(body.body);
   if (!parsed.ok) return invalidRequest(parsed.field === '' ? undefined : parsed.field);
-  const through = parsed.value;
+  const { month, through } = parsed.value;
   const db = env.DB;
 
   const outcome = await writeToGroupWithRetry<null, Response>(db, groupId, async () => {
     const access = await loadGroupAccess(db, session.userId, groupId);
     if (access === null) return { reject: notFound() };
+    if (!canViewMonth(access, month)) return { reject: forbidden() };
     if (!canEditGroupSettings(access, now)) return { reject: forbidden() };
     return {
       write: (token: string) => [
+        // 費目ごとに、`month` 以前で最も新しい月の行（主キー（費目, 月）の範囲で引く）だけを消す。
         db
           .prepare(
             `UPDATE category_month_settings SET member_changed_at = NULL
-              WHERE group_id = ? AND member_changed_at IS NOT NULL AND member_changed_at <= ? AND EXISTS (${GROUP_WRITE_GUARD})`,
+              WHERE group_id = ? AND member_changed_at IS NOT NULL AND member_changed_at <= ?
+                AND target_month = (SELECT max(s.target_month) FROM category_month_settings s
+                                     WHERE s.category_id = category_month_settings.category_id AND s.target_month <= ?)
+                AND EXISTS (${GROUP_WRITE_GUARD})`,
           )
-          .bind(groupId, through, groupId, token),
+          .bind(groupId, through, month, groupId, token),
       ],
       value: null,
     };

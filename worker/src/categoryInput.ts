@@ -5,6 +5,7 @@
 // - 割合が、その月のメンバーと合っているか、は、DBの状態が要るので呼び出し側（categories.ts）で見る。
 import { isCurrencyCodeShape, isId, isRecord, isUuid, unknownKey, type ParseResult } from './expenseInput.ts';
 import { MAX_AMOUNT_MINOR, MAX_CATEGORIES_PER_GROUP, MAX_CATEGORY_NAME_LENGTH } from './limits.ts';
+import { isMonth } from './months.ts';
 import { BASIS_POINTS_TOTAL, type MemberShare } from './settlement.ts';
 import { parseLabel } from './textInput.ts';
 
@@ -91,16 +92,25 @@ export function parseCategoryOrder(body: Record<string, unknown>): ParseResult<s
   return { ok: true, value: [...ids] };
 }
 
+/** 割合の見直しの確認の入力。 */
+export interface ResetAcknowledgementInput {
+  /** アプリが割合を見た月。この月に使われている行（その月以前で最も新しい行）の印だけを消す */
+  month: string;
+  /** アプリが見た、最も新しい `memberChangedAt`。それより新しい印は消さない */
+  through: number;
+}
+
 /**
- * 割合の見直しの確認の本文: `{ through }`（0以上の整数。Unixエポックのミリ秒）。アプリが見た、最も新しい
- * `memberChangedAt`。それより新しい印は消さない（`handleAcknowledgeSharesReset`）。
+ * 割合の見直しの確認の本文: `{ month, through }`。`month` は `YYYY-MM`、`through` は0以上の整数（Unixエポックのミリ秒）。
+ * 何を消すかは `handleAcknowledgeSharesReset`。
  */
-export function parseResetAcknowledgement(body: Record<string, unknown>): ParseResult<number> {
-  const extra = unknownKey(body, ['through']);
+export function parseResetAcknowledgement(body: Record<string, unknown>): ParseResult<ResetAcknowledgementInput> {
+  const extra = unknownKey(body, ['month', 'through']);
   if (extra !== null) return fail(extra);
+  if (!isMonth(body.month)) return fail('month');
   const through = body.through;
   if (typeof through !== 'number' || !Number.isSafeInteger(through) || through < 0) return fail('through');
-  return { ok: true, value: through };
+  return { ok: true, value: { month: body.month, through } };
 }
 
 /**

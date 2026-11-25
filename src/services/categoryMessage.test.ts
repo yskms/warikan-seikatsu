@@ -53,12 +53,17 @@ describe('shouldReloadAfter', () => {
 });
 
 describe('見直しの確認（acknowledge-reset）', () => {
-  it('他のメンバーの操作で古くなったとき（競合）は読み直す。権限・メンバーでない・通信の失敗は読み直さない', () => {
-    assert.equal(shouldReloadAfter(rejected('conflict'), 'acknowledge-reset'), true);
-    for (const reason of ['forbidden', 'not_found', null]) {
-      assert.equal(shouldReloadAfter(rejected(reason), 'acknowledge-reset'), false, String(reason));
+  it('サーバーが断った理由が、読み直せば解けるとき（競合・脱退が確定した403・メンバーでない404）は読み直す', () => {
+    // 読み直せば、お知らせが `editable` で消える。読み直さないと、押しても消えないお知らせが残る
+    for (const reason of ['conflict', 'forbidden', 'not_found']) {
+      assert.equal(shouldReloadAfter(rejected(reason), 'acknowledge-reset'), true, reason);
     }
+  });
+
+  it('形の違い（400。理由なし）・通信の失敗は、読み直しても同じなので読み直さない', () => {
+    assert.equal(shouldReloadAfter(rejected(null, {}, 400), 'acknowledge-reset'), false);
     assert.equal(shouldReloadAfter(new AuthError('network'), 'acknowledge-reset'), false);
+    assert.equal(shouldReloadAfter(new Error('x'), 'acknowledge-reset'), false);
   });
 
   it('文言は、閉じられなかったことを伝える。競合は、読み直したので確認して、もう一度', () => {

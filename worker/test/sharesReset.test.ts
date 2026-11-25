@@ -154,7 +154,7 @@ describe('割合を均等に戻した印（メンバーの増減のお知らせ�
       await join(g);
       const sharesBefore = (await api.getRules(g.people.alice, g.groupId, '2026-11')).body.categories;
       const version = await dataVersion(g.groupId);
-      const result = await api.acknowledgeReset(g.people.bob, g.groupId, { through: NOW });
+      const result = await api.acknowledgeReset(g.people.bob, g.groupId, { month: '2026-11', through: NOW });
       assert.equal(result.status, 204);
       assert.equal(await dataVersion(g.groupId), version + 1);
       assert.ok((await marks(g.groupId)).every((row) => row.member_changed_at === null));
@@ -164,7 +164,7 @@ describe('割合を均等に戻した印（メンバーの増減のお知らせ�
         sharesBefore.map(({ memberChangedAt: _, ...rest }: { memberChangedAt: number | null }) => rest),
       );
       // もう一度送っても同じ（印が無いだけ）。
-      assert.equal((await api.acknowledgeReset(g.people.bob, g.groupId, { through: NOW })).status, 204);
+      assert.equal((await api.acknowledgeReset(g.people.bob, g.groupId, { month: '2026-11', through: NOW })).status, 204);
     });
 
     it('`through` より新しい印は消さない（確認を押すまでに、別のメンバーが参加して、割合を戻したもの）', async () => {
@@ -174,10 +174,89 @@ describe('割合を均等に戻した印（メンバーの増減のお知らせ�
       await db.prepare('UPDATE category_month_settings SET member_changed_at = ? WHERE group_id = ? AND target_month = ?')
         .bind(NOW + 1000, g.groupId, '2026-11')
         .run();
-      assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { through: NOW })).status, 204);
+      assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-11', through: NOW })).status, 204);
       assert.ok((await marks(g.groupId)).filter((row) => row.target_month === '2026-11').every((row) => row.member_changed_at === NOW + 1000));
-      assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { through: NOW + 1000 })).status, 204);
+      assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-11', through: NOW + 1000 })).status, 204);
       assert.ok((await marks(g.groupId)).every((row) => row.member_changed_at === null));
+    });
+
+    describe('消す範囲は、見た月で使われている行だけ', () => {
+      /** 2026-10（印なし）・2026-11・2026-12 の行を、全費目に置き、11月に印 `nov`、12月に印 `dec` を付ける（null なら付けない）。 */
+      const withMarks = async (nov: number | null, dec: number | null) => {
+        const g = await setup();
+        const ids = [g.people.alice.memberId, g.people.bob.memberId];
+        for (const categoryId of [g.categoryId, g.rentId]) {
+          if (nov !== null) await insertCategoryRule(db, g.groupId, categoryId, '2026-11', equalShares(ids));
+          if (dec !== null) await insertCategoryRule(db, g.groupId, categoryId, '2026-12', equalShares(ids));
+        }
+        const mark = (month: string, at: number | null) =>
+          db
+            .prepare('UPDATE category_month_settings SET member_changed_at = ? WHERE group_id = ? AND target_month = ?')
+            .bind(at, g.groupId, month)
+            .run();
+        if (nov !== null) await mark('2026-11', nov);
+        if (dec !== null) await mark('2026-12', dec);
+        return g;
+      };
+      const byMonth = async (groupId: string) => {
+        const rows = await marks(groupId);
+        const out: Record<string, (number | null)[]> = {};
+        for (const row of rows) (out[row.target_month] ??= []).push(row.member_changed_at);
+        return out;
+      };
+
+      it('別の月の印は消さない（6月の印は、7月で確認しても、6月を開くまで残る）', async () => {
+        const g = await withMarks(1000, 2000);
+        assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-12', through: 2000 })).status, 204);
+        assert.deepEqual(await byMonth(g.groupId), {
+          '2026-10': [null, null],
+          '2026-11': [1000, 1000],
+          '2026-12': [null, null],
+        });
+        // 残った11月の印は、11月を開いたときに見えて、そこで確認すれば消える。
+        const got = await api.getRules(g.people.alice, g.groupId, '2026-11');
+        assert.deepEqual(got.body.categories.map((c: { memberChangedAt: number | null }) => c.memberChangedAt), [1000, 1000]);
+        assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-11', through: 1000 })).status, 204);
+        assert.deepEqual((await byMonth(g.groupId))['2026-11'], [null, null]);
+      });
+
+      it('後の月の行は消さない（確認した月より後に、別の印がある）', async () => {
+        const g = await withMarks(1000, 2000);
+        assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-11', through: 5000 })).status, 204);
+        assert.deepEqual(await byMonth(g.groupId), {
+          '2026-10': [null, null],
+          '2026-11': [null, null],
+          '2026-12': [2000, 2000],
+        });
+      });
+
+      it('行が無い月で確認すると、その月が引き継いでいる前の月の行の印を消す', async () => {
+        const g = await withMarks(1000, null);
+        const seen = await api.getRules(g.people.alice, g.groupId, '2026-12');
+        assert.deepEqual(seen.body.categories.map((c: { memberChangedAt: number | null }) => c.memberChangedAt), [1000, 1000]);
+        assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-12', through: 1000 })).status, 204);
+        assert.deepEqual((await byMonth(g.groupId))['2026-11'], [null, null]);
+        const after = await api.getRules(g.people.alice, g.groupId, '2026-12');
+        assert.deepEqual(after.body.categories.map((c: { memberChangedAt: number | null }) => c.memberChangedAt), [null, null]);
+      });
+
+      it('費目ごとに、その月で使われている行を消す（行が違う月の費目を、取り違えない）', async () => {
+        const g = await withMarks(1000, null);
+        // rent だけ、12月に自分の行（印つき）がある。food は 11月の行を引き継ぐ。
+        const ids = [g.people.alice.memberId, g.people.bob.memberId];
+        await insertCategoryRule(db, g.groupId, g.rentId, '2026-12', equalShares(ids));
+        await db
+          .prepare('UPDATE category_month_settings SET member_changed_at = 900 WHERE category_id = ? AND target_month = ?')
+          .bind(g.rentId, '2026-12')
+          .run();
+        assert.equal((await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-12', through: 1000 })).status, 204);
+        const rows = await marks(g.groupId);
+        const at = (categoryId: string, month: string) =>
+          rows.find((row) => row.category_id === categoryId && row.target_month === month)!.member_changed_at;
+        assert.equal(at(g.categoryId, '2026-11'), null, 'food は11月の行を使っていたので消える');
+        assert.equal(at(g.rentId, '2026-11'), 1000, 'rent は12月に自分の行があり、11月の行は使っていないので残る');
+        assert.equal(at(g.rentId, '2026-12'), null);
+      });
     });
 
     it('ほかのグループの印には触れない', async () => {
@@ -185,21 +264,34 @@ describe('割合を均等に戻した印（メンバーの増減のお知らせ�
       const b = await setup();
       await join(a);
       await join(b);
-      assert.equal((await api.acknowledgeReset(a.people.alice, a.groupId, { through: NOW })).status, 204);
+      assert.equal((await api.acknowledgeReset(a.people.alice, a.groupId, { month: '2026-11', through: NOW })).status, 204);
       assert.ok((await marks(b.groupId)).some((row) => row.member_changed_at === NOW));
     });
 
-    it('入力の不備は400。メンバーでない人は404、セッション無しは401、脱退が確定した人は403', async () => {
+    it('入力の不備は400。メンバーでない人は404、セッション無しは401、参加前の月・脱退が確定した人は403', async () => {
       const g = await setup();
-      for (const body of [{}, { through: -1 }, { through: 1.5 }, { through: '1' }, { through: NOW, extra: 1 }, { through: null }]) {
+      for (const body of [
+        {},
+        { through: NOW },
+        { month: '2026-11' },
+        { month: '2026-13', through: NOW },
+        { month: 'next', through: NOW },
+        { month: '2026-11', through: -1 },
+        { month: '2026-11', through: 1.5 },
+        { month: '2026-11', through: '1' },
+        { month: '2026-11', through: null },
+        { month: '2026-11', through: NOW, extra: 1 },
+      ]) {
         const result = await api.acknowledgeReset(g.people.alice, g.groupId, body);
         assert.equal(result.status, 400, JSON.stringify(body));
       }
-      assert.equal((await api.acknowledgeReset(null, g.groupId, { through: NOW })).status, 401);
+      assert.equal((await api.acknowledgeReset(null, g.groupId, { month: '2026-11', through: NOW })).status, 401);
       const outsider = await factory.addUser('outsider');
-      assert.deepEqual(await api.acknowledgeReset(outsider, g.groupId, { through: NOW }), { status: 404, body: { error: 'not_found' } });
+      assert.deepEqual(await api.acknowledgeReset(outsider, g.groupId, { month: '2026-11', through: NOW }), { status: 404, body: { error: 'not_found' } });
       const f = await factory();
-      assert.deepEqual(await api.acknowledgeReset(f.carol, f.groupId, { through: NOW }), { status: 403, body: { error: 'forbidden' } });
+      assert.deepEqual(await api.acknowledgeReset(f.carol, f.groupId, { month: '2026-11', through: NOW }), { status: 403, body: { error: 'forbidden' } });
+      // 参加（2026-11）より前の月は、割合を読めない月なので、確認もできない。
+      assert.deepEqual(await api.acknowledgeReset(f.newbie, f.groupId, { month: '2026-10', through: NOW }), { status: 403, body: { error: 'forbidden' } });
       assert.equal((await marks(g.groupId)).length, 2);
     });
 
@@ -208,10 +300,10 @@ describe('割合を均等に戻した印（メンバーの増減のお知らせ�
       await join(g);
       const bump = () =>
         db.prepare('UPDATE expense_groups SET data_version = data_version + 1 WHERE id = ?').bind(g.groupId).run();
-      const once = await api.acknowledgeReset(g.people.alice, g.groupId, { through: NOW }, { env: interferingEnv(env, bump, { times: 1 }) });
+      const once = await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-11', through: NOW }, { env: interferingEnv(env, bump, { times: 1 }) });
       assert.equal(once.status, 204);
       await join(g, 'second');
-      const twice = await api.acknowledgeReset(g.people.alice, g.groupId, { through: NOW_DECEMBER }, { env: interferingEnv(env, bump, { times: 2 }) });
+      const twice = await api.acknowledgeReset(g.people.alice, g.groupId, { month: '2026-11', through: NOW_DECEMBER }, { env: interferingEnv(env, bump, { times: 2 }) });
       assert.deepEqual(twice, { status: 409, body: { error: 'conflict' } });
       assert.ok((await marks(g.groupId)).some((row) => row.member_changed_at !== null), '消えていない');
     });
@@ -220,9 +312,9 @@ describe('割合を均等に戻した印（メンバーの増減のお知らせ�
       const g = await setup();
       await join(g);
       const path = `/groups/${g.groupId}/category-shares/acknowledge-reset`;
-      assert.equal((await read(await worker.fetch(request('POST', path, g.people.alice.token, { through: NOW }), env))).status, 204);
+      assert.equal((await read(await worker.fetch(request('POST', path, g.people.alice.token, { month: '2026-11', through: NOW }), env))).status, 204);
       assert.equal((await read(await worker.fetch(request('GET', path, g.people.alice.token), env))).status, 405);
-      assert.equal((await read(await worker.fetch(request('POST', '/groups/bad id/category-shares/acknowledge-reset', g.people.alice.token, { through: NOW }), env))).status, 404);
+      assert.equal((await read(await worker.fetch(request('POST', '/groups/bad id/category-shares/acknowledge-reset', g.people.alice.token, { month: '2026-11', through: NOW }), env))).status, 404);
     });
   });
 

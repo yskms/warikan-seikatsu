@@ -223,13 +223,13 @@ describe('お知らせ', () => {
 describe('「メンバーが増減した」お知らせ', () => {
   const MESSAGE = 'メンバーが変わったため、負担割合を均等に戻しました。見直してください';
 
-  it('使っている費目に、見直されていない印があれば出す。「確認した」で送る値は、印の最も新しい時刻', () => {
+  it('使っている費目に、見直されていない印があれば出す。「確認した」で送る値は、見た月と、印の最も新しい時刻', () => {
     const shares = sharesOf([
       shareRule({ categoryId: 'c1', memberChangedAt: 1_000 }),
       shareRule({ categoryId: 'c2', memberChangedAt: 3_000 }),
       shareRule({ categoryId: 'c3', memberChangedAt: null }),
     ]);
-    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, through: 3_000 });
+    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, month: '2026-11', through: 3_000 });
   });
 
   it('印が無ければ出さない（見直した・割合を保存した・戻していない）', () => {
@@ -253,7 +253,7 @@ describe('「メンバーが増減した」お知らせ', () => {
       shareRule({ categoryId: 'c1', memberChangedAt: 1_000 }),
       shareRule({ categoryId: 'c2', archived: true, memberChangedAt: 2_000 }),
     ]);
-    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, through: 2_000 });
+    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, month: '2026-11', through: 2_000 });
   });
 });
 
