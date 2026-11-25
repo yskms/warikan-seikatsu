@@ -69,6 +69,10 @@ function setup(options: { session?: string; failWith?: Error; months?: MonthList
       if (options.failRepository === 'put') throw new AuthError('network');
       return { overriddenMonths: ['2027-01'] };
     },
+    async acknowledgeReset(session: string, groupId: string, through: number) {
+      log.push(`acknowledge:${session}:${groupId}:${through}`);
+      if (options.failRepository === 'put') throw new AuthError('network');
+    },
   } as unknown as CategorySharesRepository;
   let withSessionCalls = 0;
   const access: SessionAccess = {
@@ -133,6 +137,20 @@ describe('categoryService の書き込み', () => {
       'withSession',
       'reorder:SESSION:g1:c2,c1',
     ]);
+  });
+
+  it('acknowledgeSharesReset は、1回の withSession を通して、見直しの確認を送る。失敗はそのまま画面へ届く', async () => {
+    const { service, log, withSessionCalls } = setup({ session: 'SESSION' });
+    await service.acknowledgeSharesReset('g1', 1_795_057_200_000);
+    assert.equal(withSessionCalls(), 1);
+    assert.deepEqual(log, ['withSession', 'acknowledge:SESSION:g1:1795057200000']);
+    await assert.rejects(
+      setup({ failRepository: 'put' }).service.acknowledgeSharesReset('g1', 1),
+      (error) => error instanceof AuthError && error.code === 'network',
+    );
+    const failing = setup({ failWith: new AuthError('unauthorized') });
+    await assert.rejects(failing.service.acknowledgeSharesReset('g1', 1), (error) => error instanceof AuthError && error.code === 'unauthorized');
+    assert.deepEqual(failing.log, ['withSession']);
   });
 
   it('セッションの失敗は、Repository を呼ばず、そのまま画面へ届く', async () => {

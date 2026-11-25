@@ -33,6 +33,7 @@ const rule = (shares: [string, number][], cap: CategoryShareRule['cap'] = null):
   categoryId: 'c1',
   sourceMonth: '2026-10',
   shares: shares.map(([memberId, basisPoints]) => ({ memberId, basisPoints })),
+  memberChangedAt: null,
   cap,
   archived: false,
 });

@@ -74,6 +74,14 @@ export function createCategoryService({ groups, months, categories, shares, acce
       return access.withSession((session) => shares.put(session, groupId, month, categoryId, input));
     },
 
+    /**
+     * 「メンバーが増減した」お知らせを、見直し済みにする（`through` は、画面が見た最も新しい `memberChangedAt`）。割合は変えない。
+     * 同じ確認を送り直しても同じ結果。
+     */
+    acknowledgeSharesReset(groupId: string, through: number): Promise<void> {
+      return access.withSession((session) => shares.acknowledgeReset(session, groupId, through));
+    },
+
     /** 費目を作る。`input.id` は、呼び出し側が最初の1回だけ作り、やり直しでも使い回す。 */
     createCategory(groupId: string, input: CreateCategoryInput): Promise<{ id: string }> {
       return access.withSession((session) => categories.create(session, groupId, input));

@@ -8,6 +8,7 @@
 //   同じ結果で、利用者に失敗に見せる理由がない）。ただし、JSONでない200（宿のWi-Fiの認証画面など）を成功と取り違えないよう、
 //   応答がオブジェクトであることだけは確かめる。
 // - 断られたとき（400・403・404・409）は、`CategoryRejectedError` に、サーバーが返した理由を載せる（`categoryRepository.ts`）。
+// - 見直しの確認（`POST .../category-shares/acknowledge-reset`。204）は、本文を読まない。同じ確認を送り直しても同じ（印が無いだけ）。
 // - 再試行はしない。割合は置き換えなので、送り直しても二重にはならない。
 import type { CategoryShareRule, CategoryShares, SavedCategoryShare, ShareCap } from '../domain/categoryShare.ts';
 import { createApiClient, type ApiFetchLike } from './apiClient.ts';
@@ -28,6 +29,7 @@ function parseRule(value: unknown): CategoryShareRule {
     }),
     cap: cap === null ? null : { memberId: id(cap.memberId), capMinor: int(cap.capMinor) },
     archived: bool(data.archived),
+    memberChangedAt: data.memberChangedAt === null ? null : int(data.memberChangedAt),
   };
 }
 
@@ -100,6 +102,20 @@ export function createCategorySharesRepository(
           const data = record(await response.json());
           return { overriddenMonths: overriddenMonths(data.overriddenMonths) };
         },
+      );
+    },
+
+    /**
+     * `POST /groups/:id/category-shares/acknowledge-reset`（204）。「メンバーが変わったため、割合を均等に戻した」お知らせを、
+     * 見直し済みにする（割合は変えない）。`through` は、画面が見た最も新しい `memberChangedAt`（それより新しい印は、見て
+     * いないので消えない）。本文は読まない。断られたら `CategoryRejectedError`。
+     */
+    async acknowledgeReset(session: string, groupId: string, through: number): Promise<void> {
+      await client.request(
+        'POST',
+        `/groups/${encodeURIComponent(groupId)}/category-shares/acknowledge-reset`,
+        { session, json: { through }, rejected: categoryRejection },
+        async () => undefined,
       );
     },
   };

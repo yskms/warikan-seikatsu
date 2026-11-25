@@ -51,6 +51,7 @@ const rule = {
   ],
   cap: null,
   archived: false,
+  memberChangedAt: null,
 };
 const sharesBody = { month: '2026-11', closed: false, editable: true, memberIds: ['m1', 'm2'], categories: [rule] };
 
@@ -86,6 +87,13 @@ describe('get', () => {
     assert.deepEqual(result.categories, [capped]);
   });
 
+  it('メンバーの増減で戻した印（memberChangedAt）は、時刻のまま読む', async () => {
+    const marked = { ...rule, memberChangedAt: 1_795_057_200_000 };
+    const { fetchImpl } = fakeFetch(() => reply(200, { ...sharesBody, categories: [marked] }));
+    const result = await createCategorySharesRepository(fetchImpl).get(SESSION, 'g1', '2026-11');
+    assert.equal(result.categories[0]?.memberChangedAt, 1_795_057_200_000);
+  });
+
   it('割合が1つも無い月（費目が空）も読める', async () => {
     const { fetchImpl } = fakeFetch(() => reply(200, { ...sharesBody, categories: [] }));
     assert.deepEqual((await createCategorySharesRepository(fetchImpl).get(SESSION, 'g1', '2026-11')).categories, []);
@@ -108,6 +116,9 @@ describe('get', () => {
       { ...sharesBody, categories: [{ ...rule, cap: { memberId: 'm1' } }] },
       { ...sharesBody, categories: [{ ...rule, cap: undefined }] },
       { ...sharesBody, categories: [{ ...rule, archived: 'false' }] },
+      { ...sharesBody, categories: [{ ...rule, memberChangedAt: undefined }] },
+      { ...sharesBody, categories: [{ ...rule, memberChangedAt: '1000' }] },
+      { ...sharesBody, categories: [{ ...rule, memberChangedAt: 1.5 }] },
     ];
     for (const body of bad) {
       await rejectsWith(
@@ -295,5 +306,38 @@ describe('put', () => {
     await rejectsWith(put(fakeFetch(() => reply(401)).fetchImpl), 'unauthorized');
     await rejectsWith(put(fakeFetch(() => reply(503)).fetchImpl), 'unavailable');
     await rejectsWith(put(fakeFetch(() => new Error('offline')).fetchImpl), 'network');
+  });
+});
+
+describe('acknowledgeReset', () => {
+  it('POST /groups/:id/category-shares/acknowledge-reset に、through を送る。204の本文は読まない', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => Promise.resolve({ ok: true, status: 204, json: async () => Promise.reject(new Error('no body')) }));
+    const result = await createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g/1', 1_795_057_200_000);
+    assert.equal(result, undefined);
+    assert.equal(calls[0].url, `${API_ORIGIN}/groups/g%2F1/category-shares/acknowledge-reset`);
+    assert.equal(calls[0].init.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].init.body!), { through: 1_795_057_200_000 });
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
+  });
+
+  it('断られたら、理由つき。脱退が確定した人（403）・メンバーでない（404）・競合（409）', async () => {
+    for (const [status, reason] of [
+      [403, 'forbidden'],
+      [404, 'not_found'],
+      [409, 'conflict'],
+    ] as const) {
+      const error = await rejectedWith(
+        createCategorySharesRepository(fakeFetch(() => reply(status, { error: reason })).fetchImpl).acknowledgeReset(SESSION, 'g1', 1),
+      );
+      assert.equal(error.status, status);
+      assert.equal(error.reason, reason);
+    }
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network', async () => {
+    const send = (fetchImpl: CategorySharesFetchLike) => createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g1', 1);
+    await rejectsWith(send(fakeFetch(() => reply(401)).fetchImpl), 'unauthorized');
+    await rejectsWith(send(fakeFetch(() => reply(503)).fetchImpl), 'unavailable');
+    await rejectsWith(send(fakeFetch(() => new Error('offline')).fetchImpl), 'network');
   });
 });

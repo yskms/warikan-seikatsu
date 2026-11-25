@@ -52,6 +52,32 @@ describe('shouldReloadAfter', () => {
   });
 });
 
+describe('見直しの確認（acknowledge-reset）', () => {
+  it('他のメンバーの操作で古くなったとき（競合）は読み直す。権限・メンバーでない・通信の失敗は読み直さない', () => {
+    assert.equal(shouldReloadAfter(rejected('conflict'), 'acknowledge-reset'), true);
+    for (const reason of ['forbidden', 'not_found', null]) {
+      assert.equal(shouldReloadAfter(rejected(reason), 'acknowledge-reset'), false, String(reason));
+    }
+    assert.equal(shouldReloadAfter(new AuthError('network'), 'acknowledge-reset'), false);
+  });
+
+  it('文言は、閉じられなかったことを伝える。競合は、読み直したので確認して、もう一度', () => {
+    assert.equal(
+      categoryErrorMessage(rejected('conflict'), 'acknowledge-reset'),
+      '他の操作と重なりました。画面を読み直しました。確認して、もう一度お試しください。',
+    );
+    assert.equal(categoryErrorMessage(rejected('forbidden', {}, 403), 'acknowledge-reset'), '脱退が確定しているため、変更できません。');
+    assert.equal(
+      categoryErrorMessage(new AuthError('network'), 'acknowledge-reset'),
+      '通信できませんでした。電波のよいところで、もう一度お試しください。',
+    );
+    assert.equal(
+      categoryErrorMessage(rejected(null, {}, 400), 'acknowledge-reset'),
+      'お知らせを閉じられませんでした。アプリを最新の版に更新して、お試しください。',
+    );
+  });
+});
+
 describe('isCreateConflict', () => {
   it('409 conflict だけ（この id を他のグループが使っている、または書き込みの競合が続いた。どちらも作られていない）', () => {
     assert.equal(isCreateConflict(rejected('conflict')), true);

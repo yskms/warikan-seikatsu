@@ -23,6 +23,19 @@ export interface NoticeItem {
   /** スクリーンリーダー向けの、タップしたときに起きることの説明 */
   hint: string;
   onPress(): void;
+  /** お知らせの下に出す、もう1つの操作（「確認した」など）。無ければ、お知らせ全体がタップの対象 */
+  action?: NoticeAction;
+}
+
+export interface NoticeAction {
+  label: string;
+  /** スクリーンリーダー向けの、押したときに起きることの説明 */
+  hint: string;
+  /** 通信の最中。押せなくする */
+  busy: boolean;
+  /** 失敗の文言 */
+  error: string | null;
+  onPress(): void;
 }
 
 /** お知らせ。複数あれば重ねて出す。タップで何が起きるかは、呼ぶ側が決める（月へ移る・固定費を開く）。 */
@@ -31,21 +44,66 @@ export function NoticeList({ notices }: { notices: readonly NoticeItem[] }) {
   if (notices.length === 0) return null;
   return (
     <View style={styles.notices}>
-      {notices.map((notice) => (
-        <Pressable
-          key={notice.key}
-          accessibilityRole="button"
-          accessibilityLabel={notice.message}
-          accessibilityHint={notice.hint}
-          onPress={notice.onPress}
-          // 地の色（accent）は白の上で文字に足りないので、枠と面で目立たせ、文字は本文の色にする
-          style={[styles.notice, { backgroundColor: colors.surface, borderColor: colors.accent }]}
-        >
-          <MaterialCommunityIcons name="alert-circle-outline" size={22} color={colors.textPrimary} />
-          <Text style={[styles.noticeText, { color: colors.textPrimary }]}>{notice.message}</Text>
-          <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
-        </Pressable>
-      ))}
+      {notices.map((notice) => {
+        // 地の色（accent）は白の上で文字に足りないので、枠と面で目立たせ、文字は本文の色にする
+        const box = { backgroundColor: colors.surface, borderColor: colors.accent };
+        const body = (
+          <>
+            <MaterialCommunityIcons name="alert-circle-outline" size={22} color={colors.textPrimary} />
+            <Text style={[styles.noticeText, { color: colors.textPrimary }]}>{notice.message}</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
+          </>
+        );
+        const { action } = notice;
+        if (action === undefined) {
+          return (
+            <Pressable
+              key={notice.key}
+              accessibilityRole="button"
+              accessibilityLabel={notice.message}
+              accessibilityHint={notice.hint}
+              onPress={notice.onPress}
+              style={[styles.notice, box]}
+            >
+              {body}
+            </Pressable>
+          );
+        }
+        // 操作が2つあるお知らせ: 本文（タップで開く）と、下の操作を、別のボタンにする（ボタンの中にボタンを入れない）
+        return (
+          <View key={notice.key} style={[styles.noticeBox, box]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={notice.message}
+              accessibilityHint={notice.hint}
+              onPress={notice.onPress}
+              style={styles.noticeRow}
+            >
+              {body}
+            </Pressable>
+            {action.error !== null ? (
+              <Text style={[styles.noticeError, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                {action.error}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              accessibilityHint={action.hint}
+              accessibilityState={{ disabled: action.busy, busy: action.busy }}
+              disabled={action.busy}
+              onPress={action.onPress}
+              style={({ pressed }) => [
+                styles.noticeAction,
+                { borderColor: colors.border, opacity: action.busy ? 0.5 : 1 },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.noticeActionText, { color: colors.textPrimary }]}>{action.label}</Text>
+            </Pressable>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -243,6 +301,11 @@ const styles = StyleSheet.create({
   notices: { gap: 8 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1.5, borderRadius: 12, padding: 14 },
   noticeText: { flex: 1, fontSize: 15, fontWeight: '600' },
+  noticeBox: { gap: 10, borderWidth: 1.5, borderRadius: 12, padding: 14 },
+  noticeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noticeError: { fontSize: 13, lineHeight: 18 },
+  noticeAction: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, borderWidth: 1, borderRadius: 10 },
+  noticeActionText: { fontSize: 14, fontWeight: '600' },
   inviteBody: { flex: 1, gap: 2 },
   inviteMessage: { fontSize: 13, lineHeight: 18 },
   pressed: { opacity: 0.7 },

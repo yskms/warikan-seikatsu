@@ -23,6 +23,11 @@ export interface CategoryShareRule {
   shares: MemberShare[];
   cap: ShareCap | null;
   archived: boolean;
+  /**
+   * メンバーの増減で、この割合を均等に戻した時刻（Unixエポックのミリ秒）。まだ誰も見直していなければ入る（割合を保存した・
+   * 見直しの確認をしたら `null`）。ホームのお知らせ「メンバーが増減した」の元（`buildSharesResetNotice`）。
+   */
+  memberChangedAt: number | null;
 }
 
 /** `GET /groups/:id/months/:month/category-shares` */

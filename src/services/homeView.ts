@@ -119,8 +119,8 @@ export interface Notice {
  * 翌月に最初の支出を登録したグループなど。docs/backend-design.md 4章）。その月まで「先に締めてください」と促すと、締められる
  * という `close` と食い違う。この規則はアプリに書き写さず、サーバーの答えに従う。
  *
- * 固定費のお知らせは `recurringView.ts` の `buildRecurringNotices`（月へ移るものではないので、別に組み立てる）。メンバーが増減した
- * お知らせ（screens.md 3章）は、費目の割合を見直した印を覚える場所ができるときに足す（docs/backend-design.md 12章）。
+ * 固定費のお知らせは `recurringView.ts` の `buildRecurringNotices`、メンバーが増減したお知らせは `buildSharesResetNotice` で、
+ * それぞれ別に組み立てる（月へ移るものではない）。
  */
 export function buildNotices(selectedMonth: string, months: readonly MonthListItem[], close: CloseState): Notice[] {
   const previous = previousMonth(selectedMonth);
@@ -135,6 +135,36 @@ export function buildNotices(selectedMonth: string, months: readonly MonthListIt
     return [{ kind: 'previous-unsettled', month: item.month, message: `${label}分の精算が残っています` }];
   }
   return [];
+}
+
+// ---------------------------------------------------------------------------
+// 「メンバーが増減した」お知らせ
+
+export interface SharesResetNotice {
+  message: string;
+  /** 「確認した」で送る値。この画面が見た、最も新しい `memberChangedAt`（それより新しい印は、見ていないので消さない） */
+  through: number;
+}
+
+/**
+ * 「メンバーが変わったため、負担割合を均等に戻しました。見直してください」（docs/screens.md 3章）。選んだ月の割合の
+ * いずれかの費目に、見直されていない印（`memberChangedAt`）があるときだけ出す。
+ *
+ * - **印の有無はサーバーの値で見る**。メンバーの増減の判定・戻した月の判定は、アプリに書き写さない（割合は、その月以前で
+ *   最も新しい月の行を引き継ぐので、戻した月より後の月にも出る。サーバーの `memberChangedAt` が、引き継ぎ元の行の印を返す）。
+ * - 出すのは、`editable`（締めていない・直せる月・脱退が確定していない）のときだけ。締めた月の割合は直せない。
+ * - 使っている費目（アーカイブしていない）に印があるときだけ出す。アーカイブした費目の印だけでは、見直す先が見えない
+ *   （費目を戻したときに、その費目の印があれば出る）。`through` には、アーカイブした費目の印も含める（確認で、まとめて消す）。
+ * - 割合を読めなかった（`null`。補助の読み込み）ときは、出さない。
+ */
+export function buildSharesResetNotice(shares: CategoryShares | null): SharesResetNotice | null {
+  if (shares === null || !shares.editable) return null;
+  const marked = shares.categories.filter((rule) => rule.memberChangedAt !== null);
+  if (!marked.some((rule) => !rule.archived)) return null;
+  return {
+    message: 'メンバーが変わったため、負担割合を均等に戻しました。見直してください',
+    through: Math.max(...marked.map((rule) => rule.memberChangedAt!)),
+  };
 }
 
 // ---------------------------------------------------------------------------

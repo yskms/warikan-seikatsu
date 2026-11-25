@@ -119,6 +119,7 @@ describe('buildCategoryRows', () => {
     categoryId,
     sourceMonth: '2026-10',
     shares: shares.map(([memberId, basisPoints]) => ({ memberId, basisPoints })),
+    memberChangedAt: null,
     cap,
     archived: false,
   });

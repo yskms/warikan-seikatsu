@@ -15,6 +15,7 @@ import {
   buildMonthOptions,
   buildNotices,
   buildSettlement,
+  buildSharesResetNotice,
   buildTotal,
   CARRY_BLOCKED_TEXT,
   carryConfirmText,
@@ -219,6 +220,43 @@ describe('お知らせ', () => {
   });
 });
 
+describe('「メンバーが増減した」お知らせ', () => {
+  const MESSAGE = 'メンバーが変わったため、負担割合を均等に戻しました。見直してください';
+
+  it('使っている費目に、見直されていない印があれば出す。「確認した」で送る値は、印の最も新しい時刻', () => {
+    const shares = sharesOf([
+      shareRule({ categoryId: 'c1', memberChangedAt: 1_000 }),
+      shareRule({ categoryId: 'c2', memberChangedAt: 3_000 }),
+      shareRule({ categoryId: 'c3', memberChangedAt: null }),
+    ]);
+    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, through: 3_000 });
+  });
+
+  it('印が無ければ出さない（見直した・割合を保存した・戻していない）', () => {
+    assert.equal(buildSharesResetNotice(sharesOf([shareRule(), shareRule({ categoryId: 'c2' })])), null);
+    assert.equal(buildSharesResetNotice(sharesOf([])), null);
+  });
+
+  it('割合を読めなかったとき（補助の読み込み）は出さない', () => {
+    assert.equal(buildSharesResetNotice(null), null);
+  });
+
+  it('直せない月（締めた月・直せる範囲の外・脱退が確定した人）は出さない。editable はサーバーの値', () => {
+    const marked = [shareRule({ memberChangedAt: 1_000 })];
+    assert.equal(buildSharesResetNotice({ ...sharesOf(marked), editable: false }), null);
+    assert.equal(buildSharesResetNotice({ ...sharesOf(marked), closed: true, editable: false }), null);
+  });
+
+  it('アーカイブした費目の印だけでは出さない。出すときの送る値には、アーカイブした費目の印も含める', () => {
+    assert.equal(buildSharesResetNotice(sharesOf([shareRule({ archived: true, memberChangedAt: 2_000 })])), null);
+    const shares = sharesOf([
+      shareRule({ categoryId: 'c1', memberChangedAt: 1_000 }),
+      shareRule({ categoryId: 'c2', archived: true, memberChangedAt: 2_000 }),
+    ]);
+    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, through: 2_000 });
+  });
+});
+
 describe('「相手を招待する」のカード', () => {
   // 自分（m1）だけのグループ。自分の行は、`leaveRequestedMonth` を変えられる
   const solo = (patch: { canInvite?: boolean; seatedMembers?: number; leaveRequestedMonth?: string | null } = {}) => ({
@@ -309,6 +347,7 @@ function shareRule(patch: Partial<CategoryShareRule> = {}): CategoryShareRule {
     ],
     cap: null,
     archived: false,
+    memberChangedAt: null,
     ...patch,
   };
 }

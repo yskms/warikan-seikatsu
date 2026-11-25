@@ -14,10 +14,11 @@ import { formatMonth } from './dateFormat.ts';
  * 保存済みの費目をそのまま返すので、直した内容をあとから送る（`CategoryEditSheet.tsx`）。作成と失敗の扱いを分ける（作成は
  * 済んでいるので、新しい `id` にしてはいけない）。
  */
-export type CategoryAction = 'save-share' | 'create' | 'create-update' | 'update' | 'reorder';
+export type CategoryAction = 'save-share' | 'acknowledge-reset' | 'create' | 'create-update' | 'update' | 'reorder';
 
 const FAILED: Record<CategoryAction, string> = {
   'save-share': '割合を保存できませんでした。',
+  'acknowledge-reset': 'お知らせを閉じられませんでした。',
   create: 'カテゴリを追加できませんでした。',
   'create-update': 'カテゴリは追加できましたが、入力した内容を反映できませんでした。',
   update: 'カテゴリを変更できませんでした。',
