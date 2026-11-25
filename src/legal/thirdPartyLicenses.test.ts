@@ -1,8 +1,8 @@
 // 第三者のライセンスの一覧（`thirdPartyLicenses.ts`。`scripts/generate-licenses.mjs` の生成物）が、
 // 依存と食い違っていないことのテスト。`npm test` で実行する。依存を更新・追加したときは、
 // `node scripts/generate-licenses.mjs` で作り直す。
-// コピー元: Singfolio の src/legal/thirdPartyLicenses.test.ts（c3a065e）。Googleのサインインの依存（Play services・
-// googleid・iOS の Pod）と、全文を持たない依存（`licenseUrl`）の確認は、このアプリが持たないので外した。
+// コピー元: Singfolio の src/legal/thirdPartyLicenses.test.ts（c3a065e）。アイコンフォントの確認は、このアプリの
+// 依存（Ionicons・Material Design Icons・Material Symbols）に合わせた。
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -26,28 +26,88 @@ const LICENSE_MARKERS: Record<string, RegExp> = {
   'BSD-3-Clause': /Redistribution and use in source and binary forms/,
   'BSL-1.0': /Boost Software License - Version 1\.0/,
   'IJG AND BSD-3-Clause AND Zlib': /Independent JPEG Group/,
+  // GoogleUtilities（iOS の Pod）。Apache-2.0 の全文に、MIT の全文が続く。
+  'Apache-2.0 AND MIT': /Apache License\s+Version 2\.0[\s\S]*Permission is hereby granted, free of charge/,
 };
+
+// 全文を載せず、規約のURLだけを載せる依存（Android Software Development Kit License で配布される Google の依存）。
+// ALLOWED_LICENSES には無く、生成のとき、groupId を個別に許可したものだけがここに入る。
+const ANDROID_SDK_LICENSE = 'Android Software Development Kit License';
+const ANDROID_SDK_LICENSE_URL = 'https://developer.android.com/studio/terms';
+const withText = THIRD_PARTY_PACKAGES.filter((entry) => entry.licenseUrl === undefined);
+const termsOnly = THIRD_PARTY_PACKAGES.filter((entry) => entry.licenseUrl !== undefined);
 
 describe('THIRD_PARTY_PACKAGES', () => {
   it('名前と版の組は重ならない。全文の添字は範囲内', () => {
     const keys = THIRD_PARTY_PACKAGES.map((entry) => `${entry.name}@${entry.version ?? ''}`);
     assert.equal(new Set(keys).size, keys.length);
-    for (const entry of THIRD_PARTY_PACKAGES) {
-      assert.ok(THIRD_PARTY_LICENSE_TEXTS[entry.text] !== undefined, entry.name);
+    for (const entry of withText) {
+      assert.ok(entry.text !== undefined && THIRD_PARTY_LICENSE_TEXTS[entry.text] !== undefined, entry.name);
     }
   });
 
   it('全文は、すべてどれかのパッケージから使われている（使われない全文が残らない）', () => {
-    const used = new Set(THIRD_PARTY_PACKAGES.map((entry) => entry.text));
+    const used = new Set(withText.map((entry) => entry.text));
     assert.equal(used.size, THIRD_PARTY_LICENSE_TEXTS.length);
   });
 
   it('ライセンスの種類は、全文と合っている', () => {
-    for (const entry of THIRD_PARTY_PACKAGES) {
+    for (const entry of withText) {
       const marker = LICENSE_MARKERS[entry.license];
       assert.ok(marker, `${entry.name}: 許可していないライセンス ${entry.license}`);
-      assert.match(THIRD_PARTY_LICENSE_TEXTS[entry.text] ?? '', marker, entry.name);
+      assert.match(THIRD_PARTY_LICENSE_TEXTS[entry.text ?? -1] ?? '', marker, entry.name);
     }
+  });
+
+  it('全文を載せないもの（licenseUrl）は、Android Software Development Kit License のAndroidの依存だけ。全文は持たない', () => {
+    assert.deepEqual(termsOnly.map((entry) => entry.name).sort(), ['Google Identity (googleid)', 'Google Play services']);
+    for (const entry of termsOnly) {
+      assert.equal(entry.license, ANDROID_SDK_LICENSE, entry.name);
+      assert.equal(entry.licenseUrl, ANDROID_SDK_LICENSE_URL, entry.name);
+      assert.equal(entry.text, undefined, entry.name);
+      assert.equal(entry.platform, 'android', entry.name);
+      assert.ok(entry.includes !== undefined && entry.includes.length > 0, entry.name);
+    }
+  });
+
+  it('Play services の AAR が持つ OSS の表記が、全文つきで載っている（Androidだけ。J2ObjC の GPL などは載せない）', () => {
+    // Google の oss-licenses plugin が一覧に含める、third_party_licenses のうち、載せると決めたもの
+    // （scripts/generate-licenses.mjs の GOOGLE_AAR_NOTICES）。
+    const notices = THIRD_PARTY_PACKAGES.filter((entry) => entry.name.endsWith(' (Google Play services)'));
+    assert.equal(notices.length, 20);
+    for (const name of ['Protocol Buffers for Java', 'JSR 305', 'Tink', 'Guava JDK7', 'SafeParcelable library']) {
+      assert.ok(names.has(`${name} (Google Play services)`), name);
+    }
+    for (const entry of notices) {
+      assert.equal(entry.platform, 'android', entry.name);
+      assert.ok(['Apache-2.0', 'MIT', 'BSD-3-Clause'].includes(entry.license), entry.name);
+      const text = THIRD_PARTY_LICENSE_TEXTS[entry.text ?? -1] ?? '';
+      assert.ok(text.length < 20000, `${entry.name}: 複数のライセンスの全文が混ざっている`);
+      assert.doesNotMatch(text, /GNU General Public License|Apple Public Source/, entry.name);
+    }
+    assert.ok(!names.has('J2ObjC (Google Play services)'));
+  });
+
+  it('Googleのサインインの依存が載っている（iOSのPodは全文つき、Androidは規約のURL）', () => {
+    const ios = ['GoogleSignIn', 'AppAuth', 'GTMAppAuth', 'GTMSessionFetcher', 'AppCheckCore', 'GoogleUtilities',
+      'PromisesObjC', 'PromisesSwift', 'RecaptchaInterop'];
+    for (const name of ios) {
+      const entry = THIRD_PARTY_PACKAGES.find((item) => item.name === name);
+      assert.ok(entry, name);
+      assert.equal(entry.platform, 'ios', name);
+      assert.ok(entry.version !== undefined, name);
+    }
+    // LICENSE が Apache-2.0 に MIT が続く形なのは GoogleUtilities だけ（MIT の著作権表示を載せる必要がある）。
+    const mixed = THIRD_PARTY_PACKAGES.filter((entry) => entry.license === 'Apache-2.0 AND MIT');
+    assert.deepEqual(mixed.map((entry) => entry.name), ['GoogleUtilities']);
+    assert.match(THIRD_PARTY_LICENSE_TEXTS[mixed[0].text ?? -1] ?? '', /Copyright \(c\) 2017 Landon J\. Fuller/);
+    // androidx.credentials は AndroidX（Apache-2.0）に含まれる。
+    const androidx = THIRD_PARTY_PACKAGES.find((entry) => entry.name === 'AndroidX');
+    assert.ok(androidx?.includes?.some((coordinate) => coordinate.startsWith('androidx.credentials:credentials:')));
+  });
+
+  it('自前のローカルモジュール（modules/warikan-google-signin）は、第三者ではないので載せない', () => {
+    assert.ok(![...names].some((name) => /warikan/i.test(name)));
   });
 
   it('npmのパッケージは、package-lock.json に、その名前と版で入っている（依存を更新したら作り直す）', () => {

@@ -2,11 +2,8 @@
 // アプリに入る第三者のソフトウェアのライセンスの一覧を生成する。
 //
 // コピー元: Singfolio（~/Developer/singfolio）の scripts/generate-licenses.mjs（c3a065e）。Singfolio側の修正は手で
-// 取り込む。このアプリで変えたところ（差分を取り込むときの目印）:
-//   - Googleのサインインに関わる部分を外した（このアプリは、まだ組み込んでいない）: ANDROID_SDK_LICENSE・
-//     GOOGLE_AAR_NOTICES とその検査・IOS_TRUNK_PODS と Pod の全文の取り込み（`checkIosPods` は、Pod が入っていないことの
-//     確認だけ）・MAVEN_FAMILIES の Google の2行・出力の `licenseUrl`。
-//     Googleのサインインを入れるときは、Singfolio側の同じ部分を取り込む
+// 取り込む。このアプリで変えたところ（差分を取り込むときの目印。Googleのサインインの部分〔ANDROID_SDK_LICENSE・
+// GOOGLE_AAR_NOTICES・IOS_TRUNK_PODS・`iosPodEntries`・MAVEN_FAMILIES の Google の2行・`licenseUrl`〕は、Singfolioと同じ）:
 //   - ICON_FONTS・LICENSE_FALLBACKS・MAVEN_FAMILIES など、アプリに入る依存で決まる設定は、このアプリの依存に合わせた
 //     （ICON_FONTS の「Material Design Icons」の全文 `scripts/license-texts/MaterialDesignIcons.txt` は、このアプリで
 //     新しく作った。Singfolio には無い）
@@ -14,7 +11,7 @@
 //     （`@expo/vector-icons` をルートから import すると、使わないものを含むフォント19種が入る。Singfolio は自前で同梱したフォント
 //     〔`assets/fonts`〕があるので、そのままは移せない。逆輸入するなら、それを除く形にする）
 //   - KNOWN_SO から `libexpo-sqlite`（このアプリには expo-sqlite が無い）を、下の「載せていないもの」から SQLite を外した
-//   - 一時ディレクトリの名前
+//   - 一時ディレクトリの名前、出力・前提の説明の文
 //
 //     node scripts/generate-licenses.mjs           # src/legal/thirdPartyLicenses.ts を作り直す
 //     node scripts/generate-licenses.mjs --check   # 作り直した結果が、今のファイルと同じかを確かめる（提出前など）
@@ -24,7 +21,10 @@
 // 出力  src/legal/thirdPartyLicenses.ts（設定の「このアプリについて」→「ライセンス」が出す。手で編集しない。
 //       依存を更新・追加したら、必ず作り直す）
 // 前提  node_modules・ios/・android/ があること（`npx expo prebuild` 済み。Android の依存は Gradle で、iOS の Pod は
-//       Podfile.lock で調べる。どちらも gitignore されている）
+//       Podfile.lock で調べる。どちらも gitignore されている。Googleのサインイン〔`modules/warikan-google-signin`〕を
+//       足した・上げたあとは、`npx expo prebuild --platform ios` で `ios/` を作り直す。古いと、iOS の Google の Pod が無く、
+//       生成が失敗する。`ios/` で `pod install` だけを実行しても通らない: prebuild のとき、`plugins/withGoogleSignIn.js` が
+//       Podfile に足す modular headers（GoogleUtilities・RecaptchaInterop）が無く、Swift の Pod の統合で失敗する）
 //
 // 「アプリに入るもの」は、package.json の dependencies を機械的にたどらず、実際に入るものから決める
 // （Expoの依存には、@expo/cli・babel など、ビルドにしか使わないものが大量に含まれるため）。
@@ -40,7 +40,13 @@
 //                 埋め込んでいる C/C++ のライブラリ（Fresco の libjpeg-turbo・libwebp・giflib、zstd-kmp の zstd。
 //                 APK の .so で確かめたもの。MAVEN_EMBEDDED_LIBS）
 //                 iOS の Pod（Podfile.lock）。node_modules の中のもの（React Native・Expo）と、自前のローカルモジュール
-//                 （`modules/`）は載せない。CocoaPods の trunk から入る Pod は、いまは無い（入ったら失敗にする）
+//                 （`modules/`）は載せない。CocoaPods の trunk から入る Pod は、IOS_TRUNK_PODS に挙げたもの（Googleの
+//                 サインインとその依存）だけを、Pods/<名前>/LICENSE の全文で載せる。挙げていない Pod が入ったら失敗にする
+//   5. terms    : 全文を載せられない・載せない依存。今は、Android Software Development Kit License で配布される
+//                 Googleの依存（Play services・googleid）だけ。ALLOWED_LICENSES には足さず、groupId を個別に許可して、
+//                 ライセンスの名前と規約のURLだけを載せる（About の別枠。ANDROID_SDK_LICENSE）。これとは別に、その AAR が
+//                 持つ OSS の表記（third_party_licenses。Google の oss-licenses plugin の入力）のうち、載せると決めた
+//                 ものを、全文つきで載せる（GOOGLE_AAR_NOTICES。名前は「<名前> (Google Play services)」）
 // 自前のコード（`modules/` のローカルモジュール）は、第三者ではないので載せない。
 // 載せていないもの: OS・NDK が提供する実行時のライブラリ（libc++ など。LLVM の例外で、バイナリでの表記は
 // 不要）、OkHttp の public suffix のリスト（APK の中に出典とライセンスの
@@ -72,6 +78,21 @@ const ALLOWED_LICENSES = new Set([
   // libjpeg-turbo。IJG の条件は、文書に「この製品は Independent JPEG Group の仕事に一部基づく」と書くことを求める
   'IJG AND BSD-3-Clause AND Zlib',
 ]);
+
+// iOS の Pod（IOS_TRUNK_PODS）にだけ許す、複合のライセンス。ALLOWED_LICENSES（npm・Maven にも効く）には足さない:
+// 足すと、このSPDXを持つ別のパッケージが入っても、黙って通る。
+// GoogleUtilities は、LICENSE が、Apache-2.0 の全文に、MIT（Landon J. Fuller の著作権表示）の全文を続けた形。
+// MIT は、著作権表示と許諾表示を含めることを求める（LICENSE の全文をそのまま載せて満たす）。
+const IOS_POD_ALLOWED_LICENSES = new Set([...ALLOWED_LICENSES, 'Apache-2.0 AND MIT']);
+
+// Android Software Development Kit License（https://developer.android.com/studio/terms）。Play services と
+// googleid の POM が、この名前を書いている。**ALLOWED_LICENSES には足さない**: 無条件に許すのではなく、
+// 対象の groupId だけを個別に許可する（MAVEN_FAMILIES の `androidSdkLicense`）。アプリへの表示・帰属表示の義務は
+// 規約に書かれていない（2021-07-27 版を読んだ）ので、全文は載せず、名前と規約の URL を、About の別枠に載せる。
+// 3.4（SDK の redistribute の禁止）などの扱いは、docs §8「Googleのサインイン」（Singfolio の docs/singfolio-publishing-backend.md。
+// このアプリでは、docs/screens.md 6章の「ライセンス」）。
+const ANDROID_SDK_LICENSE = 'Android Software Development Kit License';
+const ANDROID_SDK_LICENSE_URL = 'https://developer.android.com/studio/terms';
 
 // ---------------------------------------------------------------------------------------------
 // npm
@@ -228,6 +249,11 @@ const MAVEN_FAMILIES = [
   { match: /^commons-(codec|io)$/, name: 'Apache Commons' },
   { match: /^org\.brotli$/, name: 'Brotli', file: 'Brotli.txt', source: 'https://github.com/google/brotli/blob/master/LICENSE' },
   { match: /^org\.jspecify$/, name: 'JSpecify' },
+  // Googleのサインイン（Credential Manager）の依存。androidx.credentials は AndroidX（上）。以下の2つは
+  // Android Software Development Kit License で配布される（POM の名前が ANDROID_SDK_LICENSE と一致しなければ失敗）。
+  { match: /^com\.google\.android\.gms$/, name: 'Google Play services', androidSdkLicense: true },
+  { match: /^com\.google\.android\.libraries\.identity\.googleid$/, name: 'Google Identity (googleid)',
+    androidSdkLicense: true },
 ];
 
 // Maven の成果物（AAR）が .so に埋め込んでいる C/C++ のライブラリ。APK の `lib/` の .so で、入っていることを
@@ -257,6 +283,74 @@ const MAVEN_EMBEDDED_LIBS = [
     source: 'https://github.com/facebook/zstd/blob/1dbc2e09084e843f6c0dcc2d0791610015c50979/LICENSE',
     in: 'com.squareup.zstd:zstd-kmp-android', inVersion: '0.4.0' },
 ];
+
+// CocoaPods の trunk から入る iOS の Pod（node_modules の外）。GoogleSignIn とその依存。ここに無い Pod が
+// Podfile.lock の SPEC REPOS に出たら失敗にする。全文は、入っている Pod の Pods/<名前>/LICENSE をそのまま使う
+// （版は Podfile.lock から読む）。`license` は、その LICENSE を読んで確かめる:
+//   Apache-2.0           標準の Apache-2.0 の全文（scripts/license-texts/Apache-2.0.txt）と一致する
+//   Apache-2.0 AND MIT   標準の Apache-2.0 の全文に、MIT の全文（著作権表示を含む）が続く
+// どれも NOTICE ファイルは無い（Apache-2.0 の 4(d)）。版が上がって LICENSE が変わったら失敗にする。
+const IOS_TRUNK_PODS = [
+  { name: 'GoogleSignIn', license: 'Apache-2.0' },
+  { name: 'AppAuth', license: 'Apache-2.0' },
+  { name: 'GTMAppAuth', license: 'Apache-2.0' },
+  { name: 'GTMSessionFetcher', license: 'Apache-2.0' },
+  { name: 'AppCheckCore', license: 'Apache-2.0' },
+  { name: 'GoogleUtilities', license: 'Apache-2.0 AND MIT' },
+  { name: 'PromisesObjC', license: 'Apache-2.0' },
+  { name: 'PromisesSwift', license: 'Apache-2.0' },
+  { name: 'RecaptchaInterop', license: 'Apache-2.0' },
+];
+
+// Play services・googleid の AAR が持つ、OSS の表記（AAR 直下の third_party_licenses.json・.txt。Google の
+// oss-licenses plugin が、一覧に含める元のデータ）。Googleの資料（Include open source notices）は、Play services の
+// 各ライブラリを作るのに使ったOSSの全文も、アプリが表示する一覧に含まれる、アプリが使うOSSの表記の責任は開発者に
+// ある、としている。ただし、この一覧は、実際の同梱より広い（J2ObjC は、Android の AAR に入らない iOS 向けの
+// runtime の GPL・APSL・ICU などの全文を持つ）。classes.jar に、Guava 由来（`com.google.common.base.Strings`）や
+// protobuf-lite 由来のコードが、難読化名（zz*）で入っていることは確かめた。そこで、名前ごとに、載せるか・載せない
+// かを決める（知らない名前が出たら失敗にする）:
+//   載せる   : `license` は、全文を読んで確かめる（Apache-2.0 は標準の本文だけ。MIT・BSD-3-Clause は著作権表示つき）
+//   covered  : すでに別の行で載せているプロジェクト（AndroidX・Kotlin・kotlinx・JSpecify・Error Prone）
+//   skipped  : 載せない理由がある
+const GOOGLE_AAR_NOTICES = [
+  { name: 'Animal Sniffer', license: 'MIT' },
+  { name: 'apksig', license: 'Apache-2.0' },
+  { name: 'chrome_sync', license: 'BSD-3-Clause' },
+  { name: 'Checker Framework Annotations', license: 'MIT' },
+  { name: 'checker_framework_util', license: 'MIT' },
+  { name: 'Dagger', license: 'Apache-2.0' },
+  { name: 'Google Auto', license: 'Apache-2.0' },
+  { name: 'Guava JDK5', license: 'Apache-2.0' },
+  { name: 'Guava JDK7', license: 'Apache-2.0' },
+  { name: 'gsfclient', license: 'Apache-2.0' },
+  { name: 'HighwayHash', license: 'Apache-2.0' },
+  { name: 'java_annotations', license: 'Apache-2.0' },
+  { name: 'JSR 250', license: 'Apache-2.0' },
+  { name: 'JSR 305', license: 'BSD-3-Clause' },
+  { name: 'JSR 330', license: 'Apache-2.0' },
+  { name: 'JsInterop Annotations', license: 'Apache-2.0' },
+  { name: 'mobiledatadownload', license: 'Apache-2.0' },
+  { name: 'Protocol Buffers for Java', license: 'BSD-3-Clause' },
+  { name: 'SafeParcelable library', license: 'Apache-2.0' },
+  { name: 'Tink', license: 'Apache-2.0' },
+];
+const GOOGLE_AAR_NOTICES_COVERED =
+  /^(AndroidX .+|Kotlin|Kotlin coroutines|kotlinx_atomicfu|kotlinx_serialization|JSpecify|Error Prone)$/;
+const GOOGLE_AAR_NOTICES_SKIPPED = {
+  // 全文は、J2ObjC の runtime（iOS 向け）の GPL・APSL・ICU などを含む。Android の AAR に入るのは、注釈だけ
+  // （Apache-2.0）で、注釈は、Guava の依存として挙がっているだけ。
+  J2ObjC: 'iOS向けのruntimeの全文を含み、AndroidのAARには入らない',
+  // Android Software Development Kit License の全文そのもの（ここでは、名前と規約のURLだけを載せる）。
+  'Android SDK Platforms': 'ANDROID_SDK_LICENSE',
+};
+// 載せるものの、ライセンスの種類を、全文から確かめる。
+const NOTICE_KIND_CHECKS = {
+  'Apache-2.0': (text) =>
+    /Apache License\s+Version 2\.0/.test(text) && text.length < 20000 && !/GNU General Public License|Apple Public Source/.test(text),
+  MIT: (text) => /Permission is hereby granted, free of charge/.test(text),
+  'BSD-3-Clause': (text) =>
+    /Redistribution and use in source and binary forms/.test(text) && /Neither the name of/.test(text),
+};
 
 // APK・AAB の `lib/<abi>/` に入っていてよい .so（`--apk`）。理由は、一覧に載せている・載せなくてよい、のどちらか。
 const KNOWN_SO = [
@@ -601,11 +695,24 @@ function mavenEntries(resolved) {
     const family = MAVEN_FAMILIES.find((candidate) => candidate.match.test(group));
     if (!family) throw new Error(`${coordinate}:${version}: MAVEN_FAMILIES に無い groupId。プロジェクトの名前を決めて足す`);
     const pomNames = pomLicenses(group, artifact, version).map((license) => license.name);
-    const licenses = [...new Set(pomNames.map((name) => spdxFromPom(name)))];
-    if (licenses.length !== 1 || licenses[0] === null) {
-      throw new Error(`${coordinate}:${version}: POM からライセンスを1つに決められない（${JSON.stringify(licenses)}）`);
+    let license;
+    if (family.androidSdkLicense) {
+      // 個別に許可した groupId。POM が Android Software Development Kit License と書いていなければ失敗にする
+      // （同じ groupId に、別のライセンスの成果物が混ざったときに、黙って通さない）。
+      if (pomNames.length === 0 || pomNames.some((name) => name !== ANDROID_SDK_LICENSE)) {
+        throw new Error(
+          `${coordinate}:${version}: POM のライセンスが ${ANDROID_SDK_LICENSE} ではない（${JSON.stringify(pomNames)}）。` +
+            'POM が読めないときは `./gradlew :app:dependencies --configuration releaseRuntimeClasspath --refresh-dependencies`',
+        );
+      }
+      license = ANDROID_SDK_LICENSE;
+    } else {
+      const licenses = [...new Set(pomNames.map((name) => spdxFromPom(name)))];
+      if (licenses.length !== 1 || licenses[0] === null) {
+        throw new Error(`${coordinate}:${version}: POM からライセンスを1つに決められない（${JSON.stringify(licenses)}）`);
+      }
+      license = licenses[0];
     }
-    const [license] = licenses;
     const found = families.get(family.name) ?? { family, license, artifacts: [] };
     if (found.license !== license) {
       throw new Error(`${family.name}: 成果物でライセンスが違う（${found.license} と ${license}。${coordinate}）`);
@@ -620,6 +727,8 @@ function mavenEntries(resolved) {
       ...(versions.size === 1 ? { version: [...versions][0] } : {}),
       includes: artifacts.sort(),
     };
+    // 全文を載せない依存（terms）。ライセンスの名前と、規約の URL だけ。
+    if (family.androidSdkLicense) return { ...common, licenseUrl: ANDROID_SDK_LICENSE_URL };
     checkAllowed(family.name, license);
     let text;
     if (family.file) text = textFile(family.file);
@@ -645,13 +754,85 @@ function mavenEntries(resolved) {
   return entries;
 }
 
-// iOS の Pod。Podfile.lock を調べて、載せるものが増えていないことを確かめる。
+// Gradle のキャッシュの AAR（`files-2.1/<group>/<artifact>/<version>/<hash>/<artifact>-<version>.aar`）。
+function findAar(group, artifact, version) {
+  const cache = path.join(process.env.GRADLE_USER_HOME ?? path.join(homedir(), '.gradle'), 'caches/modules-2/files-2.1');
+  const base = path.join(cache, group, artifact, version);
+  const hash = existsSync(base)
+    ? readdirSync(base).find((sub) => existsSync(path.join(base, sub, `${artifact}-${version}.aar`)))
+    : undefined;
+  if (!hash) throw new Error(`${group}:${artifact}:${version} の AAR が Gradle のキャッシュに無い（--refresh-dependencies を試す）`);
+  return path.join(base, hash, `${artifact}-${version}.aar`);
+}
+
+// 全文の全行が `//` のコメント行（chrome_sync の BSD の全文は、ソースのヘッダーのまま）なら、コメントの記号を外す。
+// 記号は、ライセンスの本文ではない。外さないと、画面で行を詰めたとき、記号が本文の途中に残る。
+function stripLineComments(text) {
+  const lines = text.split('\n');
+  if (!lines.every((line) => line.trim() === '' || /^\s*\/\/ ?/.test(line))) return text;
+  return normalizeText(lines.map((line) => line.replace(/^\s*\/\/ ?/, '')).join('\n'));
+}
+
+// Google の依存（androidSdkLicense の groupId）の AAR が持つ、OSS の表記。上の GOOGLE_AAR_NOTICES を参照。
+function googleAarNoticeEntries(resolved) {
+  const found = new Map(); // 名前 → { text, from: [成果物] }
+  for (const [coordinate, version] of resolved) {
+    const [group, artifact] = coordinate.split(':');
+    const family = MAVEN_FAMILIES.find((candidate) => candidate.match.test(group));
+    if (!family?.androidSdkLicense) continue;
+    const aar = findAar(group, artifact, version);
+    // 表記を「持たない」ことと、読めない（unzip の失敗・壊れた AAR・JSON が読めない）ことを区別する。
+    // 一覧を引けなければ、ここで投げる。片方のファイルだけがある形も、失敗にする。
+    const entries = execFileSync('unzip', ['-Z1', aar], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n');
+    const hasJson = entries.includes('third_party_licenses.json');
+    const hasText = entries.includes('third_party_licenses.txt');
+    if (hasJson !== hasText) throw new Error(`${coordinate}:${version}: third_party_licenses の json と txt の片方しか無い`);
+    if (!hasJson) continue; // この AAR は、表記を持たない
+    const read = (name) => execFileSync('unzip', ['-p', aar, name], { maxBuffer: 64 * 1024 * 1024 });
+    const index = JSON.parse(read('third_party_licenses.json').toString('utf8'));
+    const raw = read('third_party_licenses.txt');
+    for (const [name, range] of Object.entries(index)) {
+      if (GOOGLE_AAR_NOTICES_COVERED.test(name) || name in GOOGLE_AAR_NOTICES_SKIPPED) continue;
+      if (!GOOGLE_AAR_NOTICES.some((notice) => notice.name === name)) {
+        throw new Error(
+          `${coordinate}:${version} の third_party_licenses に、知らない名前（${name}）がある。載せる・covered・skipped の` +
+            'どれかを決めて、GOOGLE_AAR_NOTICES・GOOGLE_AAR_NOTICES_COVERED・GOOGLE_AAR_NOTICES_SKIPPED に足す',
+        );
+      }
+      const text = stripLineComments(normalizeText(raw.subarray(range.start, range.start + range.length).toString('utf8')));
+      const previous = found.get(name);
+      if (previous && previous.text !== text) {
+        throw new Error(`${name}: AAR ごとに全文が違う（${previous.from[0]} と ${coordinate}）。内容を確かめる`);
+      }
+      found.set(name, { text, from: [...(previous?.from ?? []), coordinate] });
+    }
+  }
+  if (found.size === 0) throw new Error('Google の AAR から、OSS の表記を1つも読めない');
+  return GOOGLE_AAR_NOTICES.map((notice) => {
+    const entry = found.get(notice.name);
+    if (!entry) throw new Error(`${notice.name}: AAR の third_party_licenses から消えた。GOOGLE_AAR_NOTICES を見直す`);
+    if (!NOTICE_KIND_CHECKS[notice.license](entry.text)) {
+      throw new Error(`${notice.name}: 全文が、${notice.license} の想定した形ではない。内容を確かめる`);
+    }
+    checkAllowed(notice.name, notice.license);
+    // 名前の後ろの出どころは、その表記を持つ AAR の groupId で決める。Play services の AAR にも出るなら Play services、
+    // googleid（Google Identity）にだけ出るなら Google Identity（今の20件は、すべて Play services の AAR にも出る）。
+    const source = entry.from.some((coordinate) => coordinate.startsWith('com.google.android.gms:'))
+      ? 'Google Play services'
+      : 'Google Identity';
+    return {
+      kind: 'native', name: `${notice.name} (${source})`, license: notice.license, text: entry.text,
+      platform: 'android',
+    };
+  });
+}
+
+// iOS の Pod。Podfile.lock から、載せるものを決める。
 // - node_modules の中のもの（EXTERNAL SOURCES。React Native・Expo）と、codegen が作るコード（`build/generated/ios/`）、
 //   自前のローカルモジュール（`../modules/`）は、載せない（前の2つは npm・React Native の項目で載せている）。
-// - CocoaPods の trunk から入る Pod（`SPEC REPOS:` の節）は、いまは1つも無い。入ったら、載せるものが増える
-//   （例: expo-image が入れる SDWebImage、Googleのサインインの GoogleSignIn）ので、失敗にする。
-//   載せるときは、Singfolio の同名のスクリプトの IOS_TRUNK_PODS・`iosPodEntries` を取り込む。
-function checkIosPods() {
+// - CocoaPods の trunk から入る Pod（`SPEC REPOS:` の節）は、IOS_TRUNK_PODS に挙げたものだけを載せる。
+//   挙げていない Pod（例: expo-image が入れる SDWebImage）が入ったら、載せるものが増えるので、失敗にする。
+function iosPodEntries() {
   const lock = path.join(root, 'ios/Podfile.lock');
   if (!existsSync(lock)) throw new Error('ios/Podfile.lock が無い。`npx expo prebuild --platform ios` で作ってから実行する');
   const text = readText(lock);
@@ -671,13 +852,53 @@ function checkIosPods() {
   }
   const specRepos = text.match(/^SPEC REPOS:\n((?: {2,}.*\n)+)/m);
   const trunk = specRepos ? [...specRepos[1].matchAll(/^ {4}- (\S+)/gm)].map((match) => match[1]) : [];
-  for (const name of trunk) outside.push(`${name}（SPEC REPOS）`);
+  for (const name of trunk) {
+    if (!IOS_TRUNK_PODS.some((pod) => pod.name === name)) outside.push(`${name}（SPEC REPOS）`);
+  }
   if (outside.length > 0) {
     throw new Error(
       'node_modules の外から入る iOS の Pod で、把握していないものがある: ' + outside.join(', ') +
-        '\nライセンスの全文を調べて、載せる仕組みを足す（この検査を緩める前に）',
+        '\nライセンスの全文を調べて、IOS_TRUNK_PODS に足す（Pod の検査を緩める前に）',
     );
   }
+
+  const standard = textFile('Apache-2.0.txt');
+  const mitMarker = /Permission is hereby granted, free of charge/;
+  return IOS_TRUNK_PODS.map((pod) => {
+    if (!trunk.includes(pod.name)) {
+      throw new Error(`${pod.name}: Podfile.lock の SPEC REPOS に無い。IOS_TRUNK_PODS を見直す`);
+    }
+    // `- AppAuth (3.0.0):` のほか、`- GTMSessionFetcher/Core (5.3.1)` のように、サブスペックだけが出る Pod もある。
+    const versions = new Set(
+      [...text.matchAll(new RegExp(`^ {2}- ${pod.name}(?:/\\S+)? \\(([^)]+)\\)`, 'gm'))].map((match) => match[1]),
+    );
+    if (versions.size !== 1) {
+      throw new Error(`${pod.name}: Podfile.lock から版を1つに決められない（${[...versions].join(', ') || '無い'}）`);
+    }
+    const [version] = versions;
+    const dir = path.join(root, 'ios/Pods', pod.name);
+    const files = existsSync(dir) ? readdirSync(dir).filter((name) => LICENSE_FILE.test(name)) : [];
+    const notices = existsSync(dir) ? readdirSync(dir).filter((name) => /^notice(\.(md|txt))?$/i.test(name)) : [];
+    if (files.length !== 1) {
+      throw new Error(`${pod.name}: ios/Pods/${pod.name} の LICENSE を1つに決められない（${files.join(', ') || '無い'}）。\`pod install\` を確かめる`);
+    }
+    if (notices.length > 0) {
+      throw new Error(`${pod.name}: NOTICE ファイル（${notices.join(', ')}）がある。Apache-2.0 の 4(d) の扱いを決めてから、この検査を直す`);
+    }
+    const licenseText = normalizeText(readText(path.join(dir, files[0])));
+    let license;
+    if (licenseText === standard) license = 'Apache-2.0';
+    else if (licenseText.startsWith(standard) && mitMarker.test(licenseText.slice(standard.length))) {
+      license = 'Apache-2.0 AND MIT';
+    } else {
+      throw new Error(`${pod.name}@${version}: LICENSE が、想定した形（標準の Apache-2.0、または Apache-2.0 に MIT が続く形）ではない。内容を確かめる`);
+    }
+    if (license !== pod.license) {
+      throw new Error(`${pod.name}@${version}: LICENSE の種類が ${license} になった（確かめたのは ${pod.license}）。条件を確認して IOS_TRUNK_PODS を更新する`);
+    }
+    checkAllowed(pod.name, license, IOS_POD_ALLOWED_LICENSES);
+    return { kind: 'native', name: pod.name, version, license, text: licenseText, platform: 'ios' };
+  });
 }
 
 // `--apk`: APK・AAB の `lib/<abi>/` の .so が、把握しているものだけかを確かめる。
@@ -709,6 +930,8 @@ function render(entries) {
   const packages = entries
     .sort((a, b) => a.name.localeCompare(b.name, 'en') || (a.version ?? '').localeCompare(b.version ?? ''))
     .map(({ text, ...entry }) => {
+      // 全文を載せない依存（licenseUrl だけ）。
+      if (text === undefined) return entry;
       if (!textIndex.has(text)) {
         textIndex.set(text, texts.length);
         texts.push(text);
@@ -736,10 +959,17 @@ export interface ThirdPartyPackage {
   name: string;
   /** バージョン（無いもの・版が1つに決まらないものは省く） */
   version?: string;
-  /** SPDX のライセンス識別子 */
+  /**
+   * SPDX のライセンス識別子。\`licenseUrl\` を持つものだけは、SPDX にない名前（Android Software Development Kit License）
+   */
   license: string;
-  /** \`THIRD_PARTY_LICENSE_TEXTS\` の添字 */
-  text: number;
+  /** \`THIRD_PARTY_LICENSE_TEXTS\` の添字。全文を載せないもの（\`licenseUrl\` を持つもの）には無い */
+  text?: number;
+  /**
+   * 全文を載せず、規約の URL だけを載せるもの（Android Software Development Kit License で配布される Google の
+   * 依存。Open source ではない）。\`text\` とはどちらか一方だけを持つ。画面は別枠に出す
+   */
+  licenseUrl?: string;
   /** その OS のアプリにだけ入るもの。無ければ両方 */
   platform?: 'ios' | 'android';
   /** まとめたものの中身（Maven の成果物の \`group:artifact:version\`） */
@@ -762,13 +992,14 @@ function main() {
   const { dirs, assets, bundledHits } = collectNpm();
   const npm = npmEntries(dirs);
   const resolvedAndroid = gradleResolvedArtifacts();
-  checkIosPods();
+  const androidEntries = [...mavenEntries(resolvedAndroid), ...googleAarNoticeEntries(resolvedAndroid)];
   const entries = [
     ...npm.entries,
     ...bundledEntries(bundledHits, npm.dirByName),
     ...fontEntries(assets, npm.dirByName),
     ...reactNativeNativeEntries(),
-    ...mavenEntries(resolvedAndroid),
+    ...iosPodEntries(),
+    ...androidEntries,
   ];
   const { content, count, textCount } = render(entries);
   const relative = path.relative(root, outFile);
