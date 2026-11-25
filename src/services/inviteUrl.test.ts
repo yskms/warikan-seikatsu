@@ -29,8 +29,10 @@ describe('inviteUrl', () => {
 });
 
 describe('isInviteOriginPlaceholder', () => {
-  it('置き場が決まるまでは仮の値。決まった値は仮ではない', () => {
-    assert.equal(isInviteOriginPlaceholder(), true);
+  it('既定の置き場は、本番のドメイン（仮の値ではない）。`.invalid` は仮の値', () => {
+    assert.equal(isInviteOriginPlaceholder(), false);
+    assert.equal(INVITE_URL_ORIGIN, 'https://warikan-seikatsu.app');
+    assert.equal(isInviteOriginPlaceholder('https://not-created-yet.invalid'), true);
     assert.equal(isInviteOriginPlaceholder('https://example.com'), false);
   });
 });

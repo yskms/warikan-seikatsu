@@ -1,10 +1,10 @@
 // 招待URLと、共有する文面。
 //
-// **URLの置き場は、本番のドメイン `warikan-seikatsu.app`（Workerの独自ドメインと同じ）に決めた。ただし `INVITE_URL_ORIGIN` は、
-// まだ仮の値（`.invalid`）のまま。置き換えるのは、そのドメインが、招待URLを実際に開けるようになってから**（Workerが
-// `/invite/<token>` の案内ページと、`apple-app-site-association`・`assetlinks.json` を返し、`app.json` に `associatedDomains`・
-// `intentFilters` を足したあと）。先に置き換えると、メンバーと招待の画面が、開けない招待URLをメッセージアプリへ送ってしまう
-// （`npm run release-check` は、`.invalid` が無いことしか見ないので、気づけない）。置き場の条件:
+// URLの置き場は、本番のドメイン `warikan-seikatsu.app`（Workerの独自ドメインと同じ）。Workerが `/invite/<token>` の案内ページと、
+// `apple-app-site-association`・`assetlinks.json` を返し（`worker/src/site.ts`）、`app.json` に `associatedDomains`・`intentFilters` がある。
+// **このドメインが招待URLを開けなくなる変更（Workerの案内ページ・設定ファイル・`app.json` の設定を外す、など）をしたら、
+// 先にここを仮の値（`.invalid`）に戻す**（戻さないと、メンバーと招待の画面が、開けない招待URLをメッセージアプリへ送ってしまう。
+// `npm run release-check` は、`.invalid` が無いことしか見ないので、気づけない）。置き場の条件:
 // - **HTTPSの、メッセージアプリで押せるURL**にする（`warikan-seikatsu://` のような独自スキームは、LINEなどで押せない）。
 //   iOSのUniversal LinksとAndroidのApp Linksで、アプリが入っていれば直接アプリが開き、入っていなければ、ストアへ案内する
 //   Webページが開くようにする（`app.json` の `associatedDomains`・`intentFilters` と、ドメインの
@@ -13,7 +13,7 @@
 // リリース前に、`npm run release-check` で、仮の値が残っていないことを確かめる（`legalUrls.ts` と同じ）。
 import { isPlaceholderUrl } from '../legal/legalUrls.ts';
 
-export const INVITE_URL_ORIGIN = 'https://not-created-yet.invalid';
+export const INVITE_URL_ORIGIN = 'https://warikan-seikatsu.app';
 
 /** 招待のURL。トークンは、URLに載せて壊れない文字（base64url）だが、念のため符号化する。 */
 export function inviteUrl(token: string, origin: string = INVITE_URL_ORIGIN): string {
