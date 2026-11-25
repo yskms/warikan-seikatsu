@@ -5,7 +5,7 @@
 // 負担額の計算も、止まっている理由の判断もしない（サーバーの値を、そのまま文字にする）。
 //
 // 画面を開いたとき・シートから戻ったときに、読み直す（`useFocusEffect`）。読み直しの失敗は、表示中の内容を残して知らせる。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

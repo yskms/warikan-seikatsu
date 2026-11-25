@@ -15,7 +15,7 @@
 // - **締めるとグループが消える月**（集計の `close.deletesGroup`。サーバーの値で、最後の1人かの規則は書き写さない）は、削除の警告を
 //   出し、ボタンの文言を「グループを削除して脱退」にして、押したあとに確認ダイアログを挟む（取り消せないため）。送金・締めた後の
 //   制限は出さない（月は締められず、送金も作られない）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

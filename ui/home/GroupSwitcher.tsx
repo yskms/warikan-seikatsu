@@ -9,7 +9,7 @@
 // **`disabled` のあいだは、押せない**: 切り替えるとホームごと外れるので、書き込みの通信の最中（ホームの精算完了・繰越。
 // `ui/home/useTransferActions.ts`）に押せると、結果（成功・失敗の文言・読み直し）を受ける画面が無くなる。繰越は取り消せないので、
 // 済んだか分からないまま別のグループへ移ってしまう。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

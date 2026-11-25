@@ -1,6 +1,6 @@
 // ホームの上の部分（docs/screens.md 3章）: お知らせ、その月の支出の総額、メンバー別の負担額、内訳。
 // 表示する文言・金額は、`src/services/homeView.ts` が組み立てたものを並べるだけ（ここでは計算しない）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 

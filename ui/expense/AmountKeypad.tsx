@@ -1,7 +1,7 @@
 // 金額の電卓つきキーパッド（docs/screens.md 4章）。OSのキーボードは使わない。数字、`00`（小数のある通貨では `.`）、`⌫`、`+ − × ÷`。
 // 数字の並び（スマホ: 1 2 3 が上 / 電卓: 7 8 9 が上）は、アプリの設定（`src/services/keypadLayout.ts`）。演算子・`00`・`⌫` の位置は変えない。
 // キーの押下の規則は `src/services/amountExpression.ts`（`npm test` で守る）。ここは、キーを並べて、押されたキーを渡すだけ。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { ExpressionKey } from '../../src/services/amountExpression.ts';

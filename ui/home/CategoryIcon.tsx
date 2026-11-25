@@ -1,7 +1,7 @@
 // 費目のアイコン（費目の色で塗った丸の中に、アイコン）。アイコンのキーは、サーバーが形だけを見る（知らないキーが来うる）ので、
 // 知らないキーは既定のアイコンにする。キーの一覧は `src/theme/categoryIcons.ts`（初期の費目のキーは、Workerの
 // `DEFAULT_CATEGORIES`（`worker/src/groups.ts`））。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { ComponentProps } from 'react';
 import { StyleSheet, View } from 'react-native';
 

@@ -1,6 +1,6 @@
 // 送金の1行（誰から誰へ、いくら）。精算のカード（`SettlementCard.tsx`）と、締めの確認のシート（`ui/close/CloseSheet.tsx`）で使う。
 // `muted` は、処理済みの送金を、小さく薄く出す（screens.md 3章）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { TransferLine } from '../../src/services/homeView.ts';

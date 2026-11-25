@@ -3,7 +3,7 @@
 //
 // 選ぶと、すぐ反映する（保存のボタンは無い）。端末へ覚えるのに失敗しても、画面には何も出さない（この起動中は、選んだ並びのまま。
 // `src/services/keypadLayoutPreference.ts`）。小さな図は、実物と同じ並びの関数（`keypadRows`）で描く。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

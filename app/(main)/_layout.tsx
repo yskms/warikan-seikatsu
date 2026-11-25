@@ -1,7 +1,7 @@
 // メイン（docs/screens.md 1章）。下のナビは「ホーム・＋・設定」の3つ。＋は真ん中に置き、押すと支出の登録のシート
 // （`app/expense.tsx`）を開く（＋は画面ではなく、押したときの操作。`add.tsx` は、ナビに場所を作るためだけの空の画面）。
 // 所属グループは `GroupGate` が読み、3つの画面へ `CurrentGroupProvider` で渡す。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Tabs, useRouter } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 

@@ -16,7 +16,7 @@
 // - グループが無い（404）と分かったら、保存を押せなくし、戻る操作の破棄の確認も出さない（この画面から先へは進めない。`GroupGate` が、
 //   別のグループか、グループの作成へ切り替える）。入力欄・通貨・色も操作できなくする（入力を変えると、保存できない理由の文言が消え、
 //   理由が分からないまま、保存だけが押せない状態になる）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {

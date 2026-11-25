@@ -17,7 +17,7 @@
 //   見えない画面から始めない。
 // - 削除のあと、最後に開いたグループの記憶（`platform/lastGroup.ts`・`ui/activeGroup.ts`）は消さない（ログアウトと同じ。グループの
 //   IDだけで、サーバーが所属を確かめる。一覧に無いIDは、開くグループを選ぶときに飛ばす）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

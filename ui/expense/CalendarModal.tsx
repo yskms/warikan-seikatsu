@@ -1,6 +1,6 @@
 // 日付の選択（カレンダー）。登録する月とは関係なく、どの日でも選べる（docs/screens.md 4章）。月の計算は
 // `src/services/calendar.ts`（`npm test` で守る）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

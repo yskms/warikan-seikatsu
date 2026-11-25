@@ -22,7 +22,7 @@
 //   - 失敗のあとの扱いは `reorderFailureOutcome`（`src/services/categoryMessage.ts`）: 他のメンバーの操作で費目が変わったと断られたら
 //     （`categories_changed`）、並べ替えをやめて読み直す。送り直しても通らない失敗（脱退が確定している・見つからない）は、並べ替え
 //     をやめる。それ以外（通信の失敗・競合）は、並びを残して、もう一度押してもらう（同じ並びを送り直しても、同じ結果になる）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

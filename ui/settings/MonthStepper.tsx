@@ -1,6 +1,6 @@
 // 月を1か月ずつ送って選ぶ部品（固定費の開始する月・終了する月。docs/screens.md 6章の「固定費」）。「‹  2026年11月  ›」。
 // 選べる範囲（`range`）の端では、その向きの矢印を押せなくする。範囲の計算は `src/services/recurringForm.ts`。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatMonth } from '../../src/services/dateFormat.ts';

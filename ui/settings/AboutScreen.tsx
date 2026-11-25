@@ -4,7 +4,7 @@
 // リンクは、外のブラウザで開く（ログイン画面と同じ。`app/login.tsx`）。**公開していないページ（仮の値）の行は出さない**
 // （`src/services/aboutView.ts`）。開けなかったときは、画面に出す（押しても何も起きないと、壊れて見える）。
 // ライセンス（使っているオープンソースの一覧）は、まだ作っていない（docs/screens.md 6章）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

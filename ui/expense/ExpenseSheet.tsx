@@ -9,7 +9,7 @@
 //   直して送り直すと、最初の登録が済んでいた場合は、直した内容は反映されない（保存済みの支出が返る）。二重に登録されるより、
 //   よいとした（反映されなかった内容は、ホームの一覧から編集できる）。
 // - シートを閉じるとき、入力が変わっていれば、破棄の確認を出す（✕・戻る操作のどちらも。保存・削除のあとは出さない）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {

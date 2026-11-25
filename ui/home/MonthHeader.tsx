@@ -1,6 +1,6 @@
 // 月の切り替え（docs/screens.md 3章）。「◀ 2026年11月 ⌄ ▶」。矢印で前後の月へ、月の表示をタップすると月のピッカーを開く。
 // 選べる月は、サーバーの一覧（`GET /groups/:id/months`）をそのまま使う（アプリで計算しない）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

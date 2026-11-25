@@ -19,7 +19,7 @@
 // - シートを閉じるとき、入力が変わっていれば、破棄の確認を出す（✕・戻る操作のどちらも。保存・止める・削除のあとは出さない）。
 //   通信の最中は、✕も戻る操作も効かない。止めているのは `beforeRemove` で、セッション切れの画面の除去（`Stack.Protected` の
 //   ガードの切り替え）は通らない。招待URLによる参加確認への切り替えも同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`）。
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {

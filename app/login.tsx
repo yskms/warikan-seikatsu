@@ -1,7 +1,7 @@
 // ログイン画面（docs/screens.md 2章）。AppleとGoogleの両方を、両OSで出す（iOSはAppleが上、AndroidはGoogleが上）。
 // 招待URLから来たとき（`pendingInvite` を持っているとき）は、上部にログインが要る理由を出す。ログイン後は、ルート（`app/_layout.tsx`）が、
 // 持っている招待を見て、参加確認（`app/join.tsx`）だけを出す（ここでは、招待を扱わない）。
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useEffect, useRef, useState } from 'react';
 import {
