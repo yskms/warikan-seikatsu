@@ -11,11 +11,16 @@
 //   依存を足すので作らず、スクリーンリーダーでも使える上下の操作にした）。並びの組み立ては `src/services/categoryReorder.ts`
 //   （`npm test` で守る）。送るのは、アーカイブした費目も含む全費目（使っている費目の枠だけを入れ替える）。**その状態では、
 //   行を押しても編集のシートは開かず、月の切り替え・追加・使わない費目は出さない**（保存の最中に、読み直しや別の画面が割り込まない）。
-//   - 通信の最中は、戻る操作が効かない。並びを変えたあとの戻る操作は、破棄の確認を出す。止めているのは `beforeRemove` で、セッション
-//     切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`CategoryEditSheet.tsx` と同じ）。招待URLによる参加確認
-//     への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
-//   - 他のメンバーの操作で費目が変わったと断られたら（`categories_changed`）、並べ替えをやめて読み直す。それ以外の失敗は、並びを
-//     残して、もう一度押してもらう（同じ並びを送り直しても、同じ結果になる）。
+//   - **並べ替えの状態の戻る操作（ヘッダーの戻る・Androidの戻る）は、画面を出ず、並べ替えをやめる**（見出しが「並べ替え」に変わる
+//     ので、一覧へ戻ると思う）。並びを変えていれば、破棄の確認を出す。通信の最中は、戻る操作が効かない。止めているのは
+//     `beforeRemove` で、セッション切れの画面の除去（`Stack.Protected` のガードの切り替え）は通らない（`CategoryEditSheet.tsx`
+//     と同じ）。招待URLによる参加確認への切り替えも、同じ除去だが、通信の最中だけは遅らせる（`useHoldInviteSwap`。`ui/inviteHold.ts`）。
+//   - **読み直しの最中は、「並べ替え」に入れない**（`refreshing`。入ると、読み直す前の並びで始まり、応答が届いたあとに、並びが古い・
+//     変えていないのに「変えた」扱いになる）。並べ替えの状態では、読み直しは起きない（画面にフォーカスが戻るときだけ読み直し、
+//     その状態では、行を押しても別の画面へ行けない）。
+//   - 失敗のあとの扱いは `reorderFailureOutcome`（`src/services/categoryMessage.ts`）: 他のメンバーの操作で費目が変わったと断られたら
+//     （`categories_changed`）、並べ替えをやめて読み直す。送り直しても通らない失敗（脱退が確定している・見つからない）は、並べ替え
+//     をやめる。それ以外（通信の失敗・競合）は、並びを残して、もう一度押してもらう（同じ並びを送り直しても、同じ結果になる）。
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -32,7 +37,7 @@ import {
   splitArchived,
   type CategoryRow,
 } from '../../src/services/categoryView.ts';
-import { categoryErrorMessage, shouldReloadAfter, staleReorderMessage } from '../../src/services/categoryMessage.ts';
+import { categoryErrorMessage, reorderFailureOutcome, staleReorderMessage } from '../../src/services/categoryMessage.ts';
 import { applyReorder, buildReorderIds, isReordered, moveCategory, type MoveDirection } from '../../src/services/categoryReorder.ts';
 import { loadHomeErrorMessage } from '../../src/services/homeMessage.ts';
 import { memberLookup, moneyFormatters } from '../../src/services/homeView.ts';
@@ -57,6 +62,8 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [monthError, setMonthError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  // 読み直しの最中か（この間は、並べ替えに入れない）
+  const [refreshing, setRefreshing] = useState(false);
   // いま出している月（読み直しで、同じ月を選び直す）。古い応答を捨てる印（月の切り替えを重ねたとき、遅れて届いた前の応答で戻さない）
   const shownMonth = useRef<string | null>(null);
   const requestSeq = useRef(0);
@@ -72,10 +79,11 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   const mounted = useMounted();
   const savingRef = useRef(false);
   const changedRef = useRef(false);
-  const leaving = useRef(false);
+  const reorderingRef = useRef(false);
 
   const reload = useCallback(async () => {
     const seq = (requestSeq.current += 1);
+    setRefreshing(true);
     try {
       const data = await categoryService.load(groupId, shownMonth.current);
       if (seq !== requestSeq.current) return;
@@ -86,9 +94,11 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
       setMonthError(null);
       // 月の切り替えの最中に読み直したときは、切り替えの応答を捨てる（`requestSeq`）ので、その「切り替え中」も、ここで終える
       setSwitching(false);
+      setRefreshing(false);
     } catch (e) {
       if (seq !== requestSeq.current) return;
       setSwitching(false);
+      setRefreshing(false);
       const message = loadHomeErrorMessage(e);
       // 表示中の内容があれば、残して知らせる。無ければ、読み込みの失敗の表示
       if (hasData.current) setRefreshError(message);
@@ -107,6 +117,8 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
     if (load.status !== 'ready' || month === shownMonth.current) return;
     const seq = (requestSeq.current += 1);
     setSwitching(true);
+    // 読み直しの応答は、この切り替えが捨てる（`requestSeq`）ので、その「読み直し中」も、ここで終える
+    setRefreshing(false);
     setMonthError(null);
     try {
       const shares = await categoryService.loadShares(groupId, month);
@@ -143,25 +155,29 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   const changed = reorder !== null && isReordered(activeIds, reorder);
   changedRef.current = changed;
 
-  // 通信の最中は戻らない。並びを変えたあとの戻る操作は、破棄の確認を出す
+  reorderingRef.current = reorder !== null;
+
+  // 通信の最中は戻らない。並べ替えの状態の戻る操作は、画面を出ずに、並べ替えをやめる（並びを変えていれば、破棄の確認を出す）
   useEffect(() => {
     return navigation.addListener('beforeRemove', (event) => {
-      if (leaving.current) return;
       if (savingRef.current) {
         event.preventDefault();
         return;
       }
-      if (!changedRef.current) return;
+      if (!reorderingRef.current) return;
       event.preventDefault();
+      if (!changedRef.current) {
+        exitReorder();
+        return;
+      }
       Alert.alert('並べ替えを破棄しますか？', '変えた並びは保存されません。', [
         { text: '並べ替えを続ける', style: 'cancel' },
         {
           text: '破棄する',
           style: 'destructive',
           onPress: () => {
-            if (!mounted.current) return;
-            leaving.current = true;
-            navigation.dispatch(event.data.action);
+            // 外れたあとに開いたままだったダイアログから、何もしない（`ui/useMounted.ts`）
+            if (mounted.current) exitReorder();
           },
         },
       ]);
@@ -169,15 +185,16 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
   }, [navigation]);
 
   function startReorder() {
-    if (load.status !== 'ready' || switching || saving || activeIds.length < 2) return;
+    if (load.status !== 'ready' || switching || refreshing || saving || activeIds.length < 2) return;
     setReorder(activeIds);
     setReorderError(null);
     setRefreshError(null);
     setMonthError(null);
   }
 
-  function cancelReorder() {
-    if (saving) return;
+  /** 並べ替えをやめる（変えた並びは捨てる）。通信の最中は何もしない。 */
+  function exitReorder() {
+    if (savingRef.current) return;
     setReorder(null);
     setReorderError(null);
   }
@@ -228,11 +245,21 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
       setReorder(null);
       AccessibilityInfo.announceForAccessibility('並べ替えを保存しました');
     } catch (e) {
+      // 外れたあと（セッション切れ）は、何も続けない（読み直しの通信を、余分に出さない）
+      if (!mounted.current) return;
       const message = categoryErrorMessage(e, 'reorder');
-      if (shouldReloadAfter(e, 'reorder')) await reloadWithNotice(message);
-      else {
-        setReorderError(message);
-        AccessibilityInfo.announceForAccessibility(message);
+      switch (reorderFailureOutcome(e)) {
+        case 'reload':
+          await reloadWithNotice(message);
+          break;
+        case 'exit':
+          setReorder(null);
+          setRefreshError(message);
+          AccessibilityInfo.announceForAccessibility(message);
+          break;
+        default:
+          setReorderError(message);
+          AccessibilityInfo.announceForAccessibility(message);
       }
     } finally {
       savingRef.current = false;
@@ -354,7 +381,7 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
 
                 <PrimaryButton label="カテゴリを追加" variant="secondary" disabled={switching} onPress={() => openEdit(null)} />
                 {view.active.length >= 2 ? (
-                  <PrimaryButton label="並べ替え" variant="secondary" disabled={switching} onPress={startReorder} />
+                  <PrimaryButton label="並べ替え" variant="secondary" disabled={switching || refreshing} onPress={startReorder} />
                 ) : null}
 
                 {view.archived.length > 0 ? (
@@ -382,7 +409,7 @@ export function CategoriesScreen({ groupId }: { groupId: string }) {
             // 下端に置く（カテゴリが多いと、一覧の下までスクロールしないと届かなくなる）。文字を大きくしたときのため、縦に並べる
             <View style={[styles.bar, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
               <PrimaryButton label="保存" busy={saving} disabled={!changed} onPress={() => void saveReorder()} />
-              <PrimaryButton label="キャンセル" variant="secondary" disabled={saving} onPress={cancelReorder} />
+              <PrimaryButton label="キャンセル" variant="secondary" disabled={saving} onPress={exitReorder} />
             </View>
           ) : null}
         </>

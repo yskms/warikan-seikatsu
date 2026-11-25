@@ -9,6 +9,7 @@ import {
   categoryErrorMessage,
   isCreateConflict,
   resultUnknown,
+  reorderFailureOutcome,
   shouldReloadAfter,
   staleReorderMessage,
   unsavedChangesNote,
@@ -20,10 +21,18 @@ const rejected = (reason: string | null, detail: ConstructorParameters<typeof Ca
 describe('shouldReloadAfter', () => {
   it('編集で、他のメンバーの操作で古くなったとき（競合・メンバーや費目の増減・月が締まった）は読み直す', () => {
     for (const reason of ['conflict', 'members_changed', 'categories_changed', 'month_closed']) {
-      for (const action of ['save-share', 'update', 'reorder'] as const) {
+      for (const action of ['save-share', 'update'] as const) {
         assert.equal(shouldReloadAfter(rejected(reason), action), true, `${reason}/${action}`);
       }
     }
+  });
+
+  it('並べ替えは、費目が変わった（categories_changed）ときだけ読み直す。競合（conflict）では、作った並びを捨てない', () => {
+    assert.equal(shouldReloadAfter(rejected('categories_changed'), 'reorder'), true);
+    for (const reason of ['conflict', 'members_changed', 'month_closed', 'forbidden', 'not_found', null]) {
+      assert.equal(shouldReloadAfter(rejected(reason), 'reorder'), false, String(reason));
+    }
+    assert.equal(shouldReloadAfter(new AuthError('network'), 'reorder'), false);
   });
 
   it('入力・権限・範囲外などは、読み直しても同じなので読み直さない。通信の失敗も、読み直さない', () => {
@@ -170,6 +179,35 @@ describe('categoryErrorMessage（追加で、作成が済んだあとの失敗�
     for (const action of ['create', 'update', 'save-share', 'reorder'] as const) {
       assert.ok(!categoryErrorMessage(new AuthError('network'), action).startsWith(LEAD), action);
     }
+  });
+});
+
+describe('reorderFailureOutcome', () => {
+  it('費目が変わったときは、並べ替えをやめて読み直す', () => {
+    assert.equal(reorderFailureOutcome(rejected('categories_changed')), 'reload');
+  });
+
+  it('脱退が確定している・見つからないときは、並べ替えをやめる（送り直しても通らない。読み直しても同じ）', () => {
+    assert.equal(reorderFailureOutcome(rejected('forbidden', {}, 403)), 'exit');
+    assert.equal(reorderFailureOutcome(rejected('not_found', {}, 404)), 'exit');
+  });
+
+  it('競合・通信の失敗・応答が読めない・知らない失敗は、並びを残して押し直してもらう', () => {
+    assert.equal(reorderFailureOutcome(rejected('conflict')), 'keep');
+    assert.equal(reorderFailureOutcome(rejected(null, {}, 400)), 'keep');
+    assert.equal(reorderFailureOutcome(rejected('something_new')), 'keep');
+    for (const code of ['network', 'unavailable', 'invalid-response', 'invalid-request'] as const) {
+      assert.equal(reorderFailureOutcome(new AuthError(code)), 'keep', code);
+    }
+    assert.equal(reorderFailureOutcome(new Error('x')), 'keep');
+  });
+});
+
+describe('categoryErrorMessage（並べ替えの競合）', () => {
+  it('並びは残っているので、「読み直しました」とは言わず、もう一度押してもらう（ほかの操作の競合は、読み直す）', () => {
+    assert.equal(categoryErrorMessage(rejected('conflict'), 'reorder'), '他の操作と重なりました。もう一度お試しください。');
+    assert.match(categoryErrorMessage(rejected('conflict'), 'update'), /画面を読み直しました/);
+    assert.match(categoryErrorMessage(rejected('conflict'), 'save-share'), /画面を読み直しました/);
   });
 });
 

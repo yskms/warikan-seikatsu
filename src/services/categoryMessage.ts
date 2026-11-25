@@ -37,6 +37,10 @@ function codeOf(error: unknown): string {
 export function shouldReloadAfter(error: unknown, action: CategoryAction): boolean {
   if (action === 'create' || action === 'create-update') return false;
   if (!(error instanceof CategoryRejectedError)) return false;
+  // 並べ替えは、費目の顔ぶれが違う（`categories_changed`）ときだけ。`conflict`（書き込みの競合が2回続いた）は、費目が変わったという
+  // 意味ではなく、作った並びはそのまま有効なので、読み直さず、同じ並びを送り直してもらう。メンバーの増減・月が締まった、は
+  // 並べ替えでは起きない
+  if (action === 'reorder') return error.reason === 'categories_changed';
   return (
     error.reason === 'conflict' ||
     error.reason === 'members_changed' ||
@@ -62,6 +66,21 @@ export function isCreateConflict(error: unknown): boolean {
  */
 export function resultUnknown(error: unknown): boolean {
   return !(error instanceof CategoryRejectedError);
+}
+
+/**
+ * 並べ替えの保存が失敗したあと、画面をどうするか。
+ * - `reload`: 費目が変わった（`categories_changed`）。並べ替えをやめて、読み直す。
+ * - `exit`: 送り直しても通らない（脱退が確定していて変えられない・グループやカテゴリが見つからない）。並べ替えをやめる
+ *   （読み直しても同じ。「保存」を押せるまま残すと、何度押しても同じ失敗になる）。
+ * - `keep`: 並びを残して、「保存」を押し直してもらう（通信の失敗・競合など。同じ並びを送り直しても、結果は同じ）。
+ */
+export type ReorderFailureOutcome = 'reload' | 'exit' | 'keep';
+
+export function reorderFailureOutcome(error: unknown): ReorderFailureOutcome {
+  if (shouldReloadAfter(error, 'reorder')) return 'reload';
+  if (error instanceof CategoryRejectedError && (error.reason === 'forbidden' || error.reason === 'not_found')) return 'exit';
+  return 'keep';
 }
 
 /**
@@ -96,6 +115,8 @@ function baseMessage(error: unknown, action: CategoryAction): string {
       case 'conflict':
         // 追加の 409 は、他のメンバーの操作との競合ではない（`isCreateConflict`）。入力は残っているので、もう一度押してもらう
         if (action === 'create' || action === 'create-update') return `${FAILED[action]}もう一度お試しください。`;
+        // 並べ替えは、読み直さない（`shouldReloadAfter`）。並びは残っているので、もう一度押してもらう
+        if (action === 'reorder') return '他の操作と重なりました。もう一度お試しください。';
         return '他の操作と重なりました。画面を読み直しました。確認して、もう一度お試しください。';
       case 'month_closed':
         return 'この月は、すでに締められています。締めた月の割合は変えられません。';
