@@ -43,21 +43,21 @@
   // APPLE_TEAM_ID・APPLE_KEY_ID は、アカウントの削除（POST /auth/delete）で、iOSの認可コードを交換し、Appleのトークンを失効させるときの
   // `client_secret`（ES256のJWT）に入れる識別子。Team ID はアプリの署名にも入り、Key ID は秘密鍵（.p8。APPLE_PRIVATE_KEY。秘密情報）が
   // 無ければ使えない。どちらも秘密情報ではない。Team ID はSingfolioと同じ開発者アカウントのもの。
-  // APPLE_KEY_ID は、Sign in with Apple の鍵をまだ作っていない（Apple Developerで作る）。作るまでは仮の値で、
-  // 失効は行われない（削除は止まらない。`appleRevoked: false`）。作ったら置き換える（docs/backend-design.md 12章）。
+  // APPLE_KEY_ID は、Apple Developerで作った Sign in with Apple の鍵（このアプリ専用。Singfolioのものは使い回さない）の Key ID。
+  // 秘密鍵（.p8）は APPLE_PRIVATE_KEY（`wrangler secret put`）で、リポジトリには置かない（docs/backend-design.md 12章）。
   //
   // APPLE_SERVICES_ID・APPLE_CALLBACK_URL は、AndroidのAppleログイン（Web経由。src/appleWeb.ts）に要る。Apple Developerで
-  // Services ID（予定の名前: com.yskms.warikanseikatsu.web。App IDとは別の識別子）を作り、Return URL に APPLE_CALLBACK_URL
-  // を登録する。APPLE_CALLBACK_URL は、本番の独自ドメイン `warikan-seikatsu.app` の `/auth/apple/callback`（`routes` と同じドメイン。
+  // Services ID（com.yskms.warikanseikatsu.web。App IDとは別の識別子。作成済み）に、Return URL として APPLE_CALLBACK_URL
+  // を登録してある。APPLE_CALLBACK_URL は、本番の独自ドメイン `warikan-seikatsu.app` の `/auth/apple/callback`（`routes` と同じドメイン。
   // `test/config.test.ts` が固定している）。Singfolioは、コードの定数にしている（`APPLE_CALLBACK_URL`）。ここは、ドメインが決まる前に
-  // vars にしたままにしてある。APPLE_SERVICES_ID は作るまで仮の値で、そのあいだ、AndroidのAppleログインは通らない
-  // （`npm run deploy` の前の確認が、デプロイを止める。docs/backend-design.md 12章）。
+  // vars にしたままにしてある。仮の値が vars に残っていれば、`npm run deploy` の前の確認が、デプロイを止める
+  // （docs/backend-design.md 12章）。
   "vars": {
     "APPLE_BUNDLE_ID": "com.yskms.warikanseikatsu",
-    "APPLE_SERVICES_ID": "0-not-created-yet",
+    "APPLE_SERVICES_ID": "com.yskms.warikanseikatsu.web",
     "APPLE_CALLBACK_URL": "https://warikan-seikatsu.app/auth/apple/callback",
     "APPLE_TEAM_ID": "3L2FPFG722",
-    "APPLE_KEY_ID": "0-not-created-yet",
+    "APPLE_KEY_ID": "D7C2DVY2Q9",
     "GOOGLE_WEB_CLIENT_ID": "0-not-created-yet.apps.googleusercontent.com"
   },
 
