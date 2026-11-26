@@ -25,6 +25,13 @@ export interface MemberInfo {
   leaveRequestedMonth: string | null;
 }
 
+/**
+ * 割合の見直しの印（`member_changed_at`）が付いた理由（`member_changed_kind`。マイグレーション0008）。
+ * - `reset`: メンバーの増減で、割合を均等に戻した。
+ * - `joined`: 2人以上のグループに参加があり、既存の割合を残して、新しいメンバーを0%で足した。
+ */
+export type ShareChangeKind = 'reset' | 'joined';
+
 /** 費目の、その月に使う設定（その月以前で最も新しい月の行。3章）。 */
 export interface CategoryRuleSource {
   /** どの月の行か。対象の月より前なら、引き継いだもの。 */
@@ -33,6 +40,8 @@ export interface CategoryRuleSource {
   archived: boolean;
   /** メンバーの増減で割合を戻した時刻（まだ見直されていなければ）。月締めで引き継いで書くとき、そのまま写す。 */
   memberChangedAt: number | null;
+  /** その印の種類（`member_changed_kind`。印が無ければ null）。印と一緒に、そのまま写す。 */
+  memberChangedKind: ShareChangeKind | null;
   rule: CategoryRule;
 }
 
@@ -107,7 +116,8 @@ export async function loadMonthState(db: D1Database, groupId: string, month: str
     db
       .prepare(
         `SELECT s.category_id AS category_id, s.target_month AS source_month, c.archived_at IS NOT NULL AS archived,
-                s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor, s.member_changed_at AS member_changed_at
+                s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor, s.member_changed_at AS member_changed_at,
+                s.member_changed_kind AS member_changed_kind
            FROM categories c
            JOIN category_month_settings s ON s.category_id = c.id AND s.target_month = ${currentRule}
           WHERE c.group_id = ?1`,
@@ -181,11 +191,13 @@ export async function loadMonthState(db: D1Database, groupId: string, month: str
     cap_member_id: string | null;
     cap_minor: number | null;
     member_changed_at: number | null;
+    member_changed_kind: ShareChangeKind | null;
   }[]) {
     rules.set(row.category_id, {
       sourceMonth: row.source_month,
       archived: row.archived === 1,
       memberChangedAt: row.member_changed_at,
+      memberChangedKind: row.member_changed_kind,
       rule: {
         categoryId: row.category_id,
         shares: shareMap.get(row.category_id) ?? [],

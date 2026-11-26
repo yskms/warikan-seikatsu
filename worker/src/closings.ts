@@ -181,8 +181,17 @@ export async function handleCloseMonth(
     if (source.sourceMonth >= month) continue;
     if (source.archived && !usedCategories.has(categoryId)) continue;
     const cap = source.rule.cap ?? null;
-    // 見直しのお知らせの印（`member_changed_at`）も写す。写さないと、月を締めただけで、見直していない割合のお知らせが消える。
-    inheritedSettings.push([groupId, categoryId, month, cap?.memberId ?? null, cap?.capMinor ?? null, source.memberChangedAt]);
+    // 見直しのお知らせの印（`member_changed_at`・`member_changed_kind`）も写す。写さないと、月を締めただけで、見直していない
+    // 割合のお知らせが消える（種類も写さないと、「0%で足した」お知らせが、「均等に戻した」の文言に変わる）。
+    inheritedSettings.push([
+      groupId,
+      categoryId,
+      month,
+      cap?.memberId ?? null,
+      cap?.capMinor ?? null,
+      source.memberChangedAt,
+      source.memberChangedKind,
+    ]);
     for (const share of source.rule.shares) {
       inheritedShares.push([groupId, categoryId, month, share.memberId, share.basisPoints]);
     }
@@ -194,7 +203,7 @@ export async function handleCloseMonth(
       token,
       groupId,
       'category_month_settings',
-      ['group_id', 'category_id', 'target_month', 'cap_member_id', 'cap_minor', 'member_changed_at'],
+      ['group_id', 'category_id', 'target_month', 'cap_member_id', 'cap_minor', 'member_changed_at', 'member_changed_kind'],
       inheritedSettings,
     ),
     ...insertRowsGuarded(

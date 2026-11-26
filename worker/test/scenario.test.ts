@@ -9,6 +9,7 @@ import { after, before, describe, it } from 'node:test';
 import { runScheduled } from '../src/cron.ts';
 import { handleCreateExpense, handleListExpenses } from '../src/expenses.ts';
 import { createFixtureFactory, equalShares, insertCategoryRule, NOW, type Person } from './apiFixture.ts';
+import { groupsApi } from './groupsApi.ts';
 import { openLocalDatabase, type LocalDatabase } from './localDatabase.ts';
 import { membershipApi } from './membershipApi.ts';
 import { monthApi, NOW_DECEMBER, read, request } from './monthApi.ts';
@@ -73,6 +74,16 @@ describe('統合テスト: 招待から脱退・精算まで', () => {
     const joined = await members.join(carolUser, invite.token, { displayName: 'carol' });
     assert.equal(joined.status, 201, JSON.stringify(joined.body));
     const carol: Person = { ...carolUser, memberId: joined.body.memberId };
+    // 2人のグループへの参加なので、今の割合（2人の均等）は変えず、carol は0%で入る。お知らせの印は「0%で足した」（joined）。
+    const afterJoin = await groupsApi(env).getRules(alice, g.groupId, '2026-11');
+    assert.deepEqual(
+      afterJoin.body.categories[0].shares.map((s: { memberId: string; basisPoints: number }) => [s.memberId === carol.memberId, s.basisPoints]).sort(),
+      [[false, 5000], [false, 5000], [true, 0]],
+    );
+    assert.equal(afterJoin.body.categories[0].memberChangeKind, 'joined');
+    // 3人で分けたいので、「全費目を均等にする」を押す（割合を直す操作と同じ権限。印も消える）。
+    assert.equal((await groupsApi(env).resetSharesToEqual(alice, g.groupId, { month: '2026-11' })).status, 204);
+    assert.equal((await groupsApi(env).getRules(alice, g.groupId, '2026-11')).body.categories[0].memberChangedAt, null);
 
     // --- 2. 10月の支出（alice が6,000、bob が2,000）。同じ登録の再送は、2件にならない -----------------
     const first = await register(alice, alice, 6000, '2026-10', 'oct-1');
@@ -96,7 +107,7 @@ describe('統合テスト: 招待から脱退・精算まで', () => {
     assert.equal((await register(alice, alice, 100, '2026-10', 'oct-4')).status, 409);
     assert.equal((await months.carry(alice, october.body.transfers[0].id)).status, 200);
 
-    // --- 4. 11月: carol が9,000円を立て替える。割合は参加したときの均等（3人）、繰越は締めで加わる ------
+    // --- 4. 11月: carol が9,000円を立て替える。割合は、参加のあとに均等にした3人、繰越は締めで加わる ------
     // 参加したメンバーのIDはUUIDなので、端数を配る固定順（IDの昇順）の先頭が誰になるかは決まらない。
     // 端数の配り方は settlement.test.ts で見ているので、ここでは、つながりを、順序に依らない形で見る。
     type MemberView = { memberId: string; paidMinor: number; burdenMinor: number; carriedInMinor: number; netMinor: number };

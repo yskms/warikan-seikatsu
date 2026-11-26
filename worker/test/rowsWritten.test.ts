@@ -93,6 +93,11 @@ describe('1回の操作の、読む行数・書く行数', () => {
       assert.equal(joined.status, 201);
       people.push({ ...person, memberId: joined.body.memberId as string });
     }
+    // 3人目以降は、参加すると0%で入る（今の割合を残す。5章）。全員に負担がある形（月締めが書く行数が最大になる形）で測るため、
+    // 「全費目を均等にする」を押す。
+    if (members > 2) {
+      assert.equal((await groupsApi(env).resetSharesToEqual(owner, groupId, { month: '2026-11' })).status, 204);
+    }
     for (let i = 0; i < extraCategories; i++) {
       const added = await groupsApi(env).createCategory(owner, groupId, { name: `c${i}`, icon: 'game', color: 'red' });
       assert.equal(added.status, 201);
@@ -301,7 +306,7 @@ const EXPECTED: Table = {
   'グループの作成（費目7）': [17, 54],
   '招待の発行': [8, 4],
   '参加（1人のグループに2人目。費目7）': [57, 62],
-  '参加（4人のグループに5人目。費目7）': [106, 125],
+  '参加（4人のグループに5人目。費目7）': [217, 125],
   '支出の登録（2人・費目の割合）': [13, 4],
   '支出の登録（5人・費目の割合）': [16, 4],
   '支出の登録（2人・均等）': [15, 8],

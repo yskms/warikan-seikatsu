@@ -8,7 +8,7 @@ import { isLeaveEffectiveFor, latestClosedMonth, participatesInMonth } from './a
 import { markLeftStatement } from './closedMonth.ts';
 import { GROUP_WRITE_GUARD, insertRowsGuarded, readDataVersion, writeToGroup } from './groupWrite.ts';
 import { MAX_MEMBERS_PER_GROUP } from './limits.ts';
-import type { MemberInfo } from './monthState.ts';
+import type { MemberInfo, ShareChangeKind } from './monthState.ts';
 import { monthIn, nextMonth } from './months.ts';
 import { allocateEqually, BASIS_POINTS_TOTAL } from './settlement.ts';
 
@@ -107,26 +107,36 @@ export function participantIds(members: readonly MemberInfo[], month: string): s
 }
 
 /**
- * 月の全費目の負担割合を、`memberIds` での均等にリセットし、上限額の設定も外す（5章。メンバーが増減したとき）。
- * その月の既存の行は消して書き直す。端数は、IDの昇順の先頭から1ずつ（2章）。
- *
- * **締めた月には使わない**（締めた月の割合は確定している）。呼び出し側が、未締めの月を渡す。
- * 費目はアーカイブ済みも含めて全部書く（あとで戻された費目が、古い割合に戻らないように）。
- * メンバーが0人なら何もしない（その月を使う人がいない）。
- *
- * 書いた行には、`member_changed_at = now` を入れる（見直しのお知らせの印。まだ見直されていない。マイグレーション0007）。
+ * 見直しのお知らせの印（`category_month_settings.member_changed_at`・`member_changed_kind`）。まだ誰も見直していない割合に付ける
+ * （マイグレーション0007・0008）。手で保存した行・費目を作ったときに書く行には付けない（`null`）。
  */
-export function resetSharesStatements(
+export interface ShareChangeMark {
+  /** 割合を書き換えた時刻（Unixエポックのミリ秒）。 */
+  at: number;
+  kind: ShareChangeKind;
+}
+
+/** 1つの費目の、1か月分の割合と上限額（`category_month_settings`・`category_month_shares` の行）。 */
+export interface RuleRows {
+  categoryId: string;
+  shares: readonly { memberId: string; basisPoints: number }[];
+  cap: { memberId: string; capMinor: number } | null;
+  /** この行に付ける印。無ければ（手で書いた行と同じ扱い）null。 */
+  mark: ShareChangeMark | null;
+}
+
+/**
+ * 月の割合の行を、`rules` で消して書き直す。その月の既存の行は、全費目分を消す（`rules` に無い費目の行も）。
+ * `rules` が空なら何もしない。**締めた月には使わない**（締めた月の割合は確定している）。呼び出し側が、未締めの月を渡す。
+ */
+function rewriteSharesStatements(
   db: D1Database,
   token: string,
   groupId: string,
   month: string,
-  categoryIds: readonly string[],
-  memberIds: readonly string[],
-  now: number,
+  rules: readonly RuleRows[],
 ): D1PreparedStatement[] {
-  if (memberIds.length === 0 || categoryIds.length === 0) return [];
-  const shares = allocateEqually(BASIS_POINTS_TOTAL, memberIds);
+  if (rules.length === 0) return [];
   const remove = (table: string) =>
     db
       .prepare(`DELETE FROM ${table} WHERE group_id = ? AND target_month = ? AND EXISTS (${GROUP_WRITE_GUARD})`)
@@ -139,8 +149,16 @@ export function resetSharesStatements(
       token,
       groupId,
       'category_month_settings',
-      ['group_id', 'category_id', 'target_month', 'cap_member_id', 'cap_minor', 'member_changed_at'],
-      categoryIds.map((categoryId) => [groupId, categoryId, month, null, null, now]),
+      ['group_id', 'category_id', 'target_month', 'cap_member_id', 'cap_minor', 'member_changed_at', 'member_changed_kind'],
+      rules.map((rule) => [
+        groupId,
+        rule.categoryId,
+        month,
+        rule.cap?.memberId ?? null,
+        rule.cap?.capMinor ?? null,
+        rule.mark?.at ?? null,
+        rule.mark?.kind ?? null,
+      ]),
     ),
     ...insertRowsGuarded(
       db,
@@ -148,11 +166,44 @@ export function resetSharesStatements(
       groupId,
       'category_month_shares',
       ['group_id', 'category_id', 'target_month', 'member_id', 'share_basis_points'],
-      categoryIds.flatMap((categoryId) =>
-        shares.map((share) => [groupId, categoryId, month, share.memberId, share.amount]),
-      ),
+      rules.flatMap((rule) => rule.shares.map((share) => [groupId, rule.categoryId, month, share.memberId, share.basisPoints])),
     ),
   ];
+}
+
+/**
+ * 月の全費目の負担割合を、`memberIds` での均等にリセットし、上限額の設定も外す（5章。メンバーが増減したとき）。
+ * その月の既存の行は消して書き直す。端数は、IDの昇順の先頭から1ずつ（2章）。
+ *
+ * **締めた月には使わない**（締めた月の割合は確定している）。呼び出し側が、未締めの月を渡す。
+ * 費目はアーカイブ済みも含めて全部書く（あとで戻された費目が、古い割合に戻らないように）。
+ * メンバーが0人なら何もしない（その月を使う人がいない）。
+ *
+ * 書いた行には、`mark` を入れる（見直しのお知らせの印。まだ見直されていない）。**システムが、メンバーの増減で戻すときは、
+ * 必ず印を付ける**（参加・脱退の確定・アカウント削除の3つが通る。付けないと、戻したことがお知らせに出ない）。`mark` が
+ * `null` なのは、利用者が「全費目を均等にする」を押して、自分で戻したとき（`handleResetSharesToEqual`）だけ。
+ */
+export function resetSharesStatements(
+  db: D1Database,
+  token: string,
+  groupId: string,
+  month: string,
+  categoryIds: readonly string[],
+  memberIds: readonly string[],
+  mark: ShareChangeMark | null,
+): D1PreparedStatement[] {
+  if (memberIds.length === 0 || categoryIds.length === 0) return [];
+  const shares = allocateEqually(BASIS_POINTS_TOTAL, memberIds).map((share) => ({
+    memberId: share.memberId,
+    basisPoints: share.amount,
+  }));
+  return rewriteSharesStatements(
+    db,
+    token,
+    groupId,
+    month,
+    categoryIds.map((categoryId) => ({ categoryId, shares, cap: null, mark })),
+  );
 }
 
 /**
@@ -211,13 +262,162 @@ export function resetMonthsStatements(
     categoryIds: readonly string[];
     baseMonths: readonly string[];
     ruleMonths: readonly string[];
-    /** 戻した時刻（見直しのお知らせの印。`resetSharesStatements`）。 */
+    /**
+     * 戻した時刻（見直しのお知らせの印。`resetSharesStatements`。種類は `reset`）。利用者が自分で戻すとき
+     * （`handleResetSharesToEqual`）だけ、印を付けない `null`。
+     */
+    now: number | null;
+  },
+): D1PreparedStatement[] {
+  const mark: ShareChangeMark | null = input.now === null ? null : { at: input.now, kind: 'reset' };
+  return monthsToReset(input.baseMonths, input.ruleMonths).flatMap((month) =>
+    resetSharesStatements(db, token, groupId, month, input.categoryIds, participantIds(input.members, month), mark),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 参加の割合（5章「参加」）
+
+/** 参加のときに、月ごとにどう書くか。 */
+export interface JoinMonthPlan {
+  month: string;
+  /**
+   * true: 今の割合を残し、新しいメンバーを0%で足す（`joined` の印）。参加前にその月の集計に入っているメンバーが2人以上いる。
+   * false: 均等にリセットする（`reset` の印）。参加前に入っているメンバーが1人以下（グループを作った人だけ、など）。
+   * 1人から2人になるときは、手で直した割合がまだ無いので、均等に戻す。
+   */
+  keepShares: boolean;
+}
+
+/**
+ * 参加のときの、月ごとの書き方。月は `monthsToReset` と同じ（参加の効く最初の月と、それより後で割合の行がある月）。
+ * `membersBefore` は参加前のメンバー（参加する本人を含まない）。人数だけで決める（割合が均等かどうかは見ない）。
+ */
+export function planJoinMonths(
+  membersBefore: readonly MemberInfo[],
+  baseMonth: string,
+  ruleMonths: readonly string[],
+): JoinMonthPlan[] {
+  return monthsToReset([baseMonth], ruleMonths).map((month) => ({
+    month,
+    keepShares: participantIds(membersBefore, month).length >= 2,
+  }));
+}
+
+/** 費目の、その月に使う割合と上限額（その月以前で最も新しい月の行）。 */
+export interface SourceRule {
+  shares: readonly { memberId: string; basisPoints: number }[];
+  cap: { memberId: string; capMinor: number } | null;
+}
+
+/**
+ * `months` それぞれで使われている、費目ごとの割合（その月以前で最も新しい月の行。3章）。割合の行が1つも無い費目（作る前の月）
+ * は含まない。月ごとに、設定と割合を1回ずつ読む（月の数は、参加の効く月と、行がある後の月だけ）。
+ * バージョンを読んだあとに呼ぶ（groupWrite.ts 冒頭の注意1）。
+ */
+export async function loadSourceRules(
+  db: D1Database,
+  groupId: string,
+  months: readonly string[],
+): Promise<Map<string, Map<string, SourceRule>>> {
+  const result = new Map<string, Map<string, SourceRule>>();
+  if (months.length === 0) return result;
+  const currentRule = `(SELECT max(target_month) FROM category_month_settings WHERE category_id = c.id AND target_month <= ?2)`;
+  const rows = await db.batch(
+    months.flatMap((month) => [
+      db
+        .prepare(
+          `SELECT s.category_id AS category_id, s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor
+             FROM categories c
+             JOIN category_month_settings s ON s.category_id = c.id AND s.target_month = ${currentRule}
+            WHERE c.group_id = ?1`,
+        )
+        .bind(groupId, month),
+      db
+        .prepare(
+          `SELECT sh.category_id AS category_id, sh.member_id AS member_id, sh.share_basis_points AS share_basis_points
+             FROM categories c
+             JOIN category_month_settings s ON s.category_id = c.id AND s.target_month = ${currentRule}
+             JOIN category_month_shares sh ON sh.category_id = s.category_id AND sh.target_month = s.target_month
+            WHERE c.group_id = ?1 ORDER BY sh.member_id`,
+        )
+        .bind(groupId, month),
+    ]),
+  );
+  months.forEach((month, index) => {
+    const settings = rows[index * 2]!.results as {
+      category_id: string;
+      cap_member_id: string | null;
+      cap_minor: number | null;
+    }[];
+    const shares = rows[index * 2 + 1]!.results as { category_id: string; member_id: string; share_basis_points: number }[];
+    const rules = new Map<string, SourceRule>();
+    for (const row of settings) {
+      rules.set(row.category_id, {
+        shares: [],
+        cap: row.cap_member_id === null ? null : { memberId: row.cap_member_id, capMinor: row.cap_minor! },
+      });
+    }
+    for (const row of shares) {
+      (rules.get(row.category_id)!.shares as { memberId: string; basisPoints: number }[]).push({
+        memberId: row.member_id,
+        basisPoints: row.share_basis_points,
+      });
+    }
+    result.set(month, rules);
+  });
+  return result;
+}
+
+/**
+ * 今の割合を残して、新しいメンバーを0%で足した行。合計が10000にならない（新しいメンバーの古い行が残っている、など。
+ * 起こらない想定）ときや、上限を負担する人が新しいメンバーのときは null（呼び出し側が、均等に戻す）。
+ */
+function withNewMemberAtZero(source: SourceRule, newMemberId: string): Pick<RuleRows, 'shares' | 'cap'> | null {
+  const kept = source.shares.filter((share) => share.memberId !== newMemberId);
+  if (kept.reduce((sum, share) => sum + share.basisPoints, 0) !== BASIS_POINTS_TOTAL) return null;
+  if (source.cap?.memberId === newMemberId) return null;
+  return { shares: [...kept, { memberId: newMemberId, basisPoints: 0 }], cap: source.cap };
+}
+
+/**
+ * 参加の割合の書き込み（5章「参加」）。`plan` は `planJoinMonths`。
+ * - `keepShares` の月: 全費目の今の割合と上限額を残し、新しいメンバーを0%で足す（`sources` は、その月の `loadSourceRules`）。
+ *   その月の行は、消して書き直す（その月の行が無かったときも、引き継いでいた行を、その月の行として書く）。印は `joined`。
+ * - それ以外の月: `resetSharesStatements` と同じ、参加後のメンバーでの均等（上限額は外す）。印は `reset`。
+ * 費目はアーカイブ済みも含めて全部書く。今の割合が見つからない費目（作る前の月）は、均等に戻す。
+ * **締めた月には使わない**（呼び出し側が、`firstResettableMonth` 以降の月を渡す）。
+ */
+export function joinSharesStatements(
+  db: D1Database,
+  token: string,
+  groupId: string,
+  input: {
+    plan: readonly JoinMonthPlan[];
+    membersAfter: readonly MemberInfo[];
+    newMemberId: string;
+    categoryIds: readonly string[];
+    sources: ReadonlyMap<string, ReadonlyMap<string, SourceRule>>;
     now: number;
   },
 ): D1PreparedStatement[] {
-  return monthsToReset(input.baseMonths, input.ruleMonths).flatMap((month) =>
-    resetSharesStatements(db, token, groupId, month, input.categoryIds, participantIds(input.members, month), input.now),
-  );
+  const { plan, membersAfter, newMemberId, categoryIds, sources, now } = input;
+  return plan.flatMap(({ month, keepShares }) => {
+    const participants = participantIds(membersAfter, month);
+    if (participants.length === 0 || categoryIds.length === 0) return [];
+    const equal = allocateEqually(BASIS_POINTS_TOTAL, participants).map((share) => ({
+      memberId: share.memberId,
+      basisPoints: share.amount,
+    }));
+    const reset: Pick<RuleRows, 'shares' | 'cap' | 'mark'> = { shares: equal, cap: null, mark: { at: now, kind: 'reset' } };
+    const rules: RuleRows[] = categoryIds.map((categoryId) => {
+      const source = keepShares ? sources.get(month)?.get(categoryId) : undefined;
+      const kept = source === undefined ? null : withNewMemberAtZero(source, newMemberId);
+      if (kept === null) return { categoryId, ...reset };
+      return { categoryId, ...kept, mark: { at: now, kind: 'joined' } };
+    });
+    return rewriteSharesStatements(db, token, groupId, month, rules);
+  });
 }
 
 /**

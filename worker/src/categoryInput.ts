@@ -113,6 +113,20 @@ export function parseResetAcknowledgement(body: Record<string, unknown>): ParseR
   return { ok: true, value: { month: body.month, through } };
 }
 
+/** 「全費目を均等にする」の入力。 */
+export interface EqualResetInput {
+  /** アプリが割合を見ている月。この月と、それより後で割合の行がある月を、均等にする */
+  month: string;
+}
+
+/** 「全費目を均等にする」の本文: `{ month }`。`month` は `YYYY-MM`。何を書くかは `handleResetSharesToEqual`。 */
+export function parseEqualReset(body: Record<string, unknown>): ParseResult<EqualResetInput> {
+  const extra = unknownKey(body, ['month']);
+  if (extra !== null) return fail(extra);
+  if (!isMonth(body.month)) return fail('month');
+  return { ok: true, value: { month: body.month } };
+}
+
 /**
  * 負担割合の本文: `{ shares: [{ memberId, basisPoints }], cap?: { memberId, capMinor } | null }`。
  * 割合は0〜10000で、合計は10000（2章）。上限額つきでなければ `cap` は無いか null。上限額は1〜10^12。`currencyCode` は任意。

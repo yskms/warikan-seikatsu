@@ -6,6 +6,7 @@ import {
   handleListCategories,
   handlePutCategoryRule,
   handleReorderCategories,
+  handleResetSharesToEqual,
   handleUpdateCategory,
 } from '../src/categories.ts';
 import { handleCreateGroup, handleGetGroup, handleListGroups, handleUpdateGroup, handleUpdateMe } from '../src/groups.ts';
@@ -53,6 +54,14 @@ export function groupsApi(defaultEnv: Env) {
       read(
         await handleAcknowledgeSharesReset(
           request('POST', `/groups/${groupId}/category-shares/acknowledge-reset`, token(who), body),
+          ...opts(options),
+          groupId,
+        ),
+      ),
+    resetSharesToEqual: async (who: Person | null, groupId: string, body: unknown, options: Options = {}): Promise<ApiResult> =>
+      read(
+        await handleResetSharesToEqual(
+          request('POST', `/groups/${groupId}/category-shares/reset-equal`, token(who), body),
           ...opts(options),
           groupId,
         ),

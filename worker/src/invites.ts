@@ -29,12 +29,14 @@ import { parseJoin } from './memberInput.ts';
 import {
   firstResettableMonth,
   isGroupFull,
+  joinSharesStatements,
   loadCategoryIds,
   loadMembers,
   loadRuleMonthsAfter,
+  loadSourceRules,
   pauseRecurringStatements,
   pickMemberColor,
-  resetMonthsStatements,
+  planJoinMonths,
 } from './membership.ts';
 import { monthIn } from './months.ts';
 import { toBase64Url } from './nonce.ts';
@@ -335,7 +337,17 @@ export async function handleJoin(request: Request, env: Env, now: number, token:
     expenseEndMonth: null,
     leaveRequestedMonth: null,
   };
-  const membersAfter = [...members.filter((member) => member.id !== memberId), joined];
+  // 参加前に、月の集計に入っているメンバー（参加する本人は含めない。復帰する人の古い記録も外す）。
+  const membersBefore = members.filter((member) => member.id !== memberId);
+  const membersAfter = [...membersBefore, joined];
+  // 月ごとに、今の割合を残して新しいメンバーを0%で足すか（参加前に2人以上）、均等にリセットするか（1人以下）を決める（5章）。
+  // 残す月は、全費目の今の割合を読む（バージョンを読んだあと）。
+  const joinPlan = planJoinMonths(membersBefore, resetMonth, ruleMonths);
+  const sources = await loadSourceRules(
+    db,
+    groupId,
+    joinPlan.filter((entry) => entry.keepShares).map((entry) => entry.month),
+  );
 
   const written = await writeToGroup(db, groupId, version, (writeToken) => [
     // 0: メンバーの追加（または復帰）。
@@ -366,17 +378,23 @@ export async function handleJoin(request: Request, env: Env, now: number, token:
             AND EXISTS (${GROUP_WRITE_GUARD})`,
       )
       .bind(now, memberId, invite.id, groupId, now, groupId, writeToken),
-    // 参加月の全費目の割合を、新しいメンバーを含めた均等にリセットし、上限額の設定を外す（5章）。それより後の月に
-    // 行があれば（アカウント削除が、未締めの翌月に書いたものなど）、それも直す。
-    ...resetMonthsStatements(db, writeToken, groupId, {
-      members: membersAfter,
+    // 参加月の全費目の割合を書く（5章）。参加前に2人以上いれば、今の割合と上限額を残して、新しいメンバーを0%で足す。
+    // 1人以下（グループを作った人だけ、など）なら、均等にリセットし、上限額を外す。それより後の月に行があれば
+    // （アカウント削除が、未締めの翌月に書いたものなど）、それも同じ規則で直す。
+    ...joinSharesStatements(db, writeToken, groupId, {
+      plan: joinPlan,
+      membersAfter,
+      newMemberId: memberId,
       categoryIds,
-      baseMonths: [resetMonth],
-      ruleMonths,
+      sources,
       now,
     }),
-    // `category` 以外の固定費は、自動登録を止める（5章）。
-    ...pauseRecurringStatements(db, writeToken, groupId, now, { payerMemberIds: [], memberChanged: true }),
+    // `category` 以外の固定費は、均等にリセットした月があるときだけ、自動登録を止める（5章）。割合を残して0%で足すだけなら、
+    // 個別の負担（対象のメンバーの指定）は、そのまま成り立つ。
+    ...pauseRecurringStatements(db, writeToken, groupId, now, {
+      payerMemberIds: [],
+      memberChanged: joinPlan.some((entry) => !entry.keepShares),
+    }),
   ]);
   // 'version'（同じ招待で同時に参加しようとした、ほかの書き込みと競合した）も、'unique' も、やり直さない（8章）。
   if (!written.ok) return conflict('conflict');

@@ -9,6 +9,7 @@ import {
   handleListCategories,
   handlePutCategoryRule,
   handleReorderCategories,
+  handleResetSharesToEqual,
   handleUpdateCategory,
 } from './categories.ts';
 import { handleCloseMonth, handleGetClosing, handleMonthSummary } from './closings.ts';
@@ -47,6 +48,7 @@ const GROUP_CATEGORIES_PATH = /^\/groups\/([^/]+)\/categories$/;
 const GROUP_CATEGORIES_ORDER_PATH = /^\/groups\/([^/]+)\/categories\/order$/;
 const CATEGORY_PATH = /^\/categories\/([^/]+)$/;
 const GROUP_SHARES_RESET_PATH = /^\/groups\/([^/]+)\/category-shares\/acknowledge-reset$/;
+const GROUP_SHARES_EQUAL_PATH = /^\/groups\/([^/]+)\/category-shares\/reset-equal$/;
 const GROUP_CATEGORY_RULES_PATH = /^\/groups\/([^/]+)\/months\/([^/]+)\/category-shares$/;
 const GROUP_CATEGORY_RULE_PATH = /^\/groups\/([^/]+)\/months\/([^/]+)\/category-shares\/([^/]+)$/;
 const GROUP_EXPENSES_PATH = /^\/groups\/([^/]+)\/expenses$/;
@@ -137,6 +139,14 @@ export default {
       const groupId = sharesReset[1]!;
       if (!isId(groupId)) return notFound();
       if (request.method === 'POST') return handleAcknowledgeSharesReset(request, env, now, groupId);
+      return methodNotAllowed('POST');
+    }
+
+    const sharesEqual = GROUP_SHARES_EQUAL_PATH.exec(pathname);
+    if (sharesEqual !== null) {
+      const groupId = sharesEqual[1]!;
+      if (!isId(groupId)) return notFound();
+      if (request.method === 'POST') return handleResetSharesToEqual(request, env, now, groupId);
       return methodNotAllowed('POST');
     }
 

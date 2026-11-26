@@ -96,6 +96,17 @@ describe('招待・参加のAPI', () => {
       .prepare('SELECT cap_member_id, cap_minor FROM category_month_settings WHERE category_id = ? AND target_month = ?')
       .bind(categoryId, month)
       .first<{ cap_member_id: string | null; cap_minor: number | null }>();
+  const markOf = (categoryId: string, month: string) =>
+    db
+      .prepare('SELECT member_changed_at, member_changed_kind FROM category_month_settings WHERE category_id = ? AND target_month = ?')
+      .bind(categoryId, month)
+      .first<{ member_changed_at: number | null; member_changed_kind: string | null }>();
+  /** alice だけの1人のグループ（2026-10から）と、費目1つ。2026-10の割合は alice の100%。 */
+  const setupSolo = async () => {
+    const group = await factory.createGroup(['alice']);
+    await insertCategoryRule(db, group.groupId, group.categoryId, '2026-10', equalShares([group.people.alice.memberId]));
+    return group;
+  };
   const pausedReason = async (recurringId: string) =>
     (
       await db
@@ -406,7 +417,7 @@ describe('招待・参加のAPI', () => {
       assert.deepEqual([again.status, again.body], [409, { error: 'already_member', groupId: g.groupId }]);
     });
 
-    it('参加月の全費目（アーカイブ済みも）の割合を、新しいメンバーを含めた均等にリセットし、上限額を外す。ほかの月は変えない', async () => {
+    it('2人以上のグループへの参加: 全費目（アーカイブ済みも）の今の割合と上限額を残し、新しいメンバーを0%で足す。ほかの月は変えない', async () => {
       const g = await setup();
       const { alice, bob } = g.people;
       const archivedId = await factory.addCategory(g.groupId, 'old', true);
@@ -426,13 +437,44 @@ describe('招待・参加のAPI', () => {
 
       const result = await api.join(await outsider('visitor'), invite.token);
       assert.equal(result.status, 201);
-      const ids = [alice.memberId, bob.memberId, result.body.memberId as string];
+      const newcomer = result.body.memberId as string;
+      const sorted = (rows: (string | number)[][]) => rows.sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+      // 手で直した割合・上限額は、そのまま。新しいメンバーが0%で入る。
+      assert.deepEqual(
+        await sharesOf(g.categoryId, '2026-11'),
+        sorted([[alice.memberId, 8000], [bob.memberId, 2000], [newcomer, 0]]),
+      );
+      assert.deepEqual(await settingsOf(g.categoryId, '2026-11'), { cap_member_id: alice.memberId, cap_minor: 3000 });
+      // 参加月に行が無かった費目（10月の行を引き継いでいた）も、引き継いでいた割合を、参加月の行として書く。
+      assert.deepEqual(
+        await sharesOf(archivedId, '2026-11'),
+        sorted([[alice.memberId, 5000], [bob.memberId, 5000], [newcomer, 0]]),
+      );
+      assert.deepEqual(await settingsOf(archivedId, '2026-11'), { cap_member_id: null, cap_minor: null });
+      // 見直しの印は「0%で足した」（joined）。
       for (const categoryId of [g.categoryId, archivedId]) {
-        assert.deepEqual(await sharesOf(categoryId, '2026-11'), equalShares(ids).sort((a, b) => (a[0] < b[0] ? -1 : 1)));
-        assert.deepEqual(await settingsOf(categoryId, '2026-11'), { cap_member_id: null, cap_minor: null });
+        assert.deepEqual(await markOf(categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'joined' });
       }
-      // 参加月より前の月の割合は、そのまま（2人の均等）。
+      // 参加月より前の月の割合・印は、そのまま。
       assert.equal((await sharesOf(g.categoryId, '2026-10')).length, 2);
+      assert.deepEqual(await markOf(g.categoryId, '2026-10'), { member_changed_at: null, member_changed_kind: null });
+    });
+
+    it('1人のグループへの参加: 今までどおり、均等にリセットする（上限額を外し、印は reset）。手で直した割合がまだ無いため', async () => {
+      const g = await setupSolo();
+      const { alice } = g.people;
+      // 1人でも、上限額つきの設定は書ける（参加で外れる）。
+      await insertCategoryRule(db, g.groupId, g.categoryId, '2026-11', [[alice.memberId, 10000]], { memberId: alice.memberId, capMinor: 5000 });
+      const invite = await insertInviteRow(db, { groupId: g.groupId, invitedByMemberId: alice.memberId });
+
+      const result = await api.join(await outsider('visitor'), invite.token);
+      assert.equal(result.status, 201);
+      assert.deepEqual(
+        (await sharesOf(g.categoryId, '2026-11')).map((row) => row[1]),
+        [5000, 5000],
+      );
+      assert.deepEqual(await settingsOf(g.categoryId, '2026-11'), { cap_member_id: null, cap_minor: null });
+      assert.deepEqual(await markOf(g.categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'reset' });
     });
 
     it('参加月より後の月に、割合の行が残っていれば、それも直す（アカウント削除が、未締めの翌月に書いた行に、参加した人が入る）', async () => {
@@ -445,18 +487,113 @@ describe('招待・参加のAPI', () => {
       const result = await api.join(await outsider('visitor'), invite.token);
       assert.equal(result.status, 201);
       const newcomer = result.body.memberId as string;
-      // 参加月（2026-11）は、削除した alice（削除した月まで集計に入る）・bob・新しいメンバーの3人。
-      assert.equal((await sharesOf(g.categoryId, '2026-11')).length, 3);
-      // 翌月（2026-12）は、alice が抜けたあとの、bob と新しいメンバーの2人の均等。
+      // 参加月（2026-11）は、削除した alice（削除した月まで集計に入る）・bob の2人が参加前にいたので、今の割合を残して、新しいメンバーを0%で足す。
+      assert.deepEqual(
+        (await sharesOf(g.categoryId, '2026-11')).map((row) => row[1]).sort(),
+        [0, 5000, 5000],
+      );
+      assert.deepEqual(await markOf(g.categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'joined' });
+      // 翌月（2026-12）は、参加前に bob だけだったので、alice が抜けたあとの、bob と新しいメンバーの2人の均等。
       assert.deepEqual(
         (await sharesOf(g.categoryId, '2026-12')).map((row) => row[0]).sort(),
         [bob.memberId, newcomer].sort(),
       );
       assert.deepEqual((await sharesOf(g.categoryId, '2026-12')).map((row) => row[1]), [5000, 5000]);
+      assert.deepEqual(await markOf(g.categoryId, '2026-12'), { member_changed_at: NOW, member_changed_kind: 'reset' });
     });
 
-    it('category 以外の固定費は止める（member_changed）。category の固定費・止まっている固定費は変えない', async () => {
+    describe('今の割合を残せない費目は、その費目だけ均等にリセットする（安全側の経路。withNewMemberAtZero）', () => {
+      /** erin（脱退済み）を含むグループ。参加前にその月にいるのは alice・bob の2人（erin は復帰する本人なので、数えない）。 */
+      const withLeftErin = async () => {
+        const g = await setup();
+        const erin = await factory.addPerson(g.groupId, 'erin', { status: 'left', expenseEndMonth: '2026-10', leaveRequestedMonth: '2026-10' });
+        await db.prepare('UPDATE group_members SET left_at = 5 WHERE id = ?').bind(erin.memberId).run();
+        const invite = await insertInviteRow(db, { groupId: g.groupId, invitedByMemberId: g.people.alice.memberId });
+        return { g, erin, invite };
+      };
+
+      it('復帰する人の古い行が残っていて、それを除くと合計が10000にならないとき', async () => {
+        const { g, erin, invite } = await withLeftErin();
+        const { alice, bob } = g.people;
+        // 参加月の行に、復帰する erin の古い割合が残っている（本来は起こらない）。erin を除くと 8000。
+        await insertCategoryRule(db, g.groupId, g.categoryId, '2026-11', [[alice.memberId, 4000], [bob.memberId, 4000], [erin.memberId, 2000]]);
+
+        assert.equal((await api.join(erin, invite.token, { displayName: 'えりん' })).status, 201);
+        // その費目だけ、参加後の3人での均等に戻る。印は reset。
+        assert.deepEqual((await sharesOf(g.categoryId, '2026-11')).map((row) => row[1]).sort(), [3333, 3333, 3334]);
+        assert.deepEqual(await markOf(g.categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'reset' });
+      });
+
+      it('上限を負担する人が、参加する本人のとき（上限額も外れる）', async () => {
+        const { g, erin, invite } = await withLeftErin();
+        const { alice, bob } = g.people;
+        await insertCategoryRule(
+          db,
+          g.groupId,
+          g.categoryId,
+          '2026-11',
+          [[alice.memberId, 5000], [bob.memberId, 5000], [erin.memberId, 0]],
+          { memberId: erin.memberId, capMinor: 3000 },
+        );
+
+        assert.equal((await api.join(erin, invite.token, { displayName: 'えりん' })).status, 201);
+        assert.deepEqual((await sharesOf(g.categoryId, '2026-11')).map((row) => row[1]).sort(), [3333, 3333, 3334]);
+        assert.deepEqual(await settingsOf(g.categoryId, '2026-11'), { cap_member_id: null, cap_minor: null });
+        assert.deepEqual(await markOf(g.categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'reset' });
+      });
+
+      it('崩れていない費目は、同じ参加の中で、今の割合を残す（費目ごとに決まる）', async () => {
+        const { g, erin, invite } = await withLeftErin();
+        const { alice, bob } = g.people;
+        const healthyId = await factory.addCategory(g.groupId, 'rent');
+        await insertCategoryRule(db, g.groupId, healthyId, '2026-10', [[alice.memberId, 7000], [bob.memberId, 3000]]);
+        await insertCategoryRule(db, g.groupId, g.categoryId, '2026-11', [[alice.memberId, 4000], [bob.memberId, 4000], [erin.memberId, 2000]]);
+
+        assert.equal((await api.join(erin, invite.token, { displayName: 'えりん' })).status, 201);
+        assert.deepEqual(
+          (await sharesOf(healthyId, '2026-11')).map((row) => row[1]).sort((a, b) => Number(a) - Number(b)),
+          [0, 3000, 7000],
+        );
+        assert.deepEqual(await markOf(healthyId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'joined' });
+        assert.deepEqual(await markOf(g.categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'reset' });
+      });
+    });
+
+    it('同じ参加の中で、参加月は割合を残し、後の月は均等にリセットする（もう1人がその月で脱退するとき）。固定費は、リセットした月があるので止める', async () => {
+      // bob は、参加月（2026-11）で脱退する。翌月（2026-12）の行は、残る alice だけ（脱退の確定が書く形）。
+      const g = await setup({ bob: { leaveRequestedMonth: '2026-11' } });
+      const { alice, bob } = g.people;
+      await insertCategoryRule(db, g.groupId, g.categoryId, '2026-12', [[alice.memberId, 10000]]);
+      const recurring = await insertRecurringRow(db, { groupId: g.groupId, categoryId: g.categoryId, payerMemberId: alice.memberId, splitMethod: 'equal' });
+      const invite = await insertInviteRow(db, { groupId: g.groupId, invitedByMemberId: alice.memberId });
+
+      const result = await api.join(await outsider('visitor'), invite.token);
+      assert.equal(result.status, 201, JSON.stringify(result.body));
+      const newcomer = result.body.memberId as string;
+      // 2026-11: 参加前に alice・bob（脱退する月だが、まだ集計に入る）の2人 → 今の割合を残して0%で足す。
+      assert.deepEqual(
+        await sharesOf(g.categoryId, '2026-11'),
+        [[alice.memberId, 5000], [bob.memberId, 5000], [newcomer, 0]].sort((a, b) => (a[0]! < b[0]! ? -1 : 1)),
+      );
+      assert.deepEqual(await markOf(g.categoryId, '2026-11'), { member_changed_at: NOW, member_changed_kind: 'joined' });
+      // 2026-12: 参加前に alice だけ → 均等（alice と新しいメンバー）。
+      assert.deepEqual((await sharesOf(g.categoryId, '2026-12')).map((row) => row[1]), [5000, 5000]);
+      assert.deepEqual(await markOf(g.categoryId, '2026-12'), { member_changed_at: NOW, member_changed_kind: 'reset' });
+      assert.equal(await pausedReason(recurring), 'member_changed');
+    });
+
+    it('2人以上のグループへの参加では、固定費を止めない（個別の負担は、そのまま成り立つ）', async () => {
       const g = await setup();
+      const { alice } = g.people;
+      const equal = await insertRecurringRow(db, { groupId: g.groupId, categoryId: g.categoryId, payerMemberId: alice.memberId, splitMethod: 'equal' });
+      const fixed = await insertRecurringRow(db, { groupId: g.groupId, categoryId: g.categoryId, payerMemberId: alice.memberId, splitMethod: 'fixed' });
+      const invite = await insertInviteRow(db, { groupId: g.groupId, invitedByMemberId: alice.memberId });
+      assert.equal((await api.join(await outsider('visitor'), invite.token)).status, 201);
+      assert.deepEqual([await pausedReason(equal), await pausedReason(fixed)], [null, null]);
+    });
+
+    it('1人のグループへの参加では、category 以外の固定費は止める（member_changed）。category の固定費・止まっている固定費は変えない', async () => {
+      const g = await setupSolo();
       const { alice } = g.people;
       const equal = await insertRecurringRow(db, { groupId: g.groupId, categoryId: g.categoryId, payerMemberId: alice.memberId, splitMethod: 'equal' });
       const category = await insertRecurringRow(db, { groupId: g.groupId, categoryId: g.categoryId, payerMemberId: alice.memberId });
@@ -485,7 +622,12 @@ describe('招待・参加のAPI', () => {
       const result = await api.join(await outsider('visitor'), invite.token);
       assert.equal(result.status, 201);
       assert.equal((await sharesOf(g.categoryId, '2026-11')).length, 2, '締めた月は、そのまま');
-      assert.equal((await sharesOf(g.categoryId, '2026-12')).length, 3);
+      // 翌月は、締めた月の行（2人の均等）を引き継いでいたので、その割合を残して、新しいメンバーを0%で足す。
+      assert.deepEqual(
+        (await sharesOf(g.categoryId, '2026-12')).map((row) => row[1]).sort(),
+        [0, 5000, 5000],
+      );
+      assert.deepEqual(await markOf(g.categoryId, '2026-12'), { member_changed_at: NOW, member_changed_kind: 'joined' });
       const added = (await memberRows(g.groupId)).find((row) => row.id === result.body.memberId)!;
       assert.equal(added.history_from_month, '2026-11', '履歴は参加月（締めた月）から');
     });
@@ -508,7 +650,12 @@ describe('招待・参加のAPI', () => {
         ['active', 'えりん', '2026-11', null, null, null, NOW],
       );
       assert.equal(row.color, 'blue', '他のメンバーと重ならなければ、元の色のまま');
-      assert.equal((await sharesOf(g.categoryId, '2026-11')).length, 3, '復帰した人を含めた均等');
+      assert.deepEqual(
+        (await sharesOf(g.categoryId, '2026-11')).find((row) => row[0] === erin.memberId),
+        [erin.memberId, 0],
+        '復帰した人は、0%で入る（参加前に2人いた）',
+      );
+      assert.equal((await sharesOf(g.categoryId, '2026-11')).length, 3);
     });
 
     it('すでに参加中なら409 already_member。招待は使われない', async () => {

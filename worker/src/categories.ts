@@ -19,6 +19,7 @@ import {
   parseCategoryOrder,
   parseCategoryRule,
   parseCreateCategory,
+  parseEqualReset,
   parseResetAcknowledgement,
   parseUpdateCategory,
   type CategoryRuleInput,
@@ -36,10 +37,12 @@ import {
 } from './http.ts';
 import { MAX_CATEGORIES_PER_GROUP } from './limits.ts';
 import {
+  loadCategoryIds,
   loadMembers,
   loadRuleMonthsAfter,
   monthsToReset,
   participantIds,
+  resetMonthsStatements,
 } from './membership.ts';
 import { monthIn, registerableRange } from './months.ts';
 import { allocateEqually, BASIS_POINTS_TOTAL } from './settlement.ts';
@@ -388,6 +391,11 @@ interface RuleJson {
    * （割合を保存した、または見直しの確認をした）ら null。ホームのお知らせ「メンバーが増減した」の元（5章の「参加」・12章）。
    */
   memberChangedAt: number | null;
+  /**
+   * その印の種類。`reset`: 均等に戻した。`joined`: 今の割合を残して、新しいメンバーを0%で足した（参加）。印が無ければ
+   * （`memberChangedAt` が null）null。0007で付いた印（種類が無い）は `reset`。
+   */
+  memberChangeKind: 'reset' | 'joined' | null;
 }
 
 /** 費目ごとの、その月の割合（その月以前で最も新しい月の行）。割合が1つも無い費目（作る前の月）は含めない。 */
@@ -403,7 +411,7 @@ async function loadRules(
         `SELECT c.id AS id, c.group_id AS group_id, c.name AS name, c.icon AS icon, c.color AS color,
                 c.sort_order AS sort_order, c.archived_at AS archived_at, c.created_at AS created_at,
                 s.target_month AS source_month, s.cap_member_id AS cap_member_id, s.cap_minor AS cap_minor,
-                s.member_changed_at AS member_changed_at
+                s.member_changed_at AS member_changed_at, s.member_changed_kind AS member_changed_kind
            FROM categories c
            JOIN category_month_settings s ON s.category_id = c.id AND s.target_month = ${currentRule}
           WHERE c.group_id = ?1 ORDER BY c.sort_order, c.id`,
@@ -431,6 +439,7 @@ async function loadRules(
       cap_member_id: string | null;
       cap_minor: number | null;
       member_changed_at: number | null;
+      member_changed_kind: 'reset' | 'joined' | null;
     })[]
   ).map((row) => ({
     category: row,
@@ -440,6 +449,7 @@ async function loadRules(
       shares: sharesByCategory.get(row.id) ?? [],
       cap: row.cap_member_id === null ? null : { memberId: row.cap_member_id, capMinor: row.cap_minor! },
       memberChangedAt: row.member_changed_at,
+      memberChangeKind: row.member_changed_at === null ? null : (row.member_changed_kind ?? 'reset'),
     },
   }));
 }
@@ -578,6 +588,7 @@ export async function handlePutCategoryRule(
       cap: input.cap,
       // 保存した行は書き直すので、見直しの印は消える（`member_changed_at` を入れない）。
       memberChangedAt: null,
+      memberChangeKind: null,
     },
     overriddenMonths: outcome.value.overriddenMonths,
   });
@@ -622,7 +633,7 @@ export async function handleAcknowledgeSharesReset(
         // 費目ごとに、`month` 以前で最も新しい月の行（主キー（費目, 月）の範囲で引く）だけを消す。
         db
           .prepare(
-            `UPDATE category_month_settings SET member_changed_at = NULL
+            `UPDATE category_month_settings SET member_changed_at = NULL, member_changed_kind = NULL
               WHERE group_id = ? AND member_changed_at IS NOT NULL AND member_changed_at <= ?
                 AND target_month = (SELECT max(s.target_month) FROM category_month_settings s
                                      WHERE s.category_id = category_month_settings.category_id AND s.target_month <= ?)
@@ -630,6 +641,57 @@ export async function handleAcknowledgeSharesReset(
           )
           .bind(groupId, through, month, groupId, token),
       ],
+      value: null,
+    };
+  });
+  return outcome.status === 'written' ? noContent() : writeFailure(outcome);
+}
+
+// POST /groups/:id/category-shares/reset-equal
+
+/**
+ * 「全費目を均等にする」。本文の `month` と、それより後で割合の行がある月の、全費目（アーカイブ済みも）の割合を、それぞれの月に
+ * 参加しているメンバーでの均等に書き直し、上限額も外す（5章の参加・脱退と同じ `resetMonthsStatements`）。ホームのお知らせ
+ * 「新しいメンバーの負担割合が0%です」の「均等にする」（`memberChangeKind` が `joined` のとき）。
+ *
+ * - **利用者が自分で戻すので、書いた行に見直しの印を付けない**（割合の保存と同じ。押したあとに、お知らせが出直さない）。
+ * - 後の月の行は、手で直された割合・上限額も上書きする（参加のときと同じ）。アプリが、押す前に確認を出す。
+ * - **`month` より前の月の行・印には触れない**（その月を開いたときに、お知らせが残る）。締めた月は409 `month_closed`、直せる月の
+ *   範囲の外は409 `month_not_editable`（割合の保存と同じ）。参加前の月は403。権限は割合の変更と同じ。
+ * - 何度送っても、同じ結果（均等のまま）になる。競合は、読み直して1回やり直す（`writeToGroupWithRetry`）。
+ */
+export async function handleResetSharesToEqual(
+  request: Request,
+  env: Env,
+  now: number,
+  groupId: string,
+): Promise<Response> {
+  const session = await authenticateRequest(request, env.DB, now);
+  if (session === null) return unauthorized();
+  const body = await readJsonObject(request, MAX_BODY_BYTES);
+  if (!body.ok) return body.response;
+  const parsed = parseEqualReset(body.body);
+  if (!parsed.ok) return invalidRequest(parsed.field === '' ? undefined : parsed.field);
+  const { month } = parsed.value;
+  const db = env.DB;
+
+  const outcome = await writeToGroupWithRetry<null, Response>(db, groupId, async () => {
+    const access = await loadGroupAccess(db, session.userId, groupId);
+    if (access === null) return { reject: notFound() };
+    if (!canViewMonth(access, month)) return { reject: forbidden() };
+    if (!canEditGroupSettings(access, now)) return { reject: forbidden() };
+    const [closed, range, members, categoryIds, ruleMonths] = await Promise.all([
+      isMonthClosed(db, groupId, month),
+      editableMonths(db, access, now),
+      loadMembers(db, groupId),
+      loadCategoryIds(db, groupId),
+      loadRuleMonthsAfter(db, groupId, month),
+    ]);
+    if (closed) return { reject: conflict('month_closed') };
+    if (month < range.from || month > range.to) return { reject: conflict('month_not_editable', { from: range.from, to: range.to }) };
+    return {
+      write: (token: string) =>
+        resetMonthsStatements(db, token, groupId, { members, categoryIds, baseMonths: [month], ruleMonths, now: null }),
       value: null,
     };
   });
