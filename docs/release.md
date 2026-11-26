@@ -25,7 +25,7 @@ R8（下の「Android: R8」）を入れた release（`arm64-v8a`、debug署名�
 3. **App Store Connect**: アプリを作る（バンドルID `com.yskms.warikanseikatsu`）。`eas.json` の `submit.production.ios.ascAppId` に、そのアプリのApple IDを入れる。
 4. **iOS**: `eas build --platform ios --profile production --local` で `.ipa` を作り、`eas submit --platform ios --path <.ipa>` でTestFlightへ。Apple Developerの App ID に、Sign in with Apple と Associated Domains が付くか（EASが `app.json` から同期するか）は、**ビルドで確かめる**（未確認。docs/backend-design.md 9章の「公開のWebページ」）。
 5. **Android**: `nice -n 10 eas build --local --platform android --profile production` で、全アーキテクチャのAABを作る（署名鍵〔アップロード鍵〕は、EASが初回のビルドで作って保管する）。Play Consoleでアプリを作り、AABを内部テストへ上げる。
-6. **Play App Signing の鍵を、アプリの設定へ反映する**（Playから入れたアプリは、この鍵で署名し直される）。Play Consoleの「アプリの署名」（場所は `~/.claude/docs/play-console.md`）で、
+6. **Play App Signing の鍵を、アプリの設定へ反映する**（Playから入れたアプリは、この鍵で署名し直される）。Play Consoleの「アプリの署名」（メニュー: 「Google Play による保護」→「Google Play ストアの保護」→「Play アプリ署名の管理」→「アプリの署名」。各項目は閉じていて、開かないとSHA-1が出ない。ページ下の Digital Asset Links の値はSHA-256で、SHA-1が要る用途には使えない）で、
    - SHA-256を、`worker/src/site.ts` の `ASSET_LINKS` に入れ、**debug鍵のSHA-256を外す**。`npm run deploy`（`worker/`）で本番へ出す（本番への操作なので、出す前に確認する）。そのあと `npm run release-check` が通ること。
    - SHA-1（アプリ署名鍵・アップロード鍵の両方）で、Google Cloudのプロジェクトに、リリース用のAndroidのクライアントを作る（コードには入れない。docs/backend-design.md 12章）。同意画面を「In production」にするのも、ここ。
 7. **提出の直前**: `node scripts/generate-licenses.mjs --check --apk <AAB>`（ライセンスの一覧が今の依存と同じことと、把握していない `.so` が入っていないこと）。Play Consoleで、DEXコードの最適化（難読化・最適化・縮小の3つの率）と、権限の一覧が想定どおりかを見る。

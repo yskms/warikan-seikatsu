@@ -83,9 +83,8 @@
   - リリースビルドの冷間起動を繰り返すこと（debugで1回だけ起きた起動時のクラッシュ。`backend-design.md` 12章。releaseは1回だけ確認）
 - [x] 6.2 Androidのビルド設定: R8（`plugins/withAndroidR8.js`。Playの2027年2月の要件）、`eas.json`、版 `1.0.0`、手順書（`release.md`）。**まだ**: Play Consoleで、DEXコードの最適化の3つの率を見ること（AABを上げないと見えない）
 - [ ] 6.3 ストア用の素材
-  - [x] アイコン（`assets/icon.png`）、フィーチャーグラフィック（`assets/feature-graphic.png`。仮案）
-  - [ ] Google Play用のアイコン 512×512
-  - [ ] スクリーンショット（3枚目以降の内容を決める。撮影用のデータの作り方も決める。`store-listing.md` 4章）
+  - [x] アイコン（`assets/icon.png`）、Google Play用のアイコン 512×512（`assets/play-store-icon-512.png`）、フィーチャーグラフィック（`assets/feature-graphic.png`。仮案）
+  - [x] スクリーンショット（7枚。日本語。`assets/store-screenshots/`。偽のサーバーで、架空のデータを表示して撮り、`scripts/store-screenshots/compose.sh` で見出しを合成した。`store-listing.md` 4章）。**App Store Connect・Play Console にアップロードして、サイズが受け付けられるかは、未確認**（iOSは1320×2868、Playは1080×1920）
 - [ ] 6.4 掲載文・申告
   - [x] 下書き（`store-listing.md`。日本語のみ）
   - [ ] 決めること: カテゴリ、年齢指定・IARC（ユーザー生成コンテンツの答え）、金融機能の申告、ターゲット ユーザー、App プライバシーの4項目（名前・金融情報を申告するか）、SDKのマニフェスト（A・B・C案）
@@ -100,12 +99,11 @@
 - [ ] 6.6 公開前の設定（ビルドとストアの作業のあとに分かるもの）
   - [ ] Play App Signing の鍵のSHA-256を、`worker/src/site.ts` の `ASSET_LINKS` に入れ、debug鍵のSHA-256を外して、本番へデプロイ（`release-check` が通ること）
   - [ ] GoogleのAndroidのクライアントを、署名のSHA-1（アップロード鍵・Play App Signing の鍵）ごとに作る
-  - [ ] Googleの同意画面を「In production」にする
+  - [ ] Googleの同意画面を「In production」にする（**審査の前に必須**: 「テスト」のままだと、テストユーザー以外はログインできず、審査員が入れない）
   - [ ] Apple DeveloperのApp IDに、Sign in with Apple・Associated Domains が付くか（EASのビルドで確かめる）
-- [ ] 6.7 審査の通りやすさ（`store-listing.md` の「審査の通りやすさのリスク」）
-  - [ ] **1人でも、精算の画面まで試せるか。** いまは、精算（誰が誰にいくら）を見るには、2つ目のアカウントが要る。審査する人が試せないと、ガイドライン 2.1 で指摘されうる。案: ログインなしのお試し（7.1）を前倒しする、審査のメモに手順を書く（書いた）、撮影用に用意した2つ目のアカウントを案内する
+- [ ] 6.7 審査の通りやすさ（`store-listing.md` の「審査の通りやすさ」「審査用アカウント」）
+  - [ ] **審査用のGoogleアカウントを2つ作り、グループとデータを入れる**（A・B。2段階認証なし。別の端末で、実際にログインできることを確かめる。ID・パスワードは、App Store ConnectとPlay Consoleの入力欄にだけ。リポジトリには書かない）。1人では精算の画面まで試せないこと（ガイドライン 2.1）への対策。ログインなしのお試し（7.1）の前倒しは、しない。指摘されたら、検討する
   - [ ] Playのアカウント削除の窓口。いまは、Webは案内だけ（`privacy-policy.html#account-deletion`）。指摘されたら、案: Webでサインインして削除するページを `worker/public/` に置く（WorkerにApple・GoogleのWebの認証と `POST /auth/delete` があるので、作れる見込み）
-  - [ ] Play Consoleの「アプリのアクセス権」に入れる、審査用のGoogleアカウントを作るか決める（IDとパスワードは、リポジトリに書かない）
 - [ ] 6.8 本番のWorkerでの確認（`backend-design.md` 13章の9。ローカルのD1では確かめられないもの）
   - [ ] D1のクエリ数の数え方（対照つき: 個別51回で失敗し、60文のbatchが通るか）
   - [ ] 並行して走るリクエストで、競合制御が成功を1つに絞ること

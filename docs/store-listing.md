@@ -90,17 +90,17 @@ URLのページは、Workerの静的アセット（`worker/public/`）で、本�
 
 ### App Review のメモ
 
-App Store Connect の「App Review に関する情報」の「メモ」（4,000文字まで）に、次の英文を入れる。サインインは必要なので、「サインインが必要です」はオン。ただし、**審査用のデモアカウントは作れない**（AppleまたはGoogleのアカウントでサインインする方式で、パスワードを持たない）ので、審査する人が、自分のAppleアカウントでサインインする。ユーザー名・パスワードの欄は空にする。
+App Store Connect の「App Review に関する情報」の「メモ」（4,000文字まで）に、次の英文を入れる。サインインは必要なので、「サインインが必要です」はオンにして、**審査用のGoogleアカウントを2つ**（A・B。下の「審査用アカウント」）の、ユーザー名とパスワードを入れる（**IDとパスワードは、この欄にだけ書く。リポジトリには書かない**）。iOSにも「Googleでログイン」があるので、同じアカウントを、AppleとGoogleの審査で使える。審査する人が、自分のAppleアカウントでサインインしてもよい。
 
 ```text
 Warikan Seikatsu is an app for people who share living costs (couples, spouses, roommates). Members record shared expenses, set how each expense category is split (for example 70:30 for rent), close the month, and see who should pay whom. The app only calculates amounts. It does not move money, link bank accounts, or take payments. The screens are in Japanese only.
 
-Sign-in is required. Please sign in with Sign in with Apple (or Google) using your own account. No demo account is needed or possible. The server stores only an opaque account identifier; it stores no name or email address.
+Sign-in is required. Two demo Google accounts (A and B) are given in the sign-in information fields. Tap "Googleでログイン" (Sign in with Google) and choose a demo account. Both accounts are already members of one group ("ふたりの生活費") with sample data, so you can see a two-person settlement by signing in as A, and as B after signing out (Settings > "ログアウト"). You can also use your own Apple or Google account; a new group then has only one member. The server stores only an opaque account identifier; it stores no name or email address.
 
 How to try it:
 1. Sign in, then enter a group name and your display name. The group is created with default categories (rent, food, daily goods, utilities, dining out, communication, other).
 2. Tap "+" in the bottom bar to add expenses. Tap a category in the Home breakdown to change its split.
-3. To see a two-person settlement, a second account is needed: open Settings > "メンバーと招待" (Members and invites), issue an invite URL, and open it on another device signed in with another account. Opening the URL alone does not join the group; the person taps "参加する" (Join) on a confirmation screen.
+3. With your own account, a two-person settlement needs a second account: open Settings > "メンバーと招待" (Members and invites), issue an invite URL, and open it on another device signed in with another account. Opening the URL alone does not join the group; the person taps "参加する" (Join) on a confirmation screen. The demo accounts above skip this step.
 4. On Home, tap "この月を締める" (Close this month) in the settlement card to fix the month's totals. Each transfer can then be marked "精算完了" (settled) or "繰越" (carried over to the next month).
 
 User-generated content: text typed by members (group name, display name, category names, expense descriptions) is visible only to members of the same group (up to 5 people, joined by single-use invite URLs that expire in 3 days). Nothing is public, and there is no messaging or search across users.
@@ -110,7 +110,16 @@ Account deletion: Settings > "アカウントを削除" (Delete account). It ask
 The app has no ads, no in-app purchases, and no tracking. Privacy policy: https://warikan-seikatsu.app/privacy-policy
 ```
 
-**審査の通りやすさのリスク**: 1人では、精算（誰が誰にいくら）の画面まで試せない。審査する人が2つ目のアカウントを用意できないと、「機能を確認できない」（ガイドライン 2.1）と指摘されうる。対策の案は WBS（[wbs.md](wbs.md)）の6.7に書いた（ログインなしのお試しの前倒しなど）。
+**審査の通りやすさ**: ログインが必要なアプリは、ふつうに審査を通る。このアプリで引っかかりうるのは、1人では精算（誰が誰にいくら）の画面まで試せないこと（ガイドライン 2.1）で、審査用のアカウントを2つ渡して防ぐ（下の「審査用アカウント」）。ログインなしのお試し（未実装）の前倒しは、しない。指摘されてから、検討する（[wbs.md](wbs.md) の6.7）。
+
+### 審査用アカウント
+
+- **作る**: Googleアカウントを2つ（A・B）作る（数分。メールアドレスはGmailでよい）。**2段階認証は付けない**。電話番号の確認を、審査員の端末で求められないようにする（求められると、審査員がログインできない。Googleが、見慣れない端末からのログインを、確認なしで通すとは限らないので、**提出の前に、別の端末で、実際にログインして確かめる**）。
+- **データを入れる**: Aでログインして、グループ（名前「ふたりの生活費」）を作り、Bを招待して参加させる。支出を数件入れる（架空の内容。実在の人名・実際の支出は入れない）。精算を試せるよう、前の月を締めて、送金を未処理のまま残す手もある（審査員が精算まで押すと状態が変わるので、**提出のたびに、元の状態へ作り直す**）。
+- **ID・パスワードの置き場**: App Store Connect の「サインイン情報」と、Play Console の「アプリのアクセス権」の入力欄だけ。リポジトリ（docs を含む。公開される）にも、privateのリポジトリにも書かない。
+- **提出前に必須**: Googleの同意画面が「本番環境（In production）」であること（[wbs.md](wbs.md) の6.6）。「テスト」のままだと、テストユーザー以外はGoogleでログインできず、審査員が入れない。
+- **削除**: 審査が済んだら、2つのアカウントを、アプリの中の「アカウントを削除」で消す（グループごと消える）。
+
 
 ### App プライバシー（App Privacy）
 
@@ -135,6 +144,8 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
 - (B) SDKのマニフェストの種別も申告する（サードパーティのコードが収集するデータも対象、というAppleの説明に沿う。ラベルは大きくなる）
 - (C) iOSのGoogleサインインを外し、iOSはAppleだけにする（ガイドライン 4.8は、Sign in with Appleを出していれば満たす。Androidは両方のまま）
 
+参考: ほかのアプリで、Googleサインインを入れた版を出した前例は、まだ無い（Singfolioは、部品は入っているが、アカウント機能を閉じていて、同じ判断が保留のまま）。App プライバシーの回答は、App Store Connect で、新しい版を出さずに直せる（私の理解。現行の画面で確かめる）ので、最初の提出では、判断がつく案で出して、あとから直せる。
+
 このアプリで `ios/Pods/` の `PrivacyInfo.xcprivacy` を読み直して、決める（Singfolioで読んだのは2026-11-18の版。版が変わっていないか見る）。
 
 ### そのほか（App Store）
@@ -152,12 +163,12 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
 - **簡単な説明**（37）: `同棲・夫婦・ルームシェアの生活費を、費目ごとの割合で月ごとにかんたん精算。`
 - **詳細な説明**: App Store の説明（§2）と同じ文。
 - **リリースノート（1.0.0）**: `初回リリース。`
-- 簡単な説明に、価格・プロモーションを示す語（「無料」「割引」「ベスト」など）を入れない（Play Consoleの警告になりうる。`~/.claude/docs/play-console.md`）。
+- 簡単な説明に、価格・プロモーションを示す語（「無料」「割引」「ベスト」など）を入れない（Play Consoleの警告になりうる）。
 
 ### アプリのコンテンツの申告
 
 - **広告**: 広告を含まない。
-- **アプリのアクセス権（App access）**: **ログインが必要な機能がある**ので、手順を書く。審査用のアカウントは、**決めること**: Playの審査担当にも、自分のGoogleアカウントでサインインしてもらう形でよいか。確実にするなら、審査用のGoogleアカウントを1つ作り、Play Console の入力欄にだけ書く（**IDとパスワードは、このリポジトリに書かない**）。Appleでのサインインは、Androidでは、WebのApple認証を経由するので、審査用の手順には、Googleのほうを書く。
+- **アプリのアクセス権（App access）**: ログインが必要な機能があるので、「制限付き」にして、手順（「Googleでログイン」を押し、審査用のアカウントを選ぶ）と、審査用のGoogleアカウント（A・B。上の「審査用アカウント」）のIDとパスワードを、この欄に入れる。Appleでのサインインは、Androidでは、WebのApple認証を経由するので、手順には書かない。
 - **ターゲット ユーザー**: **決めること**: 13歳以上（子供向けではない。13歳未満を含めない）を第一案にする。金額を扱うが、実際の決済は無い。
 - **コンテンツのレーティング（IARC）**: 暴力・性的な表現・不適切な言葉・薬物・ギャンブルなどは、すべて「なし」。ユーザー間のやり取り・ユーザー作成コンテンツ・位置情報の共有は、質問文を読んで答える（上の年齢指定と同じ。同じグループのメンバーにだけ見える）。
 - **健康アプリの申告**: 健康に関する機能は無い（「健康に関する機能が一切ない」を選ぶ）。
@@ -181,25 +192,33 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
 
 ## 4. スクリーンショット・フィーチャーグラフィック
 
+作成済み（2026-11-26）。
+
 - **フィーチャーグラフィック（Google Play）**: `assets/feature-graphic.png`（1024×500、透過なし）。赤地（`#C8000C`）に白で「わりかん生活」。**仮案**（plan.md 14章）。
-- **アプリアイコン**: `assets/icon.png`（1024×1024、透過なし）。Playのストア用の512×512は、**未作成**。
-- **スクリーンショット**: **未作成**。方針は plan.md 14章。1枚目は「iPhoneとAndroidの組み合わせでも、ふたりで使える」、2枚目は「カテゴリごとの負担割合」（差がはっきり分かる数字。例: 家賃は7:3）。3枚目以降は**決めること**。候補（使う画面はすべて実装済み）:
+- **アプリアイコン**: `assets/icon.png`（1024×1024、透過なし）。Playのストア用は `assets/play-store-icon-512.png`（512×512、`icon.png` を縮小）。
+- **スクリーンショット**: 7枚。`assets/store-screenshots/` に、撮影画像（`raw/ja/` がiOSシミュレータの iPhone 18 Pro・1206×2622、`raw-android/ja/` がAndroidエミュレータ・1080×2424）と、見出しを合成した完成品（`ios/ja/` が1320×2868、`play/ja/` が1080×1920）がある。完成品を、ストアへ上げる。合成は `scripts/store-screenshots/compose.sh`（生成物は手で編集しない）。
+  - 見出しは、このアプリの言葉で書いた（plan.md 14章の方針。他のアプリの文言を使わない）。背景は、赤（`#C8000C`。アイコンの地。白い文字が約5.9:1）と、淡いピンク（アクセント `#FC75A4` を白に約32%混ぜた派生色）を交互にした。白に近い中立色は、白いストアのページで画像の縁が消えるので使わない。書体は Noto Sans JP（OFL。`scripts/store-screenshots/fonts/`）。
 
-| 候補 | 見出しの案（このアプリの言葉で書く） | 使う画面 |
-|---|---|---|
-| 1 | 同じアプリで、iPhoneもAndroidも | ホーム（月の集計・メンバー別の負担額） |
-| 2 | 家賃は7:3、食費は半分ずつ | カテゴリと負担割合 |
-| 3 | 外食は月1万円まで、自分が払う | 上限額つきの負担（カテゴリの編集） |
-| 4 | 電卓つきで、入力はすばやく | 支出の登録シート |
-| 5 | 月末に、誰が誰にいくらが分かる | ホームの精算のカード（締めた月） |
-| 6 | 今月は払わず、来月にまとめる | 精算完了・繰越の操作 |
-| 7 | 家賃は、毎月自動で登録 | 固定費の一覧 |
-| 8 | 3人以上でも、ルームシェアにも | メンバーと招待 |
+| 番号 | 見出し | 補足 | 画面 |
+|---|---|---|---|
+| 01-home | iPhoneとAndroidでも、ふたりで使える。 | 同じアプリで、記録も精算もいっしょに。 | ホーム（11月） |
+| 02-shares | 家賃は7:3、食費は半分ずつ。 | 費目ごとに、負担割合を決めておけます。 | カテゴリと負担割合 |
+| 03-cap | 外食は月1万円まで、自分が払う。 | 上限を超えた分だけ、割合で分けます。 | カテゴリの編集（上限額） |
+| 04-expense | 入力は、数タップでかんたん。 | 金額・日付・支払った人・費目を選ぶだけ。 | 支出の登録 |
+| 05-breakdown | 負担額は、費目ごとに自動で計算。 | 支払額・負担額・差額が、ひと目で分かります。 | ホームの「内訳を見る」 |
+| 06-settle | 今月は払わず、来月にまとめる。 | 送金ごとに、精算か繰越を選べます。 | ホーム（締めた10月。精算完了・繰越） |
+| 07-recurring | 家賃は、毎月自動で登録。 | 固定費は、日付が来ると支出になります。 | 固定費の一覧 |
 
-- **撮影用のデータ**: すべて架空にする（人名・金額。実在の人名を宣伝の画像に載せない）。表示名は「あなた」と、架空の名前1つ。
-- **撮影・合成の仕組み**: Singfolioの `scripts/store-screenshots/`（`compose.sh`・`seed.py` など。撮影用のDBを入れて撮る形）は、端末内のDBが前提で、そのままは使えない。このアプリは、サーバーのデータを読むので、撮影用のデータは、**偽の応答を返す形**（画面の確認で使ってきた、`platform/` のServiceの `fetch` を一時的に差し替える方法。コミットしない）か、本番のD1に作る撮影用のグループ（撮ったあとにアカウントごと削除する）で用意する。合成（見出し・背景）の部分は、Singfolioのものを参考にできる。
-- **サイズ**: App Store は、iPhoneの必須サイズを、提出のとき App Store Connect で確かめる（Singfolioは1320×2868。1枚から10枚、JPEG・PNG、透過なし）。Google Play は、スマートフォン用に2〜8枚（JPEG または 24ビットPNG。辺は320〜3840px。長辺は短辺の2倍まで。9:16 の 1080px 以上を4枚以上出すと、おすすめの掲載の対象になる）。
-- **Release ビルドで撮る**（debug は LogBox が写る）。ステータスバーは、時刻・電池を揃える（Singfolioの記録に、iOSの `simctl status_bar` とAndroidのデモモードの手順がある）。
+  - 1枚目の「iPhoneとAndroidでも」は、plan.md 14章の訴求の軸。Play の 9:16（下を切る）では、4枚目のキーパッドが写らない（見出しを「電卓つき」にしないのは、そのため。iOSの完成品は、キーパッドまで写る）。
+  - **撮影用のデータは、すべて架空**（人名「あなた」「ゆうな」、品名、金額）。本番のWorkerには通信しない。**偽のサーバー**（`scripts/store-screenshots/fakeServer.js`）が、アプリの `fetch` とログイン状態を差し替える。応答の金額は、コードで計算する（合計・送金額が食い違わない。Nodeで、11月の合計148,090円・あなた99,085円・ゆうな49,005円・ゆうな→あなた16,845円になることを確かめた）。月の状態は、画面に出ない範囲で現実とずれている（`fakeServer.js` の先頭）。
+  - **撮り直す手順**:
+    1. `scripts/store-screenshots/fake-mode.sh on`（`package.json` の `main` を、偽の入口 `scripts/store-screenshots/entry.js` にする）。
+    2. Androidは、`cd android && nice -n 10 ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a` で release の APK を作り、エミュレータ（`Filto_API_36`）に入れる。iOSは、`xcodebuild -workspace ios/app.xcworkspace -scheme app -configuration Release -sdk iphonesimulator -destination 'id=<UDID>' ONLY_ACTIVE_ARCH=YES build` で release の `.app` を作り、`xcrun simctl install` で入れる。**release で撮る**（debug は LogBox が写る）。
+    3. ステータスバーを揃える。Android: `settings put global sysui_demo_allowed 1` のあと、`am broadcast -a com.android.systemui.demo -e command` に、`enter`・`clock -e hhmm 0941`・`battery -e level 100 -e plugged false`・`network -e wifi show -e level 4 -e fully true`・`network -e mobile hide`・`notifications -e visible false` を順に渡す（戻すときは `exit` と `settings delete global sysui_demo_allowed`）。iOS: `xcrun simctl status_bar <UDID> override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ''`（戻すときは `clear`）。
+    4. 画面を開いて撮る（`adb exec-out screencap -p`、`xcrun simctl io <UDID> screenshot`）。手順: ホーム（01）、設定 → カテゴリと負担割合（02）、外食の行（03）、「＋」で金額 `4280`・費目「食費」を選ぶ（04）、ホームで「内訳を見る」（05）、ホームの月の「＜」で10月（06）、設定 → 固定費（07）。
+    5. `scripts/store-screenshots/compose.sh`（必要なら、画像の名前を引数に渡す）。
+    6. **`scripts/store-screenshots/fake-mode.sh off` で戻す。** `src/appConfig.test.ts` が、`main` が `expo-router/entry` であることを `npm test` で確かめる（偽の入口のまま出荷しない）。
+  - App Store は、1枚から10枚。JPEG・PNG、透過なし。iPhoneの必須サイズは、提出のとき App Store Connect で確かめる（1320×2868 だけで、小さい端末の枠が埋まるかも、そのとき）。Google Play は、スマートフォン用に2〜8枚（JPEG または 24ビットPNG。辺は320〜3840px。長辺は短辺の2倍まで。9:16 の 1080px 以上を4枚以上出すと、おすすめの掲載の対象になる）。
 
 ## 5. この内容が前提にしていること
 
