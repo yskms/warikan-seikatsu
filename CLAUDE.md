@@ -5,6 +5,8 @@
 - 仕様の正本: [docs/plan.md](docs/plan.md)（企画メモ）
 - データ・API・競合制御: [docs/backend-design.md](docs/backend-design.md)
 - 画面: [docs/screens.md](docs/screens.md)
+- 進捗（WBS。追加・修正の作業は7章・8章に足す）: [docs/wbs.md](docs/wbs.md)
+- ストアの掲載・申告（下書き）: [docs/store-listing.md](docs/store-listing.md)、提出の手順: [docs/release.md](docs/release.md)
 
 ## 構成
 
