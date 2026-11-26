@@ -47,6 +47,11 @@
       "expo-apple-authentication",
       ["expo-build-properties", { "ios": { "enableSceneSupport": true } }]
     ],
-    "owner": "yskms"
+    "owner": "yskms",
+    "extra": {
+      "eas": {
+        "projectId": "4de331b9-dc4c-42eb-a470-9da44cf28d99"
+      }
+    }
   }
 }

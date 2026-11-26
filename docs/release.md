@@ -20,11 +20,13 @@ R8（下の「Android: R8」）を入れた release（`arm64-v8a`、debug署名�
 
 ## 手順
 
+**EAS CLI の版: `27.11.0`**（**この1か所だけに書く**。上げるときは、ここを直す）。`eas` コマンドは、グローバルに入れず、版を固定して `npx eas-cli@27.11.0 <コマンド>` で呼ぶ（グローバルのインストールは、fnmでNodeの版を替えると消え、版も固定できない。retracks と同じ運用）。以下の手順の `<eas>` は、この `npx eas-cli@27.11.0` の意味。
+
 1. **自動チェック**: `npm run typecheck`・`npm test`、`worker/` で `npm run typecheck`・`npm test`。
-2. **EAS**: `eas login` のあと、`eas init`（`app.json` に `extra.eas.projectId` が入る。ほかの差分は戻す）。対話が要るので、手元の端末で行う。
+2. **EAS**: `<eas> login` のあと、`<eas> init`（`app.json` に `extra.eas.projectId` が入る。**整形（配列の改行）と、プラグインの展開結果 `extra.router` も書き込まれるので、`projectId` 以外は戻す**。済み: 2026-11-27、プロジェクト `@yskms/warikan-seikatsu`）。対話が要るので、手元の端末で行う。
 3. **App Store Connect**: アプリを作る（バンドルID `com.yskms.warikanseikatsu`）。`eas.json` の `submit.production.ios.ascAppId` に、そのアプリのApple IDを入れる。
-4. **iOS**: `eas build --platform ios --profile production --local` で `.ipa` を作り、`eas submit --platform ios --path <.ipa>` でTestFlightへ。Apple Developerの App ID に、Sign in with Apple と Associated Domains が付くか（EASが `app.json` から同期するか）は、**ビルドで確かめる**（未確認。docs/backend-design.md 9章の「公開のWebページ」）。
-5. **Android**: `nice -n 10 eas build --local --platform android --profile production` で、全アーキテクチャのAABを作る（署名鍵〔アップロード鍵〕は、EASが初回のビルドで作って保管する）。Play Consoleでアプリを作り、AABを内部テストへ上げる。
+4. **iOS**: `<eas> build --platform ios --profile production --local` で `.ipa` を作り、`<eas> submit --platform ios --path <.ipa>` でTestFlightへ。Apple Developerの App ID に、Sign in with Apple と Associated Domains が付くか（EASが `app.json` から同期するか）は、**ビルドで確かめる**（未確認。docs/backend-design.md 9章の「公開のWebページ」）。
+5. **Android**: `nice -n 10 <eas> build --local --platform android --profile production` で、全アーキテクチャのAABを作る（署名鍵〔アップロード鍵〕は、EASが初回のビルドで作って保管する）。Play Consoleでアプリを作り、AABを内部テストへ上げる。
 6. **Play App Signing の鍵を、アプリの設定へ反映する**（Playから入れたアプリは、この鍵で署名し直される）。Play Consoleの「アプリの署名」（メニュー: 「Google Play による保護」→「Google Play ストアの保護」→「Play アプリ署名の管理」→「アプリの署名」。各項目は閉じていて、開かないとSHA-1が出ない。ページ下の Digital Asset Links の値はSHA-256で、SHA-1が要る用途には使えない）で、
    - SHA-256を、`worker/src/site.ts` の `ASSET_LINKS` に入れ、**debug鍵のSHA-256を外す**。`npm run deploy`（`worker/`）で本番へ出す（本番への操作なので、出す前に確認する）。そのあと `npm run release-check` が通ること。
    - SHA-1（アプリ署名鍵・アップロード鍵の両方）で、Google Cloudのプロジェクトに、リリース用のAndroidのクライアントを作る（コードには入れない。docs/backend-design.md 12章）。同意画面を「In production」にするのも、ここ。
