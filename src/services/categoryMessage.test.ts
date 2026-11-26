@@ -83,6 +83,36 @@ describe('見直しの確認（acknowledge-reset）', () => {
   });
 });
 
+describe('全費目を均等にする（reset-equal）', () => {
+  it('サーバーが断った理由が、読み直せば解けるとき（競合・月が締まった・直せる月の外・脱退が確定した403・メンバーでない404）は読み直す', () => {
+    for (const reason of ['conflict', 'month_closed', 'month_not_editable', 'forbidden', 'not_found']) {
+      assert.equal(shouldReloadAfter(rejected(reason), 'reset-equal'), true, reason);
+    }
+  });
+
+  it('形の違い（400。理由なし）・通信の失敗は、読み直しても同じなので読み直さない', () => {
+    assert.equal(shouldReloadAfter(rejected(null, {}, 400), 'reset-equal'), false);
+    assert.equal(shouldReloadAfter(new AuthError('network'), 'reset-equal'), false);
+    assert.equal(shouldReloadAfter(new Error('x'), 'reset-equal'), false);
+  });
+
+  it('文言: 均等にできなかったことと、理由を伝える。通信の失敗では、同じ操作をやり直してよいと伝える', () => {
+    assert.equal(
+      categoryErrorMessage(rejected('month_closed', {}, 409), 'reset-equal'),
+      'この月は、すでに締められています。締めた月の割合は変えられません。',
+    );
+    assert.equal(categoryErrorMessage(rejected('forbidden', {}, 403), 'reset-equal'), '脱退が確定しているため、変更できません。');
+    assert.equal(
+      categoryErrorMessage(new AuthError('network'), 'reset-equal'),
+      '通信できませんでした。電波のよいところで、もう一度お試しください。',
+    );
+    assert.equal(
+      categoryErrorMessage(rejected(null, {}, 400), 'reset-equal'),
+      '負担割合を均等にできませんでした。アプリを最新の版に更新して、お試しください。',
+    );
+  });
+});
+
 describe('isCreateConflict', () => {
   it('409 conflict だけ（この id を他のグループが使っている、または書き込みの競合が続いた。どちらも作られていない）', () => {
     assert.equal(isCreateConflict(rejected('conflict')), true);

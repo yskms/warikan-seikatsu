@@ -16,6 +16,7 @@ import {
   buildNotices,
   buildSettlement,
   buildSharesResetNotice,
+  equalizeConfirmText,
   buildTotal,
   CARRY_BLOCKED_TEXT,
   carryConfirmText,
@@ -229,7 +230,7 @@ describe('「メンバーが増減した」お知らせ', () => {
       shareRule({ categoryId: 'c2', memberChangedAt: 3_000 }),
       shareRule({ categoryId: 'c3', memberChangedAt: null }),
     ]);
-    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, month: '2026-11', through: 3_000 });
+    assert.deepEqual(buildSharesResetNotice(shares), { kind: 'reset', message: MESSAGE, month: '2026-11', through: 3_000 });
   });
 
   it('印が無ければ出さない（見直した・割合を保存した・戻していない）', () => {
@@ -253,7 +254,56 @@ describe('「メンバーが増減した」お知らせ', () => {
       shareRule({ categoryId: 'c1', memberChangedAt: 1_000 }),
       shareRule({ categoryId: 'c2', archived: true, memberChangedAt: 2_000 }),
     ]);
-    assert.deepEqual(buildSharesResetNotice(shares), { message: MESSAGE, month: '2026-11', through: 2_000 });
+    assert.deepEqual(buildSharesResetNotice(shares), { kind: 'reset', message: MESSAGE, month: '2026-11', through: 2_000 });
+  });
+
+  describe('印の種類（memberChangeKind）で文言と出す操作を変える', () => {
+    const JOINED = '新しいメンバーの負担割合は0%です。均等にするか、カテゴリごとに設定してください';
+
+    it('0%で足した（joined）ときは、「0%です」の文言。送る値は、均等に戻したときと同じ', () => {
+      const shares = sharesOf([
+        shareRule({ categoryId: 'c1', memberChangedAt: 1_000, memberChangeKind: 'joined' }),
+        shareRule({ categoryId: 'c2', memberChangedAt: 2_000, memberChangeKind: 'joined' }),
+      ]);
+      assert.deepEqual(buildSharesResetNotice(shares), { kind: 'joined', message: JOINED, month: '2026-11', through: 2_000 });
+    });
+
+    it('均等に戻した（reset）・知らない種類（unknown）・種類が無い（null。古いサーバー）は、均等に戻した文言', () => {
+      for (const memberChangeKind of ['reset', 'unknown', null] as const) {
+        const notice = buildSharesResetNotice(sharesOf([shareRule({ memberChangedAt: 1_000, memberChangeKind })]));
+        assert.deepEqual(notice, { kind: 'reset', message: MESSAGE, month: '2026-11', through: 1_000 }, String(memberChangeKind));
+      }
+    });
+
+    it('種類が混ざるとき（見直していない印が、費目ごとに違う月の行に残っている）は、joined の文言にする', () => {
+      const shares = sharesOf([
+        shareRule({ categoryId: 'c1', memberChangedAt: 1_000, memberChangeKind: 'reset' }),
+        shareRule({ categoryId: 'c2', memberChangedAt: 2_000, memberChangeKind: 'joined' }),
+      ]);
+      assert.equal(buildSharesResetNotice(shares)?.kind, 'joined');
+    });
+
+    it('アーカイブした費目の joined だけでは、joined にしない（使っている費目の印で決める）', () => {
+      const shares = sharesOf([
+        shareRule({ categoryId: 'c1', memberChangedAt: 1_000, memberChangeKind: 'reset' }),
+        shareRule({ categoryId: 'c2', archived: true, memberChangedAt: 2_000, memberChangeKind: 'joined' }),
+      ]);
+      assert.deepEqual(buildSharesResetNotice(shares), { kind: 'reset', message: MESSAGE, month: '2026-11', through: 2_000 });
+    });
+
+    it('直せない月（editable が false）では、joined でも出さない。印が無ければ出さない', () => {
+      const marked = [shareRule({ memberChangedAt: 1_000, memberChangeKind: 'joined' })];
+      assert.equal(buildSharesResetNotice({ ...sharesOf(marked), editable: false }), null);
+      assert.equal(buildSharesResetNotice(sharesOf([shareRule({ memberChangeKind: 'joined' })])), null);
+    });
+  });
+
+  it('「全費目を均等にする」の確認は、この月以降が対象で、手で直した割合・上限額も戻ることを伝える', () => {
+    const text = equalizeConfirmText('11月');
+    assert.equal(text.title, '全費目を均等にしますか');
+    assert.equal(text.confirmLabel, '均等にする');
+    assert.ok(text.message.startsWith('11月以降の全カテゴリ'), text.message);
+    assert.ok(text.message.includes('手で直した割合') && text.message.includes('上限額'), text.message);
   });
 });
 
@@ -348,6 +398,7 @@ function shareRule(patch: Partial<CategoryShareRule> = {}): CategoryShareRule {
     cap: null,
     archived: false,
     memberChangedAt: null,
+    memberChangeKind: null,
     ...patch,
   };
 }

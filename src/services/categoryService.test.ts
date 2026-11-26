@@ -73,6 +73,10 @@ function setup(options: { session?: string; failWith?: Error; months?: MonthList
       log.push(`acknowledge:${session}:${groupId}:${month}:${through}`);
       if (options.failRepository === 'put') throw new AuthError('network');
     },
+    async resetToEqual(session: string, groupId: string, month: string) {
+      log.push(`reset-equal:${session}:${groupId}:${month}`);
+      if (options.failRepository === 'put') throw new AuthError('network');
+    },
   } as unknown as CategorySharesRepository;
   let withSessionCalls = 0;
   const access: SessionAccess = {
@@ -150,6 +154,20 @@ describe('categoryService の書き込み', () => {
     );
     const failing = setup({ failWith: new AuthError('unauthorized') });
     await assert.rejects(failing.service.acknowledgeSharesReset('g1', '2026-11', 1), (error) => error instanceof AuthError && error.code === 'unauthorized');
+    assert.deepEqual(failing.log, ['withSession']);
+  });
+
+  it('resetSharesToEqual は、1回の withSession を通して、全費目を均等にする操作を送る。失敗はそのまま画面へ届く', async () => {
+    const { service, log, withSessionCalls } = setup({ session: 'SESSION' });
+    await service.resetSharesToEqual('g1', '2026-11');
+    assert.equal(withSessionCalls(), 1);
+    assert.deepEqual(log, ['withSession', 'reset-equal:SESSION:g1:2026-11']);
+    await assert.rejects(
+      setup({ failRepository: 'put' }).service.resetSharesToEqual('g1', '2026-11'),
+      (error) => error instanceof AuthError && error.code === 'network',
+    );
+    const failing = setup({ failWith: new AuthError('unauthorized') });
+    await assert.rejects(failing.service.resetSharesToEqual('g1', '2026-11'), (error) => error instanceof AuthError && error.code === 'unauthorized');
     assert.deepEqual(failing.log, ['withSession']);
   });
 

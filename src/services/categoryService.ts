@@ -82,6 +82,14 @@ export function createCategoryService({ groups, months, categories, shares, acce
       return access.withSession((session) => shares.acknowledgeReset(session, groupId, month, through));
     },
 
+    /**
+     * 「全費目を均等にする」。`month`（画面が割合を見ている月）と、それより後で割合の行がある月の、全費目の割合を、メンバー全員での
+     * 均等に書き直す（上限額も外す。手で直した割合も上書きする）。同じ操作を送り直しても同じ結果（均等のまま）。
+     */
+    resetSharesToEqual(groupId: string, month: string): Promise<void> {
+      return access.withSession((session) => shares.resetToEqual(session, groupId, month));
+    },
+
     /** 費目を作る。`input.id` は、呼び出し側が最初の1回だけ作り、やり直しでも使い回す。 */
     createCategory(groupId: string, input: CreateCategoryInput): Promise<{ id: string }> {
       return access.withSession((session) => categories.create(session, groupId, input));

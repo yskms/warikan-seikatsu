@@ -23,18 +23,18 @@ export interface NoticeItem {
   /** スクリーンリーダー向けの、タップしたときに起きることの説明 */
   hint: string;
   onPress(): void;
-  /** お知らせの下に出す、もう1つの操作（「確認した」など）。無ければ、お知らせ全体がタップの対象 */
-  action?: NoticeAction;
+  /** お知らせの下に出す、本文のタップとは別の操作（「確認した」「均等にする」など。上から並べる）。無ければ、お知らせ全体がタップの対象 */
+  actions?: readonly NoticeAction[];
+  /** `actions` の操作が失敗した文言（操作の上に出す） */
+  error?: string | null;
 }
 
 export interface NoticeAction {
   label: string;
   /** スクリーンリーダー向けの、押したときに起きることの説明 */
   hint: string;
-  /** 通信の最中。押せなくする */
+  /** 通信の最中。押せなくする（同じお知らせの操作は、どれも押せなくする） */
   busy: boolean;
-  /** 失敗の文言 */
-  error: string | null;
   onPress(): void;
 }
 
@@ -54,8 +54,8 @@ export function NoticeList({ notices }: { notices: readonly NoticeItem[] }) {
             <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
           </>
         );
-        const { action } = notice;
-        if (action === undefined) {
+        const { actions } = notice;
+        if (actions === undefined || actions.length === 0) {
           return (
             <Pressable
               key={notice.key}
@@ -81,26 +81,31 @@ export function NoticeList({ notices }: { notices: readonly NoticeItem[] }) {
             >
               {body}
             </Pressable>
-            {action.error !== null ? (
+            {notice.error !== null && notice.error !== undefined ? (
               <Text style={[styles.noticeError, { color: colors.error }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
-                {action.error}
+                {notice.error}
               </Text>
             ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={action.label}
-              accessibilityHint={action.hint}
-              accessibilityState={{ disabled: action.busy, busy: action.busy }}
-              disabled={action.busy}
-              onPress={action.onPress}
-              style={({ pressed }) => [
-                styles.noticeAction,
-                { borderColor: colors.border, opacity: action.busy ? 0.5 : 1 },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={[styles.noticeActionText, { color: colors.textPrimary }]}>{action.label}</Text>
-            </Pressable>
+            <View style={styles.noticeActions}>
+              {actions.map((action) => (
+                <Pressable
+                  key={action.label}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  accessibilityHint={action.hint}
+                  accessibilityState={{ disabled: action.busy, busy: action.busy }}
+                  disabled={action.busy}
+                  onPress={action.onPress}
+                  style={({ pressed }) => [
+                    styles.noticeAction,
+                    { borderColor: colors.border, opacity: action.busy ? 0.5 : 1 },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.noticeActionText, { color: colors.textPrimary }]}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         );
       })}
@@ -304,7 +309,8 @@ const styles = StyleSheet.create({
   noticeBox: { gap: 10, borderWidth: 1.5, borderRadius: 12, padding: 14 },
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   noticeError: { fontSize: 13, lineHeight: 18 },
-  noticeAction: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, borderWidth: 1, borderRadius: 10 },
+  noticeActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
+  noticeAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, borderWidth: 1, borderRadius: 10 },
   noticeActionText: { fontSize: 14, fontWeight: '600' },
   inviteBody: { flex: 1, gap: 2 },
   inviteMessage: { fontSize: 13, lineHeight: 18 },

@@ -15,6 +15,14 @@ export interface ShareCap {
   capMinor: number;
 }
 
+/**
+ * 見直しの印（`memberChangedAt`）が付いた理由（サーバーの `member_changed_kind`）。表示（お知らせの文言と、出す操作）にしか使わない。
+ * - `reset`: メンバーの増減で、割合を均等に戻した。
+ * - `joined`: 2人以上のグループに参加があり、今の割合を残して、新しいメンバーを0%で足した。
+ * - `unknown`: アプリが知らない値（サーバーが種類を足したとき。`reset` と同じに扱う）。
+ */
+export type ShareChangeKind = 'reset' | 'joined' | 'unknown';
+
 /** その月の、1つの費目の負担割合 */
 export interface CategoryShareRule {
   categoryId: string;
@@ -28,6 +36,11 @@ export interface CategoryShareRule {
    * 見直しの確認をしたら `null`）。ホームのお知らせ「メンバーが増減した」の元（`buildSharesResetNotice`）。
    */
   memberChangedAt: number | null;
+  /**
+   * `memberChangedAt` の理由。印が無ければ `null`。古いサーバーが返さないときも `null`（表示にしか使わないので、必須にしない。
+   * 印があって種類が `null` なら、`reset` と同じに扱う）。
+   */
+  memberChangeKind: ShareChangeKind | null;
 }
 
 /** `GET /groups/:id/months/:month/category-shares` */

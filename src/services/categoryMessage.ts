@@ -14,11 +14,19 @@ import { formatMonth } from './dateFormat.ts';
  * 保存済みの費目をそのまま返すので、直した内容をあとから送る（`CategoryEditSheet.tsx`）。作成と失敗の扱いを分ける（作成は
  * 済んでいるので、新しい `id` にしてはいけない）。
  */
-export type CategoryAction = 'save-share' | 'acknowledge-reset' | 'create' | 'create-update' | 'update' | 'reorder';
+export type CategoryAction =
+  | 'save-share'
+  | 'acknowledge-reset'
+  | 'reset-equal'
+  | 'create'
+  | 'create-update'
+  | 'update'
+  | 'reorder';
 
 const FAILED: Record<CategoryAction, string> = {
   'save-share': '割合を保存できませんでした。',
   'acknowledge-reset': 'お知らせを閉じられませんでした。',
+  'reset-equal': '負担割合を均等にできませんでした。',
   create: 'カテゴリを追加できませんでした。',
   'create-update': 'カテゴリは追加できましたが、入力した内容を反映できませんでした。',
   update: 'カテゴリを変更できませんでした。',
@@ -43,6 +51,17 @@ export function shouldReloadAfter(error: unknown, action: CategoryAction): boole
   // `loadGroup` も失敗してホームが読み込みの失敗の画面になる。409は、最新の状態で出し直す（印が残っていればお知らせも残る）。
   // 同じ確認の送り直しは、結果が同じ（印が無いだけ）。形の違い（400。`reason` が無い）は、読み直しても同じ
   if (action === 'acknowledge-reset') return error.reason === 'conflict' || error.reason === 'forbidden' || error.reason === 'not_found';
+  // 「全費目を均等にする」も同じ。加えて、月が締まった・直せる月の外になった（`month_closed`・`month_not_editable`）ときも、
+  // 画面の内容が古い（読み直すと、`editable` が false になって、お知らせの操作が消える）。同じ操作の送り直しは、結果が同じ（均等のまま）
+  if (action === 'reset-equal') {
+    return (
+      error.reason === 'conflict' ||
+      error.reason === 'forbidden' ||
+      error.reason === 'not_found' ||
+      error.reason === 'month_closed' ||
+      error.reason === 'month_not_editable'
+    );
+  }
   // 並べ替えは、費目の顔ぶれが違う（`categories_changed`）ときだけ。`conflict`（書き込みの競合が2回続いた）は、費目が変わったという
   // 意味ではなく、作った並びはそのまま有効なので、読み直さず、同じ並びを送り直してもらう。メンバーの増減・月が締まった、は
   // 並べ替えでは起きない

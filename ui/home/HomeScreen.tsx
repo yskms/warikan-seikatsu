@@ -118,10 +118,10 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
     carryMonthLabel: view?.settlement.kind === 'closed' ? view.settlement.carryMonthLabel : '次の月',
   });
 
-  // 「メンバーが増減した」お知らせの「確認した」（印を消して、ホームを読み直す）
+  // 「メンバーが増減した」お知らせの「確認した」「全費目を均等にする」（どちらも、終わったらホームを読み直す）
   const sharesAck = useSharesResetAck({ groupId, reload, month: selected });
 
-  // お知らせ: 前の月（タップでその月へ）、メンバーの増減（タップでカテゴリの一覧へ。「確認した」で閉じる）と、固定費（1件なら、その固定費の編集のシート。複数なら、固定費の一覧）
+  // お知らせ: 前の月（タップでその月へ）、メンバーの増減（タップでカテゴリの一覧へ。「確認した」「このままでよい」で閉じる。0%で足したときは「全費目を均等にする」も）と、固定費（1件なら、その固定費の編集のシート。複数なら、固定費の一覧）
   const notices = useMemo<NoticeItem[]>(() => {
     if (groupData === null || current === null || selected === null) return [];
     const monthNotices = buildNotices(selected, groupData.months.months, current.summary.close).map((notice) => ({
@@ -131,6 +131,12 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
       onPress: () => void loader.selectMonth(notice.month),
     }));
     const sharesReset = buildSharesResetNotice(current.shares);
+    const acknowledgeAction = (notice: NonNullable<typeof sharesReset>) => ({
+      label: notice.kind === 'joined' ? 'このままでよい' : '確認した',
+      hint: 'このお知らせを閉じます。負担割合は変わりません',
+      busy: sharesAck.busy,
+      onPress: () => void sharesAck.acknowledge(notice.month, notice.through),
+    });
     const sharesResetNotices: NoticeItem[] =
       sharesReset === null
         ? []
@@ -140,13 +146,20 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
               message: sharesReset.message,
               hint: 'タップすると、カテゴリの一覧を開きます',
               onPress: () => router.push({ pathname: '/categories', params: { groupId } }),
-              action: {
-                label: '確認した',
-                hint: 'このお知らせを閉じます。負担割合は変わりません',
-                busy: sharesAck.busy,
-                error: sharesAck.error,
-                onPress: () => void sharesAck.acknowledge(sharesReset.month, sharesReset.through),
-              },
+              error: sharesAck.error,
+              // 0%で足したときだけ、「全費目を均等にする」を出す（確認のあとで、その月以降の割合を上書きする）
+              actions:
+                sharesReset.kind === 'joined'
+                  ? [
+                      {
+                        label: '全費目を均等にする',
+                        hint: '確認のあと、この月以降の全カテゴリの負担割合を、メンバー全員での均等にします',
+                        busy: sharesAck.busy,
+                        onPress: () => sharesAck.equalize(sharesReset.month),
+                      },
+                      acknowledgeAction(sharesReset),
+                    ]
+                  : [acknowledgeAction(sharesReset)],
             },
           ];
     const recurringNotices = buildRecurringNotices({
@@ -166,7 +179,7 @@ export function HomeScreen({ groupId, groupName, groups, onSelectGroup }: HomeSc
           : router.push({ pathname: '/recurring', params: { groupId } }),
     }));
     return [...monthNotices, ...sharesResetNotices, ...recurringNotices];
-  }, [groupData, current, selected, loader, router, groupId, sharesAck.busy, sharesAck.error, sharesAck.acknowledge]);
+  }, [groupData, current, selected, loader, router, groupId, sharesAck.busy, sharesAck.error, sharesAck.acknowledge, sharesAck.equalize]);
 
   const inviteCard = groupData === null ? null : buildInviteCard(groupData.group);
   const months = groupData?.months.months ?? [];

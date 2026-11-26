@@ -8,12 +8,13 @@
 //   同じ結果で、利用者に失敗に見せる理由がない）。ただし、JSONでない200（宿のWi-Fiの認証画面など）を成功と取り違えないよう、
 //   応答がオブジェクトであることだけは確かめる。
 // - 断られたとき（400・403・404・409）は、`CategoryRejectedError` に、サーバーが返した理由を載せる（`categoryRepository.ts`）。
-// - 見直しの確認（`POST .../category-shares/acknowledge-reset`。204）は、本文を読まない。同じ確認を送り直しても同じ（印が無いだけ）。
+// - 見直しの確認（`POST .../category-shares/acknowledge-reset`。204）と、「全費目を均等にする」（`POST .../category-shares/
+//   reset-equal`。204）は、本文を読まない。どちらも、同じ操作を送り直しても同じ（印が無いだけ・均等のまま）。
 // - 再試行はしない。割合は置き換えなので、送り直しても二重にはならない。
 import type { CategoryShareRule, CategoryShares, SavedCategoryShare, ShareCap } from '../domain/categoryShare.ts';
 import { createApiClient, type ApiFetchLike } from './apiClient.ts';
 import { categoryRejection } from './categoryRepository.ts';
-import { array, bool, id, int, invalid, month, record } from './parse.ts';
+import { array, bool, id, int, invalid, month, oneOfOrUnknown, record } from './parse.ts';
 
 export type CategorySharesFetchLike = ApiFetchLike;
 
@@ -30,6 +31,11 @@ function parseRule(value: unknown): CategoryShareRule {
     cap: cap === null ? null : { memberId: id(cap.memberId), capMinor: int(cap.capMinor) },
     archived: bool(data.archived),
     memberChangedAt: data.memberChangedAt === null ? null : int(data.memberChangedAt),
+    // 表示にしか使わない列挙値: 知らない値は許し、無ければ（古いサーバー）null（`ShareChangeKind`）
+    memberChangeKind:
+      data.memberChangeKind === undefined || data.memberChangeKind === null
+        ? null
+        : oneOfOrUnknown(['reset', 'joined'] as const, data.memberChangeKind),
   };
 }
 
@@ -116,6 +122,21 @@ export function createCategorySharesRepository(
         'POST',
         `/groups/${encodeURIComponent(groupId)}/category-shares/acknowledge-reset`,
         { session, json: { month: month(targetMonth), through }, rejected: categoryRejection },
+        async () => undefined,
+      );
+    },
+
+    /**
+     * `POST /groups/:id/category-shares/reset-equal`（204）。「全費目を均等にする」。`targetMonth`（画面が割合を見ている月）と、
+     * それより後で割合の行がある月の、全費目（アーカイブ済みも）の割合を、メンバー全員での均等に書き直し、上限額も外す
+     * （手で直した割合も上書きする。呼ぶ前に、画面が確認を出す）。本文は読まない。断られたら `CategoryRejectedError`
+     * （締めた月は `month_closed`、直せる月の外は `month_not_editable`）。
+     */
+    async resetToEqual(session: string, groupId: string, targetMonth: string): Promise<void> {
+      await client.request(
+        'POST',
+        `/groups/${encodeURIComponent(groupId)}/category-shares/reset-equal`,
+        { session, json: { month: month(targetMonth) }, rejected: categoryRejection },
         async () => undefined,
       );
     },

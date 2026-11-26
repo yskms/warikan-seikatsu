@@ -52,6 +52,7 @@ const rule = {
   cap: null,
   archived: false,
   memberChangedAt: null,
+  memberChangeKind: null,
 };
 const sharesBody = { month: '2026-11', closed: false, editable: true, memberIds: ['m1', 'm2'], categories: [rule] };
 
@@ -92,6 +93,27 @@ describe('get', () => {
     const { fetchImpl } = fakeFetch(() => reply(200, { ...sharesBody, categories: [marked] }));
     const result = await createCategorySharesRepository(fetchImpl).get(SESSION, 'g1', '2026-11');
     assert.equal(result.categories[0]?.memberChangedAt, 1_795_057_200_000);
+  });
+
+  it('印の種類（memberChangeKind）は、reset・joined を読む。知らない値は unknown、無ければ null（表示にしか使わない）', async () => {
+    const read = async (patch: Record<string, unknown>) => {
+      const body = { ...sharesBody, categories: [{ ...rule, memberChangedAt: 1_000, ...patch }] };
+      const result = await createCategorySharesRepository(fakeFetch(() => reply(200, body)).fetchImpl).get(SESSION, 'g1', '2026-11');
+      return result.categories[0]?.memberChangeKind;
+    };
+    assert.equal(await read({ memberChangeKind: 'reset' }), 'reset');
+    assert.equal(await read({ memberChangeKind: 'joined' }), 'joined');
+    assert.equal(await read({ memberChangeKind: 'something-new' }), 'unknown');
+    assert.equal(await read({ memberChangeKind: null }), null);
+    // 古いサーバー（項目が無い）でも、割合は読める
+    const { memberChangeKind: _omitted, ...withoutKind } = rule;
+    const { fetchImpl } = fakeFetch(() => reply(200, { ...sharesBody, categories: [withoutKind] }));
+    assert.equal((await createCategorySharesRepository(fetchImpl).get(SESSION, 'g1', '2026-11')).categories[0]?.memberChangeKind, null);
+    // 文字列でない値は、形の違い
+    await rejectsWith(
+      createCategorySharesRepository(fakeFetch(() => reply(200, { ...sharesBody, categories: [{ ...rule, memberChangeKind: 1 }] })).fetchImpl).get(SESSION, 'g1', '2026-11'),
+      'invalid-response',
+    );
   });
 
   it('割合が1つも無い月（費目が空）も読める', async () => {
@@ -342,6 +364,47 @@ describe('acknowledgeReset', () => {
 
   it('401 は unauthorized、5xx は unavailable、通信の失敗は network', async () => {
     const send = (fetchImpl: CategorySharesFetchLike) => createCategorySharesRepository(fetchImpl).acknowledgeReset(SESSION, 'g1', '2026-11', 1);
+    await rejectsWith(send(fakeFetch(() => reply(401)).fetchImpl), 'unauthorized');
+    await rejectsWith(send(fakeFetch(() => reply(503)).fetchImpl), 'unavailable');
+    await rejectsWith(send(fakeFetch(() => new Error('offline')).fetchImpl), 'network');
+  });
+});
+
+describe('resetToEqual', () => {
+  it('POST /groups/:id/category-shares/reset-equal に、見ている月を送る。204の本文は読まない', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => Promise.resolve({ ok: true, status: 204, json: async () => Promise.reject(new Error('no body')) }));
+    const result = await createCategorySharesRepository(fetchImpl).resetToEqual(SESSION, 'g/1', '2026-11');
+    assert.equal(result, undefined);
+    assert.equal(calls[0].url, `${API_ORIGIN}/groups/g%2F1/category-shares/reset-equal`);
+    assert.equal(calls[0].init.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].init.body!), { month: '2026-11' });
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${SESSION}`);
+  });
+
+  it('断られたら、理由つき。締めた月・直せる月の外・脱退が確定した人・メンバーでない・競合', async () => {
+    for (const [status, reason] of [
+      [409, 'month_closed'],
+      [409, 'month_not_editable'],
+      [403, 'forbidden'],
+      [404, 'not_found'],
+      [409, 'conflict'],
+    ] as const) {
+      const error = await rejectedWith(
+        createCategorySharesRepository(fakeFetch(() => reply(status, { error: reason })).fetchImpl).resetToEqual(SESSION, 'g1', '2026-11'),
+      );
+      assert.equal(error.status, status);
+      assert.equal(error.reason, reason);
+    }
+  });
+
+  it('月の形が違えば、送らずに invalid-response', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => reply(204));
+    await rejectsWith(createCategorySharesRepository(fetchImpl).resetToEqual(SESSION, 'g1', '2026-13'), 'invalid-response');
+    assert.equal(calls.length, 0);
+  });
+
+  it('401 は unauthorized、5xx は unavailable、通信の失敗は network', async () => {
+    const send = (fetchImpl: CategorySharesFetchLike) => createCategorySharesRepository(fetchImpl).resetToEqual(SESSION, 'g1', '2026-11');
     await rejectsWith(send(fakeFetch(() => reply(401)).fetchImpl), 'unauthorized');
     await rejectsWith(send(fakeFetch(() => reply(503)).fetchImpl), 'unavailable');
     await rejectsWith(send(fakeFetch(() => new Error('offline')).fetchImpl), 'network');

@@ -141,19 +141,31 @@ export function buildNotices(selectedMonth: string, months: readonly MonthListIt
 // 「メンバーが増減した」お知らせ
 
 export interface SharesResetNotice {
+  /**
+   * - `reset`: 均等に戻した（脱退の確定・アカウント削除・1人のグループへの参加）。見直してもらう。
+   * - `joined`: 2人以上のグループに参加があり、今の割合を残して、新しいメンバーを0%で足した。均等にするか、カテゴリごとに直してもらう。
+   */
+  kind: 'reset' | 'joined';
   message: string;
-  /** 「確認した」で送る月。この画面が割合を見た月（サーバーは、その月で使われている行の印だけを消す） */
+  /** 「確認した」「均等にする」で送る月。この画面が割合を見た月（サーバーは、その月で使われている行の印だけを消す） */
   month: string;
   /** 「確認した」で送る値。この画面が見た、最も新しい `memberChangedAt`（それより新しい印は、見ていないので消さない） */
   through: number;
 }
 
 /**
- * 「メンバーが変わったため、負担割合を均等に戻しました。見直してください」（docs/screens.md 3章）。選んだ月の割合の
- * いずれかの費目に、見直されていない印（`memberChangedAt`）があるときだけ出す。
+ * 割合を、メンバーの増減に合わせて変えたお知らせ（docs/screens.md 3章）。選んだ月の割合のいずれかの費目に、見直されていない印
+ * （`memberChangedAt`）があるときだけ出す。
+ * - 文言は、印の種類（`memberChangeKind`）で変える。**使っている費目のどれかが `joined`**（0%で足した）なら、「新しいメンバーの
+ *   負担割合は0%です。…」。それ以外（`reset`・知らない種類・種類が無い）は、「メンバーが変わったため、負担割合を均等に戻しました。
+ *   見直してください」。種類が混ざるのは、見直していない印が、費目ごとに違う月の行に残っているとき、または、参加のときに今の割合を残せず、その費目だけ均等に戻した
+ *   とき（サーバーの安全側の経路。docs/backend-design.md 5章の「参加」）。どちらでも「確認した」「このままでよい」は同じ
+ *   で、**`reset` の印も、まとめて消える**。**これは意図した挙動**: 均等に戻った費目が混ざっても、その費目のことは文言では伝えない
+ *   （めったに起きない。費目ごとの割合は、内訳とカテゴリの一覧で見直せる）。混ざった種類ごとに、お知らせを分ける形にしない。
  *
- * - **印の有無はサーバーの値で見る**。メンバーの増減の判定・戻した月の判定は、アプリに書き写さない（割合は、その月以前で
+ * - **印の有無・種類はサーバーの値で見る**。メンバーの増減の判定・戻した月の判定は、アプリに書き写さない（割合は、その月以前で
  *   最も新しい月の行を引き継ぐので、戻した月より後の月にも出る。サーバーの `memberChangedAt` が、引き継ぎ元の行の印を返す）。
+ *   0%のメンバーが誰かも、アプリでは判定しない（手で0%にしたメンバーと区別できない）ので、名前は出さない。
  * - 出すのは、`editable`（締めていない・直せる月・脱退が確定していない）のときだけ。締めた月の割合は直せない。
  * - 使っている費目（アーカイブしていない）に印があるときだけ出す。アーカイブした費目の印だけでは、見直す先が見えない
  *   （費目を戻したときに、その費目の印があれば出る）。`through` には、アーカイブした費目の印も含める（確認で、まとめて消す）。
@@ -162,11 +174,28 @@ export interface SharesResetNotice {
 export function buildSharesResetNotice(shares: CategoryShares | null): SharesResetNotice | null {
   if (shares === null || !shares.editable) return null;
   const marked = shares.categories.filter((rule) => rule.memberChangedAt !== null);
-  if (!marked.some((rule) => !rule.archived)) return null;
+  const visible = marked.filter((rule) => !rule.archived);
+  if (visible.length === 0) return null;
+  const joined = visible.some((rule) => rule.memberChangeKind === 'joined');
   return {
-    message: 'メンバーが変わったため、負担割合を均等に戻しました。見直してください',
+    kind: joined ? 'joined' : 'reset',
+    message: joined
+      ? '新しいメンバーの負担割合は0%です。均等にするか、カテゴリごとに設定してください'
+      : 'メンバーが変わったため、負担割合を均等に戻しました。見直してください',
     month: shares.month,
     through: Math.max(...marked.map((rule) => rule.memberChangedAt!)),
+  };
+}
+
+/**
+ * 「全費目を均等にする」の確認（取り消せない上書きなので、押す前に出す）。**手で直した割合・上限額も戻る**ことと、**この月以降**が
+ * 対象であることを伝える（他のメンバーが先に直した割合も上書きする）。
+ */
+export function equalizeConfirmText(monthLabel: string): { title: string; message: string; confirmLabel: string } {
+  return {
+    title: '全費目を均等にしますか',
+    message: `${monthLabel}以降の全カテゴリの負担割合を、メンバー全員での均等にします。手で直した割合と、上限額の設定も、元に戻ります。`,
+    confirmLabel: '均等にする',
   };
 }
 
