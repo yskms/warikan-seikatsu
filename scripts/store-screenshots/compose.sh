@@ -135,17 +135,17 @@ make_slide() {
 
 # 見出し・補足の改行は、文字列の中の \n（読み込みのとき、本物の改行に直す）。見出しは、読点で、2行に折る。
 typeset -A headline subhead background
-headline[01-home]='iPhoneとAndroidでも、\nふたりで使える。'
+headline[01-home]='iPhoneとAndroidの\n組み合わせでも使える。'
 subhead[01-home]='同じアプリで、記録も精算もいっしょに。'
 headline[02-shares]='家賃は7:3、\n食費は半分ずつ。'
 subhead[02-shares]='費目ごとに、負担割合を決めておけます。'
-headline[03-cap]='外食は月1万円まで、\n自分が払う。'
-subhead[03-cap]='上限を超えた分だけ、割合で分けます。'
+headline[03-cap]='外食費は月1万円まで、\n自分が負担。'
+subhead[03-cap]='上限を超えた分は、決めた割合で分担。'
 headline[04-expense]='入力は、\n数タップでかんたん。'
 subhead[04-expense]='金額・日付・支払った人・費目を選ぶだけ。'
 headline[05-breakdown]='負担額は、\n費目ごとに自動で計算。'
 subhead[05-breakdown]='支払額・負担額・差額が、ひと目で分かります。'
-headline[06-settle]='今月は払わず、\n来月にまとめる。'
+headline[06-settle]='精算は、今月でも、\n来月にまとめても。'
 subhead[06-settle]='送金ごとに、精算か繰越を選べます。'
 headline[07-recurring]='家賃は、\n毎月自動で登録。'
 subhead[07-recurring]='固定費は、日付が来ると支出になります。'
