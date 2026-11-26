@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Image,
   Linking,
   Platform,
   Pressable,
@@ -26,6 +27,8 @@ import { useAuth } from '../ui/AuthStateProvider.tsx';
 import { clearLoginNotice, useLoginNotice } from '../ui/loginNotice.ts';
 import { useColors } from '../ui/useColors.ts';
 import { usePendingInvite } from '../ui/usePendingInvite.ts';
+
+const titleImage = require('../assets/title.png') as number;
 
 const PROVIDER_ORDER: readonly AuthProvider[] =
   Platform.OS === 'ios' ? ['apple', 'google'] : ['google', 'apple'];
@@ -101,9 +104,17 @@ export default function LoginScreen() {
         </View>
       ) : null}
       <View style={styles.hero}>
-        <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
-          わりかん生活
-        </Text>
+        {/* アイコン・フィーチャーグラフィックと同じ Reggae One の字形。フォントは同梱せず（約2.1MB）、「わりかん生活」だけを
+            書き出した画像を使う（約9KB）。画像は透明な地に不透明の字で、`tintColor` が字の色（ライト・ダーク）を決める。
+            アプリ名を変えたら、画像を作り直す（docs/plan.md 14章の「ログイン画面のタイトル」）。読み上げは `accessibilityLabel` */}
+        <Image
+          source={titleImage}
+          style={[styles.title, { tintColor: colors.textPrimary }]}
+          resizeMode="contain"
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel="わりかん生活"
+        />
         <View style={[styles.rule, { backgroundColor: colors.accent }]} />
         <Text style={[styles.tagline, { color: colors.textSecondary }]}>
           ふたりの生活費を、決めた割合で月ごとに精算
@@ -269,7 +280,9 @@ const styles = StyleSheet.create({
   noticeCard: { marginTop: 16, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, gap: 6 },
   noticeLine: { fontSize: 14, lineHeight: 20 },
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
-  title: { fontSize: 34, fontWeight: '700' },
+  // 画像は3倍の解像度（533x82）なので、表示は 178x27（縦横比は画像と同じ）。RNは静的な画像に、原寸の幅・高さを下敷きとして
+  // 与えるので、幅だけ・`aspectRatio` だけの指定では、残りが原寸のままになる。幅・高さの両方を指定する
+  title: { width: 178, height: 27 },
   rule: { width: 40, height: 4, borderRadius: 2 },
   tagline: { fontSize: 16, lineHeight: 24, textAlign: 'center' },
   actions: { gap: 12, paddingBottom: 16 },
