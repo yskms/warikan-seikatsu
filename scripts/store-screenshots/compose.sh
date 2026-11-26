@@ -153,6 +153,9 @@ background=(
   [01-home]="$bg_red" [02-shares]="$bg_pink" [03-cap]="$bg_red" [04-expense]="$bg_pink"
   [05-breakdown]="$bg_red" [06-settle]="$bg_pink" [07-recurring]="$bg_red"
 )
+# Google Play だけ、1枚目の見出しを、Androidを先にする（Playの利用者は、Androidの人。iOSの完成品は、iPhoneを先にする）。
+headline_play_01='AndroidとiPhoneの\n組み合わせでも使える。'
+headline_play_01=${headline_play_01//\\n/$'\n'}
 # fit_size は本物の改行で行を分け、ImageMagick は \n を改行とみなす。両方で同じに見えるよう、先に直す。
 for key in ${(k)headline}; do
   headline[$key]=${headline[$key]//\\n/$'\n'}
@@ -168,23 +171,28 @@ for store in ios play; do
   else canvas_w=1080 canvas_h=1920 raw_dir="$raw_dir_android"; fi
   mkdir -p "$asset_dir/$store/$lang"
 
+  # このストアで使う見出し（Play だけ、1枚目を差し替える）。
+  typeset -A hl
+  hl=("${(@kv)headline}")
+  [[ "$store" == play ]] && hl[01-home]="$headline_play_01"
+
   # 見出し・補足の大きさは、全スライドで同じにする（一番長い文言が収まる大きさに合わせる。
   # `only` で一部だけ作るときも、同じ大きさになるよう、全スライドで測る）。
   max_text_w=$(( canvas_w - 2 * (90 * canvas_w / base_w) ))
   h_size=$(( 92 * canvas_w / base_w )) s_size=$(( 46 * canvas_w / base_w ))
-  for name in "${(@ko)headline}"; do
-    h_size=$(fit_size "$font_bold" "$h_size" "$max_text_w" "${headline[$name]}")
+  for name in "${(@ko)hl}"; do
+    h_size=$(fit_size "$font_bold" "$h_size" "$max_text_w" "${hl[$name]}")
     s_size=$(fit_size "$font_reg" "$s_size" "$max_text_w" "${subhead[$name]}")
   done
 
-  for name in "${(@ko)headline}"; do
+  for name in "${(@ko)hl}"; do
     [[ ${#only} -gt 0 && ! " ${only[*]} " == *" $name "* ]] && continue
     input="$raw_dir/$lang/$name.png"
     [[ -f "$input" ]] || { print -u2 "skip (no raw): $input"; continue; }
     if [[ "${background[$name]}" == "$bg_red" ]]; then h_color="$headline_on_red" s_color="$subhead_on_red"
     else h_color="$headline_on_pink" s_color="$subhead_on_pink"; fi
     make_slide "$input" "$asset_dir/$store/$lang/$name.png" "$canvas_w" "$canvas_h" \
-      "${headline[$name]}" "${subhead[$name]}" "${background[$name]}" "$h_color" "$s_color" "$store" "$h_size" "$s_size"
+      "${hl[$name]}" "${subhead[$name]}" "${background[$name]}" "$h_color" "$s_color" "$store" "$h_size" "$s_size"
     print "$store/$lang/$name.png"
   done
 done
