@@ -92,7 +92,8 @@
 - [ ] 6.5 ビルドと提出
   - [ ] `eas login`・`eas init`、Play Consoleのアプリ作成
   - [x] App Store Connectのアプリ作成（2026-11-27。SKU `warikan-seikatsu` は仮。入力した値が違えば直す）と、`eas.json` の `ascAppId`
-  - [ ] iOS: `eas build --local`、TestFlight、審査へ提出
+  - [x] iOS: `eas build --local`（2026-11-27。1.0.0・ビルド番号2）と、TestFlightへのアップロード（Apple側の処理は、メールで知らせが来る）。`.ipa` の中身（署名・Sign in with Apple と Associated Domains の権限・暗号化の申告・偽データが入っていないこと）を確かめた。`.ipa` は削除済み
+  - [ ] iOS: TestFlightでの実機確認（6.1）、App Store Connect の入力、審査へ提出
   - [ ] Android: `eas build --local`（全アーキテクチャのAAB）、内部テスト、製品版へ
   - [ ] 提出の直前: `npm run release-check`、`node scripts/generate-licenses.mjs --check --apk <AAB>`
   - [ ] ビルド成果物（`.ipa`・`.aab`）の削除（提出のあと）
