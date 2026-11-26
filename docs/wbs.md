@@ -90,7 +90,8 @@
   - [ ] 決めること: カテゴリ、年齢指定・IARC（ユーザー生成コンテンツの答え）、金融機能の申告、ターゲット ユーザー、App プライバシーの4項目（名前・金融情報を申告するか）、SDKのマニフェスト（A・B・C案）
   - [ ] App Store Connect・Play Console への入力
 - [ ] 6.5 ビルドと提出
-  - [ ] `eas login`・`eas init`、App Store Connectのアプリ作成と `ascAppId`、Play Consoleのアプリ作成
+  - [ ] `eas login`・`eas init`、Play Consoleのアプリ作成
+  - [x] App Store Connectのアプリ作成（2026-11-27。SKU `warikan-seikatsu` は仮。入力した値が違えば直す）と、`eas.json` の `ascAppId`
   - [ ] iOS: `eas build --local`、TestFlight、審査へ提出
   - [ ] Android: `eas build --local`（全アーキテクチャのAAB）、内部テスト、製品版へ
   - [ ] 提出の直前: `npm run release-check`、`node scripts/generate-licenses.mjs --check --apk <AAB>`
