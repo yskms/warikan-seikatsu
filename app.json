@@ -43,7 +43,8 @@
         }
       ],
       "expo-router",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      ["expo-build-properties", { "ios": { "enableSceneSupport": true } }]
     ],
     "owner": "yskms"
   }
