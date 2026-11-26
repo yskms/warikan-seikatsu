@@ -3,7 +3,7 @@
     "name": "わりかん生活",
     "slug": "warikan-seikatsu",
     "scheme": "warikan-seikatsu",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -42,6 +42,7 @@
           "webClientId": "242809187595-b2rls14sutpaf3difqblstoa7sj2ciq7.apps.googleusercontent.com"
         }
       ],
+      "./plugins/withAndroidR8.js",
       "expo-router",
       "expo-apple-authentication",
       ["expo-build-properties", { "ios": { "enableSceneSupport": true } }]

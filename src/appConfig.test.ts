@@ -10,3 +10,8 @@ test('iOSのbundleIdentifierとAndroidのpackageが同じ', () => {
   assert.equal(appJson.expo.ios.bundleIdentifier, 'com.yskms.warikanseikatsu');
   assert.equal(appJson.expo.android.package, appJson.expo.ios.bundleIdentifier);
 });
+
+// R8（難読化・最適化・縮小）のplugin。外すと、2027年2月からGoogle Playが求める率を満たせない（CLAUDE.md）。
+test('AndroidのR8を有効にするpluginが app.json に入っている', () => {
+  assert.ok(appJson.expo.plugins.includes('./plugins/withAndroidR8.js'));
+});

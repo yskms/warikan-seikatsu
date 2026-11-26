@@ -1,0 +1,36 @@
+# ストア提出の手順と状態
+
+ストア用のビルド・提出の手順。秘密情報（keystoreのパスワード、`.p8` など）は書かない。
+
+## 状態（2026-11-26）
+
+提出前の自動チェックのうち、**通っていない**のは `npm run release-check` の1件だけ。
+
+- `worker/src/site.ts` の `ASSET_LINKS`（`assetlinks.json`）に、debug鍵のSHA-256が残っている。Play App Signing の鍵のSHA-256は、Play Consoleに最初のAABを上げるまで分からないので、**手順の6で置き換える**（置き換えるまで失敗するのが正しい動作）。
+
+通っているもの: `npm run typecheck`、`npm test`（1113件）、Workerの `npm run typecheck`・`npm test`（862件）、`node scripts/generate-licenses.mjs --check`（142件）。
+
+R8（下の「Android: R8」）を入れた release（`arm64-v8a`、debug署名）を、2026-11-26に確かめた。ビルドは通り（難読化の対応表 `mapping.txt` も出た）、Pixel 3に入れて起動してもJSが動き（端末はロック中で画面は見えない。logcatにクラッシュなし）、エミュレータ（`Filto_API_36`）では、ログイン画面が崩れず出て、「Googleでログイン」を押すとGoogleのアカウント選択（GMS の CredentialChooser）まで届き、クラッシュ・`ClassNotFound` は無かった。`node scripts/generate-licenses.mjs --check --apk <APK>` も通った（`.so` 22種、すべて把握しているもの）。**まだ確かめていないのは**、Play Consoleでの3つの率（AABを上げないと見えない）と、R8入りでログインを最後まで通すこと（手順の5・6で上げたあとに、内部テストの版で行う）。
+
+アプリの版（`app.json` の `version`）は `1.0.0`。ビルド番号（iOSの `buildNumber`・Androidの `versionCode`）はEASが持つ（`eas.json` の `appVersionSource: "remote"`・`production` の `autoIncrement`）ので、`app.json` に書かない。
+
+## ディスク
+
+`eas build --local` は、一時ディレクトリへプロジェクトを展開し、依存の取得・ネイティブのビルドをそこで行う。完了すると消えるが、ビルド中は、Androidの全アーキテクチャ・iOSのarchiveそれぞれで数GBを使う。**見積もりであって、実測ではない**（初回のビルドで、`df -h /System/Volumes/Data` を前後で取って、ここに書き足す）。空きは15GB以上を目安にする（CLAUDE.md の全体方針）。
+
+## 手順
+
+1. **自動チェック**: `npm run typecheck`・`npm test`、`worker/` で `npm run typecheck`・`npm test`。
+2. **EAS**: `eas login` のあと、`eas init`（`app.json` に `extra.eas.projectId` が入る。ほかの差分は戻す）。対話が要るので、手元の端末で行う。
+3. **App Store Connect**: アプリを作る（バンドルID `com.yskms.warikanseikatsu`）。`eas.json` の `submit.production.ios.ascAppId` に、そのアプリのApple IDを入れる。
+4. **iOS**: `eas build --platform ios --profile production --local` で `.ipa` を作り、`eas submit --platform ios --path <.ipa>` でTestFlightへ。Apple Developerの App ID に、Sign in with Apple と Associated Domains が付くか（EASが `app.json` から同期するか）は、**ビルドで確かめる**（未確認。docs/backend-design.md 9章の「公開のWebページ」）。
+5. **Android**: `nice -n 10 eas build --local --platform android --profile production` で、全アーキテクチャのAABを作る（署名鍵〔アップロード鍵〕は、EASが初回のビルドで作って保管する）。Play Consoleでアプリを作り、AABを内部テストへ上げる。
+6. **Play App Signing の鍵を、アプリの設定へ反映する**（Playから入れたアプリは、この鍵で署名し直される）。Play Consoleの「アプリの署名」（場所は `~/.claude/docs/play-console.md`）で、
+   - SHA-256を、`worker/src/site.ts` の `ASSET_LINKS` に入れ、**debug鍵のSHA-256を外す**。`npm run deploy`（`worker/`）で本番へ出す（本番への操作なので、出す前に確認する）。そのあと `npm run release-check` が通ること。
+   - SHA-1（アプリ署名鍵・アップロード鍵の両方）で、Google Cloudのプロジェクトに、リリース用のAndroidのクライアントを作る（コードには入れない。docs/backend-design.md 12章）。同意画面を「In production」にするのも、ここ。
+7. **提出の直前**: `node scripts/generate-licenses.mjs --check --apk <AAB>`（ライセンスの一覧が今の依存と同じことと、把握していない `.so` が入っていないこと）。Play Consoleで、DEXコードの最適化（難読化・最適化・縮小の3つの率）と、権限の一覧が想定どおりかを見る。
+8. **ビルド成果物の後片付け**: `.ipa`・`.aab`・`.apk` は、提出が済んだら消す（全体方針）。
+
+## Android: R8
+
+`plugins/withAndroidR8.js` で、releaseのR8（難読化・最適化・縮小）を有効にしている（CLAUDE.md。外さない）。R8の不具合はreleaseの実行時にしか出ないので、このpluginに触れたとき・RN / Expo / AGPを上げたときは、R8入りの release APK を起動して確かめる。
