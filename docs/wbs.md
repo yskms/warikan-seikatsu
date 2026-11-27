@@ -9,7 +9,7 @@
 - 設計の変更（仕様の判断）は、この表ではなく docs の該当の章に書き、ここからは参照だけにする。
 - 状態は、2026-11-26 時点。
 
-**現在地**: 6. リリース準備（ストア提出の前）。アプリとWorkerの機能（0〜3章）は、初期リリースの範囲（plan.md 11章）を実装し終えた。本番のD1・Worker・ドメイン・公開ページ（4章）も出ている。Androidは、Pixel 3で本物のWorkerに通した（5章）。**残りは、ストアの素材・申告・ビルドと提出（6.3〜6.7）と、本番での確認（6.8）。** アプリ1113件・Worker862件のテスト、型検査は通っている。`npm run release-check` は、Play App Signing の鍵が分かるまで、1件失敗する（6.6）。
+**現在地**: 6. リリース準備。**iOS 1.0.0 は、2026-11-27 に審査へ提出した（結果待ち）。** 次は、Androidの提出（Play Consoleのアプリ作成・審査用のGoogleアカウント・AABのビルド）。アプリとWorkerの機能（0〜3章）は、初期リリースの範囲（plan.md 11章）を実装し終えた。本番のD1・Worker・ドメイン・公開ページ（4章）も出ている。Androidは、Pixel 3で本物のWorkerに通した（5章）。**残りは、ストアの素材・申告・ビルドと提出（6.3〜6.7）と、本番での確認（6.8）。** アプリ1113件・Worker862件のテスト、型検査は通っている。`npm run release-check` は、Play App Signing の鍵が分かるまで、1件失敗する（6.6）。
 
 ## 0. 企画・設計
 
@@ -94,7 +94,7 @@
   - [x] App Store Connectのアプリ作成（2026-11-27。SKU `warikan-seikatsu` は仮。入力した値が違えば直す）と、`eas.json` の `ascAppId`
   - [x] iOS: `eas build --local`（2026-11-27。1.0.0・ビルド番号2）と、TestFlightへのアップロード（Apple側の処理は、メールで知らせが来る）。`.ipa` の中身（署名・Sign in with Apple と Associated Domains の権限・暗号化の申告・偽データが入っていないこと）を確かめた。`.ipa` は削除済み
   - [x] iOS: TestFlightでの実機確認（6.1。2026-11-27、全部OK）
-  - [ ] iOS: App Store Connect の最後の確認と、審査へ提出（スクショ7枚・動画の添付・「サインインが必要です」オフ・リリースは手動）
+  - [x] iOS: App Store Connect の入力と、**審査へ提出した**（2026-11-27。1.0.0・ビルド番号2。スクショ7枚〔`ios/ja/`〕・画面収録の添付・審査用アカウントなし・リリースは手動）。結果はメールで届く。通ったら、「リリース」を押すまで公開されない。指摘されたら、内容を見て対応する（審査用アカウント・画面収録の追加など。`store-listing.md`）
   - [ ] Android: `eas build --local`（全アーキテクチャのAAB）、内部テスト、製品版へ
   - [ ] 提出の直前: `npm run release-check`、`node scripts/generate-licenses.mjs --check --apk <AAB>`
   - [ ] ビルド成果物（`.ipa`・`.aab`）の削除（提出のあと）
