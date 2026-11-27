@@ -105,7 +105,7 @@
   - [ ] Apple DeveloperのApp IDに、Sign in with Apple・Associated Domains が付くか（EASのビルドで確かめる）
 - [ ] 6.7 審査の通りやすさ（`store-listing.md` の「審査の通りやすさ」「審査用アカウント」）
   - [x] **審査用アカウントは、iOS 1.0 では作らずに出す**（2026-11-27に決めた。Appleの審査では必須ではなく、審査員は自分のAppleアカウントでサインインできる。Googleアカウントの新規作成に電話番号の確認が要り、審査員のログインが止まるリスクもあるため）。1人では精算の画面まで試せないこと（ガイドライン 2.1）を指摘されたら、作って再提出する。**Play の「アプリのアクセス権」は、提出の前の申告で、ログインが要るのに認証情報なしで出すと、不正確な申告になる。Androidの提出の前に、審査用のGoogleアカウントを作る**（求められてからでは遅い。方針は `store-listing.md` の「審査用アカウント」）。「任意のGoogleアカウントでサインイン」という説明だけで通るかは、確かめていない。ログインなしのお試し（7.1）の前倒しは、しない
-  - [ ] （任意）2人の精算までの短い画面収録を、App Review の添付に付ける。メモに「A screen recording of a two-person settlement is attached.」と1行足す。**実アプリでの録画**（TestFlightの実機。2つのGoogleアカウントが要る）が最も確実。偽のサーバーで撮るなら、「サンプルデータでの録画」と明記する（偽のサーバーに、締める・精算の書き込みの応答を足す要がある）。指摘されてから付けても、失うのは審査1往復
+  - [x] 2人の精算までの短い画面収録を作った（2026-11-27。`assets/store-screenshots/review/two-person-settlement-ios.mp4`。偽のサーバーで撮り、「サンプルデータ」と明記した。メモの英文にも1段落を足した）。**App Store Connect の「添付ファイル」に付けるのは、これから**（`store-listing.md`）
   - [ ] Playのアカウント削除の窓口。いまは、Webは案内だけ（`privacy-policy.html#account-deletion`）。指摘されたら、案: Webでサインインして削除するページを `worker/public/` に置く（WorkerにApple・GoogleのWebの認証と `POST /auth/delete` があるので、作れる見込み）
 - [ ] 6.8 本番のWorkerでの確認（`backend-design.md` 13章の9。ローカルのD1では確かめられないもの）
   - [ ] D1のクエリ数の数え方（対照つき: 個別51回で失敗し、60文のbatchが通るか）

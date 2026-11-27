@@ -103,6 +103,8 @@ How to try it:
 3. A new group has one member, so a two-person settlement needs a second account: open Settings > "メンバーと招待" (Members and invites), issue an invite URL, and open it on another device signed in with another account. Opening the URL alone does not join the group; the person taps "参加する" (Join) on a confirmation screen.
 4. On Home, tap "この月を締める" (Close this month) in the settlement card to fix the month's totals. Each transfer can then be marked "精算完了" (settled) or "繰越" (carried over to the next month).
 
+A short screen recording of a two-person settlement (closing the month, then marking the transfer as settled) is attached. It was recorded on the iOS Simulator with sample data, using the same screens as the submitted build.
+
 User-generated content: text typed by members (group name, display name, category names, expense descriptions) is visible only to members of the same group (up to 5 people, joined by single-use invite URLs that expire in 3 days). Nothing is public, and there is no messaging or search across users.
 
 Account deletion: Settings > "アカウントを削除" (Delete account). It asks you to sign in again with the same Apple or Google account.
@@ -111,6 +113,10 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
 ```
 
 **審査の通りやすさ**: ログインが必要なアプリは、ふつうに審査を通る。このアプリで引っかかりうるのは、1人では精算（誰が誰にいくら）の画面まで試せないこと（ガイドライン 2.1）。**iOS 1.0 では、審査用のアカウントを渡さずに出す**（2026-11-27に決めた。Googleアカウントの新規作成に、電話番号の確認が要り、審査員のログインが止まるリスクもあるため。Appleの審査では、デモアカウントは必須ではない）。指摘されたら、審査用のアカウントを作って、再提出する（下の「審査用アカウント」）。ログインなしのお試し（未実装）の前倒しは、しない（[wbs.md](wbs.md) の6.7）。
+
+### 添付ファイル（App Review に関する情報）
+
+`assets/store-screenshots/review/two-person-settlement-ios.mp4`（36秒・約0.5MB。720×1640）を、「添付ファイル」に付ける。2人グループで、月を締めて、送金を精算済みにするまでの画面収録で、1人では精算の画面まで試せないこと（ガイドライン 2.1）への対策。**サンプルデータ（偽のサーバー）で撮ったので、動画の下に「Sample data (iOS Simulator)」と入れ、メモの英文にも、そう書いてある**（実データに見せかけない）。撮り直しは、スクショと同じ仕組み（4章）で、`xcrun simctl io <UDID> recordVideo --codec h264 <出力>.mp4` で録画し、操作は `idb`（`ui tap`）で行う。画面が静止していると、録画に新しいコマが書かれないので、最後に軽くスクロールして、最終状態を収める。ffmpegには文字を描く機能（drawtext）が無いので、注記は、ImageMagickで画像にして重ねる。
 
 ### 審査用アカウント
 
