@@ -75,7 +75,7 @@
 
 - [ ] 6.1 実機・本物のサービスでの確認（まだのもの）
   - iOS実機（iPhone 8、iOS 16.7。TestFlightのビルドで）
-  - iOSの Appleサインイン（本物のApple）、iOSでの招待への参加（2つのアカウント）
+  - iOSの Appleサインイン（本物のApple）: **TestFlightの実機（ビルド番号2）で、ログインしてグループを作れた**（2026-11-27）。まだ: iOSでの招待への参加（2つのアカウント）、iOSの Googleでログイン（実機）、アカウント削除（実機）
   - AndroidのAppleログイン（Web）を、本物のApple・Custom Tabで最後まで通すこと
   - Appleのサーバー間通知（Apple IDの設定で「使用を停止」したときの通知）
   - Play経由のビルド（署名が別）で、ログイン・招待が通ること
