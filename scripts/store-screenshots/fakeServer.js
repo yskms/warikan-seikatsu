@@ -126,6 +126,9 @@ const EXPENSE_ROWS = {
 };
 
 const CLOSED_MONTHS = new Set(['2026-09', '2026-10']);
+// 画面収録のために、締める・精算の書き込みを受けて、状態を変える（アプリを起動し直すと、元に戻る）。
+// 送金の状態: id -> 'pending' | 'settled' | 'carried'
+const TRANSFER_STATE = new Map();
 
 function expensesOf(month) {
   const rows = EXPENSE_ROWS[month] ?? [];
@@ -159,6 +162,17 @@ function burdenOf(categoryId, totalMinor) {
   const capped = Math.min(totalMinor, rule.cap.capMinor);
   const [mineExcess, partnerExcess] = split(totalMinor - capped);
   return rule.cap.memberId === ME ? [capped + mineExcess, partnerExcess] : [mineExcess, capped + partnerExcess];
+}
+
+/** 締めた月の送金の状態（締めたあと、精算・繰越の書き込みで変わる。既定は未処理）。 */
+function transferStatus(month) {
+  return TRANSFER_STATE.get(`t-${month}`) ?? 'pending';
+}
+
+/** 月の一覧の状態（保存せず、締めと送金の状態から毎回導く） */
+function monthStatus(month) {
+  if (!CLOSED_MONTHS.has(month)) return 'open';
+  return month === '2026-10' || transferStatus(month) !== 'pending' ? 'settled' : 'unsettled';
 }
 
 function monthView(month) {
@@ -212,11 +226,11 @@ function monthView(month) {
               fromMemberId: debtor.memberId,
               toMemberId: creditor.memberId,
               amountMinor: creditor.netMinor,
-              status: 'pending',
-              settledAt: null,
-              carriedAt: null,
-              processedByMemberId: null,
-              canCarry: true,
+              status: transferStatus(month),
+              settledAt: transferStatus(month) === 'settled' ? Date.UTC(2026, 10, 27) : null,
+              carriedAt: transferStatus(month) === 'carried' ? Date.UTC(2026, 10, 27) : null,
+              processedByMemberId: transferStatus(month) === 'pending' ? null : ME,
+              canCarry: transferStatus(month) === 'pending',
             },
           ]
         : [];
@@ -224,7 +238,7 @@ function monthView(month) {
     month,
     closed,
     closing: closed
-      ? { id: `cl-${month}`, closedAt: Date.UTC(2026, 9, 31, 12), closedByMemberId: ME, processed: false }
+      ? { id: `cl-${month}`, closedAt: Date.UTC(2026, 9, 31, 12), closedByMemberId: ME, processed: transferStatus(month) !== 'pending' }
       : null,
     totalMinor: expenses.reduce((sum, expense) => sum + expense.amountMinor, 0),
     members,
@@ -299,8 +313,22 @@ function parse(url) {
 }
 
 function route(method, url) {
-  if (method !== 'GET') return { status: 404, body: { error: 'not_found' } };
   const { segments, params } = parse(url);
+  if (method === 'POST') {
+    // 締める: POST /groups/g1/months/2026-11/close（11月だけ）
+    if (segments[0] === 'groups' && segments[1] === GROUP_ID && segments[2] === 'months' && segments[4] === 'close') {
+      if (segments[3] !== '2026-11' || CLOSED_MONTHS.has('2026-11')) return { status: 409, body: { error: 'conflict' } };
+      CLOSED_MONTHS.add('2026-11');
+      return { status: 201, body: monthView('2026-11') };
+    }
+    // 精算完了・繰越: POST /transfers/t-2026-11/settle|carry
+    if (segments[0] === 'transfers' && (segments[2] === 'settle' || segments[2] === 'carry')) {
+      TRANSFER_STATE.set(segments[1], segments[2] === 'settle' ? 'settled' : 'carried');
+      return { status: 200, body: { transfer: { id: segments[1] } } };
+    }
+    return { status: 404, body: { error: 'not_found' } };
+  }
+  if (method !== 'GET') return { status: 404, body: { error: 'not_found' } };
   if (segments.length === 1 && segments[0] === 'groups') return { status: 200, body: { groups: [GROUP_LIST_ITEM] } };
   if (segments[0] !== 'groups' || segments[1] !== GROUP_ID) return { status: 404, body: { error: 'not_found' } };
   const rest = segments.slice(2).join('/');
@@ -313,7 +341,7 @@ function route(method, url) {
         months: [
           { month: '2026-09', status: 'settled' },
           { month: '2026-10', status: 'settled' },
-          { month: '2026-11', status: 'open' },
+          { month: '2026-11', status: monthStatus('2026-11') },
         ],
       },
     };

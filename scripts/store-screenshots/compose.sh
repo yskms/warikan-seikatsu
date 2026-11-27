@@ -11,8 +11,9 @@ set -euo pipefail
 # 入力: assets/store-screenshots/raw/ja/NN-name.png ... iOSシミュレータの撮影画像（iPhone 18 Pro の 1206×2622）。App Store 用。
 #       assets/store-screenshots/raw-android/ja/NN-name.png ... Androidエミュレータの撮影画像（1080×2424）。Google Play 用。
 #       どちらも、偽のサーバー（fakeServer.js）の仮名のデータで撮る。画像の大きさは、`magick identify` で読む。
-# 出力: assets/store-screenshots/ios/ja/ ... 1320×2868（App Store Connect の「Dynamic Island (large)」。小さい端末の大きさへは
-#         自動で縮小される）
+# 出力: assets/store-screenshots/ios/ja/ ... 1206×2622（App Store Connect の iPhone 6.3インチ。**この枠の対応サイズは、1179×2556 と
+#         1206×2622 だけ**。提出に使うのは、これ）
+#       assets/store-screenshots/ios-large/ja/ ... 1320×2868（6.9インチ。任意。大きい端末の枠に、別に上げたいとき）
 #       assets/store-screenshots/play/ja/ ... 1080×1920（Google Play。長辺が短辺の2倍以内。9:16）
 # 画像の下部は、iOS はタブバーが全部見える大きさに縮めて、下端を少しはみ出させる。Play は縦が足りないので、はみ出させて切るが、
 # 切り口が要素の途中に当たらないよう、余白の帯に合わせて画像の大きさを少し変える（find_cut.py）。
@@ -89,7 +90,7 @@ make_slide() {
   in_w=$(magick identify -format '%w' "$input")
   in_h=$(magick identify -format '%h' "$input")
 
-  if [[ "$store" == ios ]]; then
+  if [[ "$store" == ios* ]]; then
     # タブバーが全部見えるよう、下端に少しはみ出す大きさに縮める（アイコンが半端に切れて見えるのを避ける）。
     local fitted=$(( (canvas_h - shot_y + 36 * unit_num / unit_den) * in_w / in_h ))
     (( fitted < shot_w )) && shot_w=$fitted
@@ -166,8 +167,9 @@ done
 only=("$@")
 lang=ja
 
-for store in ios play; do
-  if [[ "$store" == ios ]]; then canvas_w=1320 canvas_h=2868 raw_dir="$raw_dir_ios"
+for store in ios ios-large play; do
+  if [[ "$store" == ios ]]; then canvas_w=1206 canvas_h=2622 raw_dir="$raw_dir_ios"
+  elif [[ "$store" == ios-large ]]; then canvas_w=1320 canvas_h=2868 raw_dir="$raw_dir_ios"
   else canvas_w=1080 canvas_h=1920 raw_dir="$raw_dir_android"; fi
   mkdir -p "$asset_dir/$store/$lang"
 

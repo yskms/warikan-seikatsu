@@ -198,7 +198,7 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
 
 - **フィーチャーグラフィック（Google Play）**: `assets/feature-graphic.png`（1024×500、透過なし）。赤地（`#C8000C`）に白で「わりかん生活」。**仮案**（plan.md 14章）。
 - **アプリアイコン**: `assets/icon.png`（1024×1024、透過なし）。Playのストア用は `assets/play-store-icon-512.png`（512×512、`icon.png` を縮小）。
-- **スクリーンショット**: 7枚。`assets/store-screenshots/` に、撮影画像（`raw/ja/` がiOSシミュレータの iPhone 18 Pro・1206×2622、`raw-android/ja/` がAndroidエミュレータ・1080×2424）と、見出しを合成した完成品（`ios/ja/` が1320×2868、`play/ja/` が1080×1920）がある。完成品を、ストアへ上げる。合成は `scripts/store-screenshots/compose.sh`（生成物は手で編集しない）。
+- **スクリーンショット**: 7枚。`assets/store-screenshots/` に、撮影画像（`raw/ja/` がiOSシミュレータの iPhone 18 Pro・1206×2622、`raw-android/ja/` がAndroidエミュレータ・1080×2424）と、見出しを合成した完成品（`ios/ja/` が**1206×2622**、`ios-large/ja/` が1320×2868、`play/ja/` が1080×1920）がある。App Store Connect の iPhone 6.3インチの枠（必須）が受け付けるのは、1179×2556 と 1206×2622 だけなので、**App Storeへ上げるのは `ios/ja/`**（`ios-large/ja/` は、6.9インチの枠に別に上げたいときだけ。1320×2868 はこの枠に入らない）。Playは `play/ja/`。合成は `scripts/store-screenshots/compose.sh`（生成物は手で編集しない）。
   - 見出しは、このアプリの言葉で書いた（plan.md 14章の方針。他のアプリの文言を使わない）。背景は、赤（`#C8000C`。アイコンの地。白い文字が約5.9:1）と、淡いピンク（アクセント `#FC75A4` を白に約32%混ぜた派生色）を交互にした。白に近い中立色は、白いストアのページで画像の縁が消えるので使わない。書体は Noto Sans JP（OFL。`scripts/store-screenshots/fonts/`）。
 
 | 番号 | 見出し | 補足 | 画面 |
@@ -220,7 +220,7 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
     4. 画面を開いて撮る（`adb exec-out screencap -p`、`xcrun simctl io <UDID> screenshot`）。手順: ホーム（01）、設定 → カテゴリと負担割合（02）、外食の行（03）、「＋」で金額 `4280`・費目「食費」を選ぶ（04）、ホームで「内訳を見る」（05）、ホームの月の「＜」で10月（06）、設定 → 固定費（07）。
     5. `scripts/store-screenshots/compose.sh`（必要なら、画像の名前を引数に渡す）。
     6. **`scripts/store-screenshots/fake-mode.sh off` で戻す。** `src/appConfig.test.ts` が、`main` が `expo-router/entry` であることを `npm test` で確かめる（偽の入口のまま出荷しない）。
-  - App Store は、1枚から10枚。JPEG・PNG、透過なし。iPhoneの必須サイズは、提出のとき App Store Connect で確かめる（1320×2868 だけで、小さい端末の枠が埋まるかも、そのとき）。Google Play は、スマートフォン用に2〜8枚（JPEG または 24ビットPNG。辺は320〜3840px。長辺は短辺の2倍まで。9:16 の 1080px 以上を4枚以上出すと、おすすめの掲載の対象になる）。
+  - App Store は、1枚から10枚。JPEG・PNG、透過なし。iPhone 6.3インチの枠の対応サイズは、1179×2556・2556×1179・1206×2622・2622×1206（2026-11-27に、App Store Connect の画面で確認した）。Google Play は、スマートフォン用に2〜8枚（JPEG または 24ビットPNG。辺は320〜3840px。長辺は短辺の2倍まで。9:16 の 1080px 以上を4枚以上出すと、おすすめの掲載の対象になる）。
 
 ## 5. この内容が前提にしていること
 
