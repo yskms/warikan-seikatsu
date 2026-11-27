@@ -95,7 +95,7 @@ App Store Connect の「App Review に関する情報」の「メモ」（4,000�
 ```text
 Warikan Seikatsu is an app for people who share living costs (couples, spouses, roommates). Members record shared expenses, set how each expense category is split (for example 70:30 for rent), close the month, and see who should pay whom. The app only calculates amounts. It does not move money, link bank accounts, or take payments. The screens are in Japanese only.
 
-Sign-in is required, but no demo account is needed: please sign in with Sign in with Apple (or Google) using your own account. The server stores only an opaque account identifier; it stores no name or email address.
+Sign-in is required. There is no username or password: the app uses Sign in with Apple (or Google), so please sign in with your own Apple Account. The server stores only an opaque account identifier; it stores no name or email address.
 
 How to try it:
 1. Sign in, then enter a group name and your display name. The group is created with default categories (rent, food, daily goods, utilities, dining out, communication, other).
@@ -114,7 +114,7 @@ The app has no ads, no in-app purchases, and no tracking. Privacy policy: https:
 
 ### 審査用アカウント
 
-**状態: iOS 1.0 では作らない**（上の「審査の通りやすさ」）。指摘されたとき、または Play の「アプリのアクセス権」で認証情報を求められたときに、次の方針で作る。Googleアカウントの新規作成には、電話番号の確認（スマホでQRを読み取り、SMSで確認コード）が要る。電話番号は、作成後に、アカウントから外せるか試す（残ると、審査員が別の場所からログインしたとき、確認コードがあなたのスマホに届き、審査員が入れない）。1つの電話番号で作れるアカウント数には、上限がある。
+**状態: iOS 1.0 では作らない**（上の「審査の通りやすさ」）。指摘されたとき（iOS）に、次の方針で作る。**Play は、「アプリのアクセス権」が提出の前の申告なので、Androidの提出の前に作る**（求められてからでは遅い）。Googleアカウントの新規作成には、電話番号の確認（スマホでQRを読み取り、SMSで確認コード）が要る。電話番号は、作成後に、アカウントから外せるか試す（残ると、審査員が別の場所からログインしたとき、確認コードがあなたのスマホに届き、審査員が入れない）。1つの電話番号で作れるアカウント数には、上限がある。
 
 - **作る**: Googleアカウントを2つ（A・B）作る（数分。メールアドレスはGmailでよい）。**2段階認証は付けない**。電話番号の確認を、審査員の端末で求められないようにする（求められると、審査員がログインできない。Googleが、見慣れない端末からのログインを、確認なしで通すとは限らないので、**提出の前に、別の端末で、実際にログインして確かめる**）。
 - **データを入れる**: Aでログインして、グループ（名前「ふたりの生活費」）を作り、Bを招待して参加させる。支出を数件入れる（架空の内容。実在の人名・実際の支出は入れない）。精算を試せるよう、前の月を締めて、送金を未処理のまま残す手もある（審査員が精算まで押すと状態が変わるので、**提出のたびに、元の状態へ作り直す**）。
