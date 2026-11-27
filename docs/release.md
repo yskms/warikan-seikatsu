@@ -12,11 +12,20 @@
 
 R8（下の「Android: R8」）を入れた release（`arm64-v8a`、debug署名）を、2026-11-26に確かめた。ビルドは通り（難読化の対応表 `mapping.txt` も出た）、Pixel 3に入れて起動してもJSが動き（端末はロック中で画面は見えない。logcatにクラッシュなし）、エミュレータ（`Filto_API_36`）では、ログイン画面が崩れず出て、「Googleでログイン」を押すとGoogleのアカウント選択（GMS の CredentialChooser）まで届き、クラッシュ・`ClassNotFound` は無かった。`node scripts/generate-licenses.mjs --check --apk <APK>` も通った（`.so` 22種、すべて把握しているもの）。**まだ確かめていないのは**、Play Consoleでの3つの率（AABを上げないと見えない）と、R8入りでログインを最後まで通すこと（手順の5・6で上げたあとに、内部テストの版で行う）。
 
+**AndroidのAAB（2026-11-27）**: `nice -n 10 npx eas-cli@27.11.0 build --local --platform android --profile production --non-interactive --output warikan-seikatsu-1.0.0.aab` で作った（`--non-interactive` でも、アップロード鍵は、EASが作って保管した）。versionCode は 2（リモートの値が無く、ローカルの1から上げた）。ABIは4種（`arm64-v8a`・`armeabi-v7a`・`x86`・`x86_64`）、DEXは1つ（R8）、権限は `INTERNET`・`VIBRATE` だけ。`generate-licenses.mjs --check --apk` は通った（142件・`.so` 22種）。**アップロード鍵**（有効期限 2054-04-14）の証明書のフィンガープリント（公開してよい値。`keytool -printcert -jarfile <AAB>` で出る）:
+
+- SHA-1: `1A:AA:DB:7F:1F:EC:DF:37:7D:02:14:C1:C5:F9:77:8B:B3:6E:72:4A`
+- SHA-256: `77:7B:16:25:01:04:41:6A:3E:43:C3:6E:E0:BD:7A:DF:02:6F:FE:84:38:5F:51:FC:5A:F4:E2:28:B2:C2:F8:EF`
+
+Play Consoleの「アプリの署名」で、アップロード鍵として、この値と同じかを見る。アプリ署名鍵（Playが付け替える鍵）は別の値で、手順の6で分かる。R8入りでログインを最後まで通すことは、内部テストの版で確かめる（手順の6のあと）。
+
 アプリの版（`app.json` の `version`）は `1.0.0`。ビルド番号（iOSの `buildNumber`・Androidの `versionCode`）はEASが持つ（`eas.json` の `appVersionSource: "remote"`・`production` の `autoIncrement`）ので、`app.json` に書かない。
 
 ## ディスク
 
-`eas build --local` は、一時ディレクトリへプロジェクトを展開し、依存の取得・ネイティブのビルドをそこで行う。完了すると消えるが、ビルド中は、Androidの全アーキテクチャ・iOSのarchiveそれぞれで数GBを使う。**見積もりであって、実測ではない**（初回のビルドで、`df -h /System/Volumes/Data` を前後で取って、ここに書き足す）。空きは15GB以上を目安にする（CLAUDE.md の全体方針）。
+`eas build --local` は、一時ディレクトリへプロジェクトを展開し、依存の取得・ネイティブのビルドをそこで行う。完了すると消えるが、ビルド中は、Androidの全アーキテクチャ・iOSのarchiveそれぞれで数GBを使う。空きは15GB以上を目安にする（CLAUDE.md の全体方針）。
+
+**実測（Android、2026-11-27）**: 全アーキテクチャのAAB（65.1MB）を、`nice -n 10` で作って、約12分（754秒。M4 MacBook Air）。空きは、ビルド前が約20.1GB、ビルド後が約18.6GB（差は約1.5GB。AABと、Gradle・Expoのキャッシュの増加を含む）。**ビルド中の最大値は測っていない**（前後の差だけ）ので、一時ディレクトリの最大使用量は、これより大きい。空きが15GBを切る見込みのときは、先に整理する。
 
 ## 手順
 
