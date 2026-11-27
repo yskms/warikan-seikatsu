@@ -90,17 +90,17 @@ URLのページは、Workerの静的アセット（`worker/public/`）で、本�
 
 ### App Review のメモ
 
-App Store Connect の「App Review に関する情報」の「メモ」（4,000文字まで）に、次の英文を入れる。サインインは必要なので、「サインインが必要です」はオンにして、**審査用のGoogleアカウントを2つ**（A・B。下の「審査用アカウント」）の、ユーザー名とパスワードを入れる（**IDとパスワードは、この欄にだけ書く。リポジトリには書かない**）。iOSにも「Googleでログイン」があるので、同じアカウントを、AppleとGoogleの審査で使える。審査する人が、自分のAppleアカウントでサインインしてもよい。
+App Store Connect の「App Review に関する情報」の「メモ」（4,000文字まで）に、次の英文を入れる。**審査用のデモアカウントは渡さない**（iOS 1.0。2026-11-27に決めた。AppleまたはGoogleのアカウントでサインインする方式で、パスワードを持たず、審査する人が、自分のAppleアカウントでサインインできる）。「サインインが必要です」は**オフ**にして、ユーザー名・パスワードの欄は空にする（メモに、自分のアカウントでサインインすることを書いてある）。
 
 ```text
 Warikan Seikatsu is an app for people who share living costs (couples, spouses, roommates). Members record shared expenses, set how each expense category is split (for example 70:30 for rent), close the month, and see who should pay whom. The app only calculates amounts. It does not move money, link bank accounts, or take payments. The screens are in Japanese only.
 
-Sign-in is required. Two demo Google accounts (A and B) are given in the sign-in information fields. Tap "Googleでログイン" (Sign in with Google) and choose a demo account. Both accounts are already members of one group ("ふたりの生活費") with sample data, so you can see a two-person settlement by signing in as A, and as B after signing out (Settings > "ログアウト"). You can also use your own Apple or Google account; a new group then has only one member. The server stores only an opaque account identifier; it stores no name or email address.
+Sign-in is required, but no demo account is needed: please sign in with Sign in with Apple (or Google) using your own account. The server stores only an opaque account identifier; it stores no name or email address.
 
 How to try it:
 1. Sign in, then enter a group name and your display name. The group is created with default categories (rent, food, daily goods, utilities, dining out, communication, other).
 2. Tap "+" in the bottom bar to add expenses. Tap a category in the Home breakdown to change its split.
-3. With your own account, a two-person settlement needs a second account: open Settings > "メンバーと招待" (Members and invites), issue an invite URL, and open it on another device signed in with another account. Opening the URL alone does not join the group; the person taps "参加する" (Join) on a confirmation screen. The demo accounts above skip this step.
+3. A new group has one member, so a two-person settlement needs a second account: open Settings > "メンバーと招待" (Members and invites), issue an invite URL, and open it on another device signed in with another account. Opening the URL alone does not join the group; the person taps "参加する" (Join) on a confirmation screen.
 4. On Home, tap "この月を締める" (Close this month) in the settlement card to fix the month's totals. Each transfer can then be marked "精算完了" (settled) or "繰越" (carried over to the next month).
 
 User-generated content: text typed by members (group name, display name, category names, expense descriptions) is visible only to members of the same group (up to 5 people, joined by single-use invite URLs that expire in 3 days). Nothing is public, and there is no messaging or search across users.
@@ -110,9 +110,11 @@ Account deletion: Settings > "アカウントを削除" (Delete account). It ask
 The app has no ads, no in-app purchases, and no tracking. Privacy policy: https://warikan-seikatsu.app/privacy-policy
 ```
 
-**審査の通りやすさ**: ログインが必要なアプリは、ふつうに審査を通る。このアプリで引っかかりうるのは、1人では精算（誰が誰にいくら）の画面まで試せないこと（ガイドライン 2.1）で、審査用のアカウントを2つ渡して防ぐ（下の「審査用アカウント」）。ログインなしのお試し（未実装）の前倒しは、しない。指摘されてから、検討する（[wbs.md](wbs.md) の6.7）。
+**審査の通りやすさ**: ログインが必要なアプリは、ふつうに審査を通る。このアプリで引っかかりうるのは、1人では精算（誰が誰にいくら）の画面まで試せないこと（ガイドライン 2.1）。**iOS 1.0 では、審査用のアカウントを渡さずに出す**（2026-11-27に決めた。Googleアカウントの新規作成に、電話番号の確認が要り、審査員のログインが止まるリスクもあるため。Appleの審査では、デモアカウントは必須ではない）。指摘されたら、審査用のアカウントを作って、再提出する（下の「審査用アカウント」）。ログインなしのお試し（未実装）の前倒しは、しない（[wbs.md](wbs.md) の6.7）。
 
 ### 審査用アカウント
+
+**状態: iOS 1.0 では作らない**（上の「審査の通りやすさ」）。指摘されたとき、または Play の「アプリのアクセス権」で認証情報を求められたときに、次の方針で作る。Googleアカウントの新規作成には、電話番号の確認（スマホでQRを読み取り、SMSで確認コード）が要る。電話番号は、作成後に、アカウントから外せるか試す（残ると、審査員が別の場所からログインしたとき、確認コードがあなたのスマホに届き、審査員が入れない）。1つの電話番号で作れるアカウント数には、上限がある。
 
 - **作る**: Googleアカウントを2つ（A・B）作る（数分。メールアドレスはGmailでよい）。**2段階認証は付けない**。電話番号の確認を、審査員の端末で求められないようにする（求められると、審査員がログインできない。Googleが、見慣れない端末からのログインを、確認なしで通すとは限らないので、**提出の前に、別の端末で、実際にログインして確かめる**）。
 - **データを入れる**: Aでログインして、グループ（名前「ふたりの生活費」）を作り、Bを招待して参加させる。支出を数件入れる（架空の内容。実在の人名・実際の支出は入れない）。精算を試せるよう、前の月を締めて、送金を未処理のまま残す手もある（審査員が精算まで押すと状態が変わるので、**提出のたびに、元の状態へ作り直す**）。
