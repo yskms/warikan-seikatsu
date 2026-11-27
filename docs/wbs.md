@@ -87,7 +87,7 @@
   - [x] スクリーンショット（7枚。日本語。`assets/store-screenshots/`。偽のサーバーで、架空のデータを表示して撮り、`scripts/store-screenshots/compose.sh` で見出しを合成した。`store-listing.md` 4章）。**App Store Connect・Play Console にアップロードして、サイズが受け付けられるかは、未確認**（iOSは1320×2868、Playは1080×1920）
 - [ ] 6.4 掲載文・申告
   - [x] 下書き（`store-listing.md`。日本語のみ）
-  - [ ] 決めること: カテゴリ、年齢指定・IARC（ユーザー生成コンテンツの答え）、金融機能の申告、ターゲット ユーザー、App プライバシーの4項目（名前・金融情報を申告するか）、SDKのマニフェスト（A・B・C案）
+  - [ ] 決めること: カテゴリ、年齢指定・IARC（ユーザー生成コンテンツの答え）、金融機能の申告、ターゲット ユーザー、~~App プライバシーの4項目、SDKのマニフェスト（A・B・C案）~~（2026-11-27に決めた: 自前の4項目〔ユーザーID・名前・その他の金融情報・その他のユーザーコンテンツ〕だけを申告する〔A〕。理由と、指摘されたときの足し方は `store-listing.md`）
   - [ ] App Store Connect・Play Console への入力
 - [ ] 6.5 ビルドと提出
   - [ ] `eas login`・`eas init`、Play Consoleのアプリ作成
