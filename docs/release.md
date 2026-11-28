@@ -2,13 +2,9 @@
 
 ストア用のビルド・提出の手順。秘密情報（keystoreのパスワード、`.p8` など）は書かない。
 
-## 状態（2026-11-26）
+## 状態（2026-11-28）
 
-提出前の自動チェックのうち、**通っていない**のは `npm run release-check` の1件だけ。
-
-- `worker/src/site.ts` の `ASSET_LINKS`（`assetlinks.json`）に、debug鍵のSHA-256が残っている。Play App Signing の鍵のSHA-256は、Play Consoleに最初のAABを上げるまで分からないので、**手順の6で置き換える**（置き換えるまで失敗するのが正しい動作）。
-
-通っているもの: `npm run typecheck`、`npm test`（1113件）、Workerの `npm run typecheck`・`npm test`（862件）、`node scripts/generate-licenses.mjs --check`（142件）。
+**iOS 1.0.0（ビルド番号2）は、2026-11-27 に審査へ提出した。Android 1.0.0（versionCode 3）は、2026-11-28 に審査へ提出した。どちらも結果待ち。** 提出前の自動チェックは、すべて通っている: `npm run typecheck`、`npm test`（1127件）、`npm run release-check`（6件。`ASSET_LINKS` は、2026-11-28 に Play App Signing の鍵へ置き換え、本番へデプロイ済み）、Workerの `npm run typecheck`・`npm test`（862件）、`node scripts/generate-licenses.mjs --check`（142件）。
 
 R8（下の「Android: R8」）を入れた release（`arm64-v8a`、debug署名）を、2026-11-26に確かめた。ビルドは通り（難読化の対応表 `mapping.txt` も出た）、Pixel 3に入れて起動してもJSが動き（端末はロック中で画面は見えない。logcatにクラッシュなし）、エミュレータ（`Filto_API_36`）では、ログイン画面が崩れず出て、「Googleでログイン」を押すとGoogleのアカウント選択（GMS の CredentialChooser）まで届き、クラッシュ・`ClassNotFound` は無かった。`node scripts/generate-licenses.mjs --check --apk <APK>` も通った（`.so` 22種、すべて把握しているもの）。**まだ確かめていないのは**、Play Consoleでの3つの率（AABを上げないと見えない）と、R8入りでログインを最後まで通すこと（手順の5・6で上げたあとに、内部テストの版で行う）。
 

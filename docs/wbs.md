@@ -9,7 +9,7 @@
 - 設計の変更（仕様の判断）は、この表ではなく docs の該当の章に書き、ここからは参照だけにする。
 - 状態は、2026-11-27 時点。
 
-**現在地**: 6. リリース準備。**iOS 1.0.0 は、2026-11-27 に審査へ提出した（結果待ち）。** **AndroidのAAB（全アーキテクチャ。versionCode 2）は、2026-11-27 にビルド済み**（6.5）。次は、Androidの提出（Play Consoleのアプリ作成・審査用のGoogleアカウント・内部テストへのAAB）。アプリとWorkerの機能（0〜3章）は、初期リリースの範囲（plan.md 11章）を実装し終えた。本番のD1・Worker・ドメイン・公開ページ（4章）も出ている。Androidは、Pixel 3で本物のWorkerに通した（5章）。**残りは、ストアの素材・申告・ビルドと提出（6.3〜6.7）と、本番での確認（6.8）。** アプリ1113件・Worker862件のテスト、型検査は通っている。`npm run release-check` は、Play App Signing の鍵が分かるまで、1件失敗する（6.6）。
+**現在地**: 6. リリース準備。**iOS 1.0.0 は、2026-11-27 に審査へ提出した（結果待ち）。** **Android 1.0.0（versionCode 3。参加の入口入り）も、2026-11-28 に審査へ提出した（結果待ち）。**（6.5。審査の間、審査用アカウントA・Bのデータを触らない。）次は、両方の審査の結果を待つ。iOSが公開されたら、Playの「iPhoneとAndroid」の訴求を戻し、iOSへ参加の入口を入れた次の版を作る（6.5）。アプリとWorkerの機能（0〜3章）は、初期リリースの範囲（plan.md 11章）を実装し終えた。本番のD1・Worker・ドメイン・公開ページ（4章）も出ている。Androidは、Pixel 3で本物のWorkerに通した（5章）。**残りは、ストアの素材・申告・ビルドと提出（6.3〜6.7）と、本番での確認（6.8）。** アプリ1113件・Worker862件のテスト、型検査は通っている。`npm run release-check` は、通る（Play App Signing の鍵を反映済み。6.6）。
 
 ## 0. 企画・設計
 
@@ -98,12 +98,12 @@
   - [x] iOS: App Store Connect の入力と、**審査へ提出した**（2026-11-27。1.0.0・ビルド番号2。スクショ7枚〔`ios/ja/`〕・画面収録の添付・審査用アカウントなし・リリースは手動）。結果はメールで届く。通ったら、「リリース」を押すまで公開されない。指摘されたら、内容を見て対応する（審査用アカウント・画面収録の追加など。`store-listing.md`）
   - [x] Android: `eas build --local`（全アーキテクチャのAAB。2026-11-27。versionCode 2・65.1MB・約12分。アップロード鍵はEASが作成。ABI 4種〔arm64-v8a・armeabi-v7a・x86・x86_64〕、DEXは1つ、権限は `INTERNET`・`VIBRATE` だけ）。数値と鍵のSHA-1・SHA-256は `release.md`
   - [x] **Android: 参加の入口を入れた新しいAAB（versionCode 3）をビルドした**（2026-11-28。`warikan-seikatsu-1.0.0-vc3.aab`。検査は通った。`release.md`）
-  - [ ] **Android: 新しいAAB（versionCode 3）で、製品版のリリースを作る**（内部テストでの確認は省略する。利用者の判断。2026-11-28。参加の入口は、偽の応答のエミュレータで確かめた〔貼り付けの検査・参加確認への切り替え・キャンセル・使えない招待〕。**本物のWorkerとの通しは、していない**。参加確認の経路は、既存のもの）。AABは、製品版のリリースに、直接アップロードする（内部テストに上げたversionCode 2のリリースは、外す）（今の内部テストの versionCode 2 には、入っていない）。差し替えたら、審査用アカウントの手順の文が、実態と合うか見直す
+  - [x] **Android: 新しいAAB（versionCode 3）で、製品版のリリースを作り、審査へ提出した**（2026-11-28。審査前のクイックチェックを経て送信。公開は、「管理対象の公開」がオフなので、承認されると自動。国・地域は177。結果はメールで届く。指摘されたら、内容を見て対応する）。リリースを作る際の判断:（内部テストでの確認は省略する。利用者の判断。2026-11-28。参加の入口は、偽の応答のエミュレータで確かめた〔貼り付けの検査・参加確認への切り替え・キャンセル・使えない招待〕。**本物のWorkerとの通しは、していない**。参加確認の経路は、既存のもの）。AABは、製品版のリリースに、直接アップロードする（内部テストに上げたversionCode 2のリリースは、外す）（今の内部テストの versionCode 2 には、入っていない）。差し替えたら、審査用アカウントの手順の文が、実態と合うか見直す
   - [ ] **iOS: 参加の入口は、次の版で入れる**（利用者の決定。2026-11-28。審査中の build 2 は、そのまま待つ。取り下げて出し直すと、審査の待ちが延びるため）。iOSの1.0.0が公開されたら、次の版を作る。入れ忘れない
-  - [ ] Android: 内部テストへ上げる、製品版へ（AABは、リポジトリのルートの `warikan-seikatsu-1.0.0.aab`。`.gitignore` 済み。提出が済んだら削除）
+  - [x] Android: 内部テスト（versionCode 2。Pixel 3で、ログイン・App Linksを確認）を経て、製品版へ
   - [ ] iOSが公開されたら、PlayのスクショとPlayの詳しい説明に、「iPhoneとAndroidの組み合わせでも使える」を**必ず戻す**（利用者の決定。一番のアピールポイント。外したのは2026-11-28。手順: `compose.sh` の `headline_play_01` のコメントにある見出しに戻して `compose.sh 01-home`、Playの説明に行を戻し、Play Consoleで差し替える。`store-listing.md` の §3・§4）
-  - [ ] 提出の直前: `npm run release-check`、`node scripts/generate-licenses.mjs --check --apk <AAB>`（**AABでのライセンス検査は通った**: 一覧と同じ142件・`.so` 22種すべて把握済み。`release-check` は、Play App Signing の鍵待ちの1件だけ失敗）
-  - [ ] ビルド成果物（`.ipa`・`.aab`）の削除（提出のあと）
+  - [x] 提出の直前: `npm run release-check`、`node scripts/generate-licenses.mjs --check --apk <AAB>`（versionCode 3 のAABで、どちらも通った: 142件・`.so` 22種すべて把握済み。`release-check` は6件とも通る）
+  - [x] ビルド成果物（`.ipa`・`.aab`）の削除（iOSの `.ipa` と、Androidの `.aab`〔versionCode 2・3〕は、削除済み。2026-11-28）
   - ディスクの空きは15GB以上を目安にする（2026-11-26に、約7GBから、キャッシュの整理で約20GBにした。ビルドで必要な量は、実測して `release.md` に書く）
 - [ ] 6.6 公開前の設定（ビルドとストアの作業のあとに分かるもの）
   - [ ] Play App Signing の鍵のSHA-256を、`worker/src/site.ts` の `ASSET_LINKS` に入れ、debug鍵のSHA-256を外して、本番へデプロイ（`release-check` が通ること）。**直して、本番へデプロイした**（2026-11-28。mainへ取り込み済み。Version `41f82840`。値は、Playの内部テストから入れたPixel 3のAPKの署名から読んだ。`release-check` は6件とも通る。本番の `assetlinks.json` が新しい値を返すことを確かめた）。**注意: Googleの検証用のサーバー（Digital Asset Links API）は、`assetlinks.json` を、`maxAge`（約45分）のあいだキャッシュする**。デプロイ直後は古い内容（debug鍵）のままで、Pixel 3の `pm get-app-links` が `1024`（失敗）のまま。**キャッシュが切れたあとに `pm verify-app-links --re-verify` で再検証して、`verified` になることを確かめる**（**確かめた**: 2026-11-28 16:13。デプロイから約28分。`pm get-app-links` の `Selection state: Disabled` は、検証済みのドメインでは問題にならず、実際の起動は選択ダイアログなしだった。**`cmd package resolve-activity` は、選択ダイアログを返すので、判定に使わない**。`am start` で確かめる）（`curl "https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://warikan-seikatsu.app&relation=delegate_permission/common.handle_all_urls"` で、Googleが見ている値が分かる）
