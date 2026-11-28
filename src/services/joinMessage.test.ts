@@ -122,7 +122,7 @@ describe('固定の文言', () => {
   });
 });
 
-describe('readInviteInput（グループ作成の画面で、貼り付けた文字から招待を取り出す）', () => {
+describe('readInviteInput（貼り付けの画面で、貼り付けた文字から招待を取り出す）', () => {
   const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO_-'; // 43字
 
   it('招待URLを含んでいれば、トークンを返す（招待の文面ごとでもよい）', () => {

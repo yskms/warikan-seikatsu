@@ -8,7 +8,7 @@
 // **やるのは、貼り付けたものからトークンを取り出して、`pendingInvite.set` に渡すことだけ**（`src/services/joinMessage.ts` の
 // `readInviteInput`）。招待が使えるか・満員か・参加済みか・参加そのものは、参加確認（`ui/join/JoinScreen.tsx`）が、招待URLを開いたときと
 // 同じ経路で扱う（参加の規則を、ここに書き写さない）。参加確認へ切り替えるのも、ルート（`app/_layout.tsx` の `Stack.Protected`）で、
-// ここでは画面を動かさない（招待を持つと、この画面は外れる）。戻る（見出しの矢印）で、グループ作成の画面へ戻る。
+// ここには、参加確認へ移す処理は無い（招待を持つと、この画面は外れる）。戻る（見出しの矢印。`router.back`）で、グループ作成の画面へ戻る。
 // レイアウトとキーボードの避け方は、グループ作成（`app/create-group.tsx`）と同じ: ボタンは下に固定し、失敗の文言は欄の下に出す。
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
