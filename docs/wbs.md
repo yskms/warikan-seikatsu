@@ -97,7 +97,8 @@
   - [x] iOS: TestFlightでの実機確認（6.1。2026-11-27、全部OK）
   - [x] iOS: App Store Connect の入力と、**審査へ提出した**（2026-11-27。1.0.0・ビルド番号2。スクショ7枚〔`ios/ja/`〕・画面収録の添付・審査用アカウントなし・リリースは手動）。結果はメールで届く。通ったら、「リリース」を押すまで公開されない。指摘されたら、内容を見て対応する（審査用アカウント・画面収録の追加など。`store-listing.md`）
   - [x] Android: `eas build --local`（全アーキテクチャのAAB。2026-11-27。versionCode 2・65.1MB・約12分。アップロード鍵はEASが作成。ABI 4種〔arm64-v8a・armeabi-v7a・x86・x86_64〕、DEXは1つ、権限は `INTERNET`・`VIBRATE` だけ）。数値と鍵のSHA-1・SHA-256は `release.md`
-  - [ ] **Android: 参加の入口を入れた新しいAAB（versionCode 3）を作り、内部テストと製品版のリリースを差し替える**（今の内部テストの versionCode 2 には、入っていない）。差し替えたら、審査用アカウントの手順の文が、実態と合うか見直す
+  - [x] **Android: 参加の入口を入れた新しいAAB（versionCode 3）をビルドした**（2026-11-28。`warikan-seikatsu-1.0.0-vc3.aab`。検査は通った。`release.md`）
+  - [ ] **Android: 新しいAAB（versionCode 3）を、内部テストへ上げ、製品版のリリースを差し替える**（今の内部テストの versionCode 2 には、入っていない）。差し替えたら、審査用アカウントの手順の文が、実態と合うか見直す
   - [ ] **iOS: 参加の入口は、次の版で入れる**（利用者の決定。2026-11-28。審査中の build 2 は、そのまま待つ。取り下げて出し直すと、審査の待ちが延びるため）。iOSの1.0.0が公開されたら、次の版を作る。入れ忘れない
   - [ ] Android: 内部テストへ上げる、製品版へ（AABは、リポジトリのルートの `warikan-seikatsu-1.0.0.aab`。`.gitignore` 済み。提出が済んだら削除）
   - [ ] iOSが公開されたら、PlayのスクショとPlayの詳しい説明に、「iPhoneとAndroidの組み合わせでも使える」を**必ず戻す**（利用者の決定。一番のアピールポイント。外したのは2026-11-28。手順: `compose.sh` の `headline_play_01` のコメントにある見出しに戻して `compose.sh 01-home`、Playの説明に行を戻し、Play Consoleで差し替える。`store-listing.md` の §3・§4）
