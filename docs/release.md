@@ -17,7 +17,13 @@ R8（下の「Android: R8」）を入れた release（`arm64-v8a`、debug署名�
 - SHA-1: `1A:AA:DB:7F:1F:EC:DF:37:7D:02:14:C1:C5:F9:77:8B:B3:6E:72:4A`
 - SHA-256: `77:7B:16:25:01:04:41:6A:3E:43:C3:6E:E0:BD:7A:DF:02:6F:FE:84:38:5F:51:FC:5A:F4:E2:28:B2:C2:F8:EF`
 
-Play Consoleの「アプリの署名」で、アップロード鍵として、この値と同じかを見る。アプリ署名鍵（Playが付け替える鍵）は別の値で、手順の6で分かる。R8入りでログインを最後まで通すことは、内部テストの版で確かめる（手順の6のあと）。
+Play Consoleの「アプリの署名」で、アップロード鍵として、この値と同じかを見る。
+
+**Play App Signing の鍵（アプリ署名鍵。Playが署名し直す鍵）**: 内部テストの版（versionCode 2）を入れたPixel 3の `base.apk` の署名から読んだ（2026-11-28。発行者 `CN=Android, O=Google Inc.`。アップロード鍵とは別の鍵）。Play Consoleの「アプリの署名」の画面の「アプリ署名鍵」と一致するかを、見ておく。
+- SHA-1: `82:41:CD:90:88:C8:89:3E:EF:97:A5:22:65:54:53:86:6B:BD:F1:E9`
+- SHA-256: `C6:86:FE:32:31:74:85:EF:9F:0E:2D:ED:67:A1:3F:A1:67:DF:B3:0C:74:15:6E:A7:16:97:D0:7F:E3:07:E2:A1`
+
+**端末から読む手順**（Playの画面を開かずに分かる）: `adb shell pm path com.yskms.warikanseikatsu` で `base.apk` の場所を出し、`adb pull` で取り、`~/Library/Android/sdk/build-tools/<版>/apksigner verify --print-certs --min-sdk-version 24 --max-sdk-version 36 base.apk` で読む。**`--max-sdk-version 36` が要る**（PlayのAPKには、Android 37 向けのハイブリッド署名〔ML-DSA〕も付き、JDKによっては、それが読めずに失敗する）。`keytool -printcert -jarfile` は使えない（v1の署名が無い）。`Source Stamp Signer` の値は、Playのスタンプで、アプリ署名鍵ではない。R8入りでログインを最後まで通すことは、内部テストの版で確かめる（手順の6のあと）。
 
 アプリの版（`app.json` の `version`）は `1.0.0`。ビルド番号（iOSの `buildNumber`・Androidの `versionCode`）はEASが持つ（`eas.json` の `appVersionSource: "remote"`・`production` の `autoIncrement`）ので、`app.json` に書かない。
 

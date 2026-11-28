@@ -21,9 +21,10 @@ export const APPLE_APP_SITE_ASSOCIATION = {
 } as const;
 
 // Android。`sha256_cert_fingerprints` は、アプリの署名の証明書のSHA-256（App Links は、これが一致するときだけ検証に通る）。
-// **いまは、debug の署名だけ**（Expo のテンプレートの debug.keystore。誰でも持っている公開の鍵）。**リリース前に、debug のものを外し、
-// Play App Signing の鍵（Playからインストールされたアプリは、この鍵で署名し直される）のSHA-256に置き換える**
-// （`npm run release-check` が、debug のSHA-256が残っていれば失敗にする）。
+// **Play App Signing の鍵だけ**（Playからインストールされたアプリは、この鍵で署名し直される）。debug の署名（Expo のテンプレートの
+// debug.keystore。誰でも持っている公開の鍵）は、**外してある。戻さない**（同じパッケージ名の偽のアプリが、招待URLの検証に通る。
+// `npm run release-check` が、debug のSHA-256が残っていれば失敗にする）。debug 署名のビルドは、App Links の検証に通らない。
+// 実機で招待URLの App Links を確かめるときは、Play の内部テストの版を入れる。
 export const ASSET_LINKS = [
   {
     relation: ['delegate_permission/common.handle_all_urls'],
@@ -31,8 +32,9 @@ export const ASSET_LINKS = [
       namespace: 'android_app',
       package_name: 'com.yskms.warikanseikatsu',
       sha256_cert_fingerprints: [
-        // debug.keystore（2026-11-26に計算）
-        'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C',
+        // Play App Signing の鍵（2026-11-28。Playの内部テストから入れたPixel 3の `base.apk` の署名〔v3。`apksigner verify --print-certs`〕から読んだ。
+        // 発行者 `CN=Android, O=Google Inc.`。アップロード鍵〔EASが作った鍵。`1A:AA:DB:…`〕とは別の鍵）
+        'C6:86:FE:32:31:74:85:EF:9F:0E:2D:ED:67:A1:3F:A1:67:DF:B3:0C:74:15:6E:A7:16:97:D0:7F:E3:07:E2:A1',
       ],
     },
   },
