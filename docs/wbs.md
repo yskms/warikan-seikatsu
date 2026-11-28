@@ -98,6 +98,7 @@
   - [x] iOS: App Store Connect の入力と、**審査へ提出した**（2026-11-27。1.0.0・ビルド番号2。スクショ7枚〔`ios/ja/`〕・画面収録の添付・審査用アカウントなし・リリースは手動）。結果はメールで届く。通ったら、「リリース」を押すまで公開されない。指摘されたら、内容を見て対応する（審査用アカウント・画面収録の追加など。`store-listing.md`）
   - [x] Android: `eas build --local`（全アーキテクチャのAAB。2026-11-27。versionCode 2・65.1MB・約12分。アップロード鍵はEASが作成。ABI 4種〔arm64-v8a・armeabi-v7a・x86・x86_64〕、DEXは1つ、権限は `INTERNET`・`VIBRATE` だけ）。数値と鍵のSHA-1・SHA-256は `release.md`
   - [ ] Android: 内部テストへ上げる、製品版へ（AABは、リポジトリのルートの `warikan-seikatsu-1.0.0.aab`。`.gitignore` 済み。提出が済んだら削除）
+  - [ ] iOSが公開されたら、PlayのスクショとPlayの詳しい説明に、「iPhoneとAndroidの組み合わせでも使える」を戻すか決める（外したのは2026-11-28。`store-listing.md` の §3・§4）
   - [ ] 提出の直前: `npm run release-check`、`node scripts/generate-licenses.mjs --check --apk <AAB>`（**AABでのライセンス検査は通った**: 一覧と同じ142件・`.so` 22種すべて把握済み。`release-check` は、Play App Signing の鍵待ちの1件だけ失敗）
   - [ ] ビルド成果物（`.ipa`・`.aab`）の削除（提出のあと）
   - ディスクの空きは15GB以上を目安にする（2026-11-26に、約7GBから、キャッシュの整理で約20GBにした。ビルドで必要な量は、実測して `release.md` に書く）

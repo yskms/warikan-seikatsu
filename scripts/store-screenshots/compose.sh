@@ -154,8 +154,10 @@ background=(
   [01-home]="$bg_red" [02-shares]="$bg_pink" [03-cap]="$bg_red" [04-expense]="$bg_pink"
   [05-breakdown]="$bg_red" [06-settle]="$bg_pink" [07-recurring]="$bg_red"
 )
-# Google Play だけ、1枚目の見出しを、Androidを先にする（Playの利用者は、Androidの人。iOSの完成品は、iPhoneを先にする）。
-headline_play_01='AndroidとiPhoneの\n組み合わせでも使える。'
+# Google Play だけ、1枚目の見出しを、プラットフォームに触れない文にする（2026-11-28）。iOSの完成品は、「iPhoneとAndroidの組み合わせでも使える」のまま。
+# Androidだけが先に公開されると、「iPhoneとも使える」が、公開前の訴求になる（先走る）。Playの審査で指摘されうるので、外した。
+# iOSが公開されたら、戻すか決める（docs/wbs.md の6.5）。補足（同じアプリで、記録も精算もいっしょに。）は、プラットフォームに触れないので、共通のまま。
+headline_play_01='共同の生活費を、\n月ごとにかんたん精算。'
 headline_play_01=${headline_play_01//\\n/$'\n'}
 # fit_size は本物の改行で行を分け、ImageMagick は \n を改行とみなす。両方で同じに見えるよう、先に直す。
 for key in ${(k)headline}; do
