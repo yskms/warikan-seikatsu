@@ -23,6 +23,7 @@ App Store（iOS）と Google Play（Android）の掲載文・申告の内容。�
 | 提供者 | yskms |
 | 価格・内課金・広告 | 無料。アプリ内課金なし。広告なし |
 | 対応端末 | iPhoneのみ（`ios/` の `TARGETED_DEVICE_FAMILY = 1`。iPadのスクリーンショットは要らない）。iOS 16.4以上。Android |
+| 提供する国 | App Store: 中国本土以外のすべての国・地域（利用者の申告。2026-11-28）。Google Play: すべての国・地域（GoogleはPlayを中国本土で提供していないので、実質、iOSと同じ）。EUにも配信されるので、Playの事業者ステータスの申告が要る |
 | 人数 | グループは5人まで |
 | 通貨 | 日本円のほか、米ドル・ユーロなど8通貨（`worker/src/currencies.ts`）。グループごとに選ぶ |
 
