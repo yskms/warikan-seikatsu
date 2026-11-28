@@ -67,6 +67,10 @@ function RootNavigator() {
       <Stack.Protected guard={state.status === 'signed-in' && !showJoin}>
         <Stack.Screen name="(main)" />
         <Stack.Screen name="create-group" />
+        {/* 招待URLを貼り付けて参加確認へ進む画面。入口は、グループ作成の「招待を受け取った方はこちら」だけ。`dangerouslySingular` で、2枚重ねない
+            （素早く2回押すと、`router.push` が2回通り、同じ画面が重なる。理由は、メンバーと招待などと同じ）。招待を持つと、下の
+            `showJoin` の切り替えで、この画面も外れ、参加確認だけが出る */}
+        <Stack.Screen name="join-by-url" dangerouslySingular />
         {/* カテゴリと負担割合も、`dangerouslySingular` で、2枚重ねない（入口は、設定の行だけ）。下の `members` と同じ仕組みで、
             素早く2回押すと重なるはず（エミュレータでは、付ける前も付けたあとも未確認。docs/screens.md 5章） */}
         <Stack.Screen name="categories" dangerouslySingular />

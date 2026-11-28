@@ -3,7 +3,8 @@
 // 作らずに出る道は、ログアウトだけ（間違ったアカウントでログインした人、脱退して所属が空になった人のため。作ったグループは、
 // すぐには消せない: 消えるのは、最後の1人が脱退するときで、その確定は、脱退月を締めたときか翌月1日。脱退の画面（設定）も、
 // まだ無い）。招待URLから来た人は、この画面を通らない（招待を持っているあいだは、
-// ルート（`app/_layout.tsx`）が、参加確認だけを出す。この画面を開いたままでも同じ）。
+// ルート（`app/_layout.tsx`）が、参加確認だけを出す。この画面を開いたままでも同じ）。招待URLをタップせずに、アプリを開いた人のために、
+// 招待URLを貼り付けて参加確認へ進む入口を置く（専用の画面 `app/join-by-url.tsx`。`ui/join/JoinByUrlScreen.tsx`）。
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
@@ -102,6 +103,21 @@ export default function CreateGroupScreen() {
           <Text style={[styles.lead, { color: colors.textSecondary }]}>
             生活費を一緒に記録するグループです。相手は、あとから招待できます。
           </Text>
+          {/* 招待を受け取った人の入口。専用の画面（`app/join-by-url.tsx`）へ進む。同じ画面に置くと、ピンクの「作成」が常に出ていて、
+              押し間違えやすかった。作成の最中は押せない */}
+          <Pressable
+            accessibilityRole="link"
+            accessibilityHint="招待URLを貼り付ける画面を開きます"
+            accessibilityState={{ disabled: locked }}
+            disabled={locked}
+            hitSlop={8}
+            onPress={() => router.push('/join-by-url')}
+            style={styles.joinLink}
+          >
+            <Text style={[styles.joinLinkLabel, { color: colors.textPrimary }, locked && styles.dimmed]}>
+              招待を受け取った方はこちら
+            </Text>
+          </Pressable>
 
           <View style={styles.form}>
             <TextField
@@ -216,6 +232,8 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: 24, paddingBottom: 16, gap: 12 },
   title: { fontSize: 28, fontWeight: '700' },
   lead: { fontSize: 15, lineHeight: 22 },
+  joinLink: { alignSelf: 'flex-start' },
+  joinLinkLabel: { fontSize: 15, fontWeight: '600', textDecorationLine: 'underline' },
   form: { gap: 20, marginTop: 8 },
   currency: { gap: 8 },
   label: { fontSize: 14, fontWeight: '600' },

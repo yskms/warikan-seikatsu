@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { INVITE_SCHEME_PREFIX, parseInviteLink } from './inviteLink.ts';
-import { inviteUrl } from './inviteUrl.ts';
+import { findInviteToken, INVITE_SCHEME_PREFIX, parseInviteLink } from './inviteLink.ts';
+import { inviteShareMessage, inviteUrl } from './inviteUrl.ts';
 
 const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO_-'; // 43字
 const ORIGIN = 'https://invite.example.com';
@@ -65,5 +65,73 @@ describe('parseInviteLink', () => {
     assert.equal(parseInviteLink('', ORIGIN), null);
     assert.equal(parseInviteLink(`${ORIGIN}/invite/${TOKEN}?${'a'.repeat(3000)}`, ORIGIN), null);
     assert.equal(parseInviteLink(undefined as unknown as string, ORIGIN), null);
+  });
+});
+
+describe('findInviteToken（貼り付けた文字の中から、招待URLを探す）', () => {
+  const URL = `${ORIGIN}/invite/${TOKEN}`;
+
+  it('招待URLだけでも、アプリのURLスキームでも、読める', () => {
+    assert.equal(findInviteToken(URL, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`${INVITE_SCHEME_PREFIX}${TOKEN}`, ORIGIN), TOKEN);
+  });
+
+  it('招待の文面ごと貼られても読める（前後の文・改行・前置き）', () => {
+    assert.equal(findInviteToken(`わりかん生活に招待されました。\n${URL}\n3日で無効になります。`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`URL:${URL}`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`招待URL→${URL}から参加してください`, ORIGIN), TOKEN);
+  });
+
+  it('全角の句読点・括弧、文末のピリオド・閉じ括弧が、URLの直後にあっても読める', () => {
+    assert.equal(findInviteToken(`${URL}。`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`（${URL}）`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`「${URL}」`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`see ${URL}.`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`(${URL})`, ORIGIN), TOKEN);
+    assert.equal(findInviteToken(`${URL}?utm_source=line,`, ORIGIN), TOKEN);
+  });
+
+  it('前後の空白や、複数のURLがあっても、先に見つかった招待URLを返す', () => {
+    assert.equal(findInviteToken(`  \n${URL}\t `, ORIGIN), TOKEN);
+    const other = 'ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponml_-'; // 43字
+    assert.equal(findInviteToken(`https://example.com/a ${ORIGIN}/invite/${other} ${URL}`, ORIGIN), other);
+  });
+
+  it('招待でないURLが先にあっても、あとの招待URLを読める', () => {
+    assert.equal(findInviteToken(`https://evil.example.org/invite/${TOKEN} ${URL}`, ORIGIN), TOKEN);
+  });
+
+  it('ほかのホーム・ほかの道・トークンの形が違うものは、読まない（parseInviteLink と同じ）', () => {
+    assert.equal(findInviteToken(`https://evil.example.org/invite/${TOKEN}`, ORIGIN), null);
+    assert.equal(findInviteToken(`${ORIGIN}/join/${TOKEN}`, ORIGIN), null);
+    assert.equal(findInviteToken(`${ORIGIN}/invite/${TOKEN.slice(1)}`, ORIGIN), null);
+    assert.equal(findInviteToken(`${ORIGIN}/invite/${TOKEN}x`, ORIGIN), null);
+    assert.equal(findInviteToken(`${ORIGIN}/invite/${TOKEN}/extra`, ORIGIN), null);
+    assert.equal(findInviteToken(`${TOKEN}`, ORIGIN), null);
+  });
+
+  it('招待URLを含まない文字・空・長すぎる値は、null', () => {
+    assert.equal(findInviteToken('こんにちは', ORIGIN), null);
+    assert.equal(findInviteToken('', ORIGIN), null);
+    assert.equal(findInviteToken(`${URL}${' '.repeat(10_001)}`, ORIGIN), null);
+    assert.equal(findInviteToken(undefined as unknown as string, ORIGIN), null);
+  });
+
+  it('別のURLのクエリに入っていても、招待URLとして読む（意図して許す。読むだけで、参加の確認が内容を見せるので、害はない）', () => {
+    assert.equal(findInviteToken(`https://example.com/?r=${URL}`, ORIGIN), TOKEN);
+  });
+
+  it('URLの直後に半角英数がつながると読めない（1行の欄で、改行が取り除かれた場合。案内で、URLだけの貼り付けを勧める）', () => {
+    assert.equal(findInviteToken(`${URL}Thanks`, ORIGIN), null);
+    // 半角の数字も、トークンに使える文字なので、つながると読めない（「…\n3日で無効」の改行が取り除かれた場合）
+    assert.equal(findInviteToken(`${URL}3日で無効になります。`, ORIGIN), null);
+    // 日本語は、トークンに使えない文字なので、つながっていても読める
+    assert.equal(findInviteToken(`${URL}は3日で無効になります。`, ORIGIN), TOKEN);
+    // アプリの共有文面（URLが末尾。直前は全角の「）」）は、改行が取り除かれても読める
+    assert.equal(findInviteToken(inviteShareMessage(inviteUrl(TOKEN, ORIGIN)).replace('\n', ''), ORIGIN), TOKEN);
+  });
+
+  it('既定の置き場でも、発行側のURL（inviteUrl）をそのまま読める', () => {
+    assert.equal(findInviteToken(`招待です: ${inviteUrl(TOKEN)}`), TOKEN);
   });
 });

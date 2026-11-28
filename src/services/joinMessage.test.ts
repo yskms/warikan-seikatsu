@@ -5,7 +5,16 @@ import { describe, it } from 'node:test';
 
 import { AuthError, type AuthErrorCode } from '../repositories/authError.ts';
 import { InviteRejectedError } from '../repositories/inviteRepository.ts';
-import { classifyJoinFailure, classifyPreviewFailure, GROUP_FULL_MESSAGE, INVITE_UNAVAILABLE_MESSAGE } from './joinMessage.ts';
+import {
+  classifyJoinFailure,
+  classifyPreviewFailure,
+  GROUP_FULL_MESSAGE,
+  INVITE_INPUT_EMPTY_MESSAGE,
+  INVITE_INPUT_NOT_FOUND_MESSAGE,
+  INVITE_UNAVAILABLE_MESSAGE,
+  readInviteInput,
+} from './joinMessage.ts';
+import { inviteUrl } from './inviteUrl.ts';
 
 const NETWORK_CODES: AuthErrorCode[] = [
   'network',
@@ -110,5 +119,24 @@ describe('固定の文言', () => {
   it('使えない招待と満員の文言は、画面設計（docs/screens.md 2章）のとおり', () => {
     assert.equal(INVITE_UNAVAILABLE_MESSAGE, 'この招待URLは使えません。招待した人に、新しいURLを送ってもらってください。');
     assert.equal(GROUP_FULL_MESSAGE, 'このグループは満員です（5人まで）。');
+  });
+});
+
+describe('readInviteInput（グループ作成の画面で、貼り付けた文字から招待を取り出す）', () => {
+  const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO_-'; // 43字
+
+  it('招待URLを含んでいれば、トークンを返す（招待の文面ごとでもよい）', () => {
+    assert.deepEqual(readInviteInput(inviteUrl(TOKEN)), { ok: true, token: TOKEN });
+    assert.deepEqual(readInviteInput(`参加してください\n${inviteUrl(TOKEN)}\nよろしく`), { ok: true, token: TOKEN });
+  });
+
+  it('空・空白だけなら、貼り付けを促す', () => {
+    assert.deepEqual(readInviteInput(''), { ok: false, message: INVITE_INPUT_EMPTY_MESSAGE });
+    assert.deepEqual(readInviteInput('  \n '), { ok: false, message: INVITE_INPUT_EMPTY_MESSAGE });
+  });
+
+  it('招待URLが見つからなければ、そう伝える（ほかのURLも、見つからない扱い）', () => {
+    assert.deepEqual(readInviteInput('こんにちは'), { ok: false, message: INVITE_INPUT_NOT_FOUND_MESSAGE });
+    assert.deepEqual(readInviteInput(`https://evil.example.org/invite/${TOKEN}`), { ok: false, message: INVITE_INPUT_NOT_FOUND_MESSAGE });
   });
 });

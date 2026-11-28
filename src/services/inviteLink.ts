@@ -35,3 +35,33 @@ export function parseInviteLink(url: string, origin: string = INVITE_URL_ORIGIN)
   const segment = (end === -1 ? rest : rest.slice(0, end)).replace(/\/$/, '');
   return TOKEN_PATTERN.test(segment) ? segment : null;
 }
+
+// 貼り付けられた文字の長さの上限。招待の文面ごと貼られても、常識的な長さに収まる
+const MAX_TEXT_LENGTH = 10_000;
+// URLに使える文字（RFC 3986）の並び。空白・全角の句読点・括弧などで切れる
+const URL_RUN = /[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g;
+// 文中のURLの直後に付く、句読点・閉じ括弧（「…/invite/xxxx.」「（…/invite/xxxx）」）
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
+
+/**
+ * 貼り付けられた文字の中から、招待URLを探して、トークンを返す。なければ `null`。
+ * 招待URLだけでなく、**招待の文面ごと**（前後に説明の文があるもの。`URL:` のような前置きが付くものも）読める。複数あれば、
+ * 先に見つかったものを返す。URLの形の判定は `parseInviteLink` に任せる（置き場・道・トークンの形。ほかのURLは、招待として扱わない）。
+ * 「参加の確認」へ渡すだけで、これで参加するわけではない（`pendingInvite.ts`）。
+ */
+export function findInviteToken(text: string, origin: string = INVITE_URL_ORIGIN): string | null {
+  if (typeof text !== 'string' || text.length === 0 || text.length > MAX_TEXT_LENGTH) return null;
+  const prefixes = [INVITE_SCHEME_PREFIX, `${origin.replace(/\/+$/, '')}/invite/`].map((prefix) => prefix.toLowerCase());
+  for (const run of text.match(URL_RUN) ?? []) {
+    const cleaned = run.replace(TRAILING_PUNCTUATION, '');
+    const lower = cleaned.toLowerCase();
+    for (const prefix of prefixes) {
+      // 前置き（`URL:` など）が付いていても読めるよう、かたまりの中の、置き場の先頭から読む
+      for (let from = lower.indexOf(prefix); from !== -1; from = lower.indexOf(prefix, from + 1)) {
+        const token = parseInviteLink(cleaned.slice(from), origin);
+        if (token !== null) return token;
+      }
+    }
+  }
+  return null;
+}

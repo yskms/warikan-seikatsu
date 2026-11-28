@@ -8,6 +8,25 @@
 // 結果が分からない失敗の文言は、「参加できている場合があります。もう一度押してください」と案内する。
 import { AuthError } from '../repositories/authError.ts';
 import { InviteRejectedError } from '../repositories/inviteRepository.ts';
+import { findInviteToken } from './inviteLink.ts';
+
+/** 貼り付けが空のとき */
+export const INVITE_INPUT_EMPTY_MESSAGE = '招待URLを貼り付けてください。';
+
+/** 貼り付けた文字の中に、招待URLが無いとき */
+export const INVITE_INPUT_NOT_FOUND_MESSAGE =
+  '招待URLが見つかりません。招待してくれた人から届いたURLを、そのまま貼り付けてください。うまくいかないときは、URLの部分だけを貼り付けてください。';
+
+/**
+ * グループ作成の画面で、利用者が貼り付けた文字から、招待のトークンを取り出す（docs/screens.md 2章の「グループ作成」）。
+ * 取り出せたら、参加の確認へ渡す（`pendingInvite.set`）。**ここでは、招待が使えるかは調べない**（それは参加確認が、招待の内容を読むときに
+ * 決める。使えない招待は、そこで「使えません」と案内する）。招待の文面ごと貼られても読める（`findInviteToken`）。
+ */
+export function readInviteInput(text: string): { ok: true; token: string } | { ok: false; message: string } {
+  if (text.trim().length === 0) return { ok: false, message: INVITE_INPUT_EMPTY_MESSAGE };
+  const token = findInviteToken(text);
+  return token === null ? { ok: false, message: INVITE_INPUT_NOT_FOUND_MESSAGE } : { ok: true, token };
+}
 
 export const INVITE_UNAVAILABLE_MESSAGE = 'この招待URLは使えません。招待した人に、新しいURLを送ってもらってください。';
 
